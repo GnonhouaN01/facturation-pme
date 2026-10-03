@@ -42,3 +42,9 @@ next-env.d.ts
 
 # Modele des variables : seul fichier .env commite
 !.env.example
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
