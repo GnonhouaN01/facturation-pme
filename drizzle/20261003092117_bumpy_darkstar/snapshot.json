@@ -1,0 +1,62 @@
+{
+  "version": "8",
+  "dialect": "postgres",
+  "id": "9b032a23-b8d6-46eb-ad41-13d09f8dd041",
+  "prevIds": ["00000000-0000-0000-0000-000000000000"],
+  "ddl": [
+    {
+      "isRlsEnabled": false,
+      "name": "compteur_debit",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "cle",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "compteur_debit"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "name": "compte",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "compteur_debit"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "fenetre_debut",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "compteur_debit"
+    },
+    {
+      "columns": ["cle"],
+      "nameExplicit": false,
+      "name": "compteur_debit_pkey",
+      "schema": "public",
+      "table": "compteur_debit",
+      "entityType": "pks"
+    }
+  ],
+  "renames": []
+}
