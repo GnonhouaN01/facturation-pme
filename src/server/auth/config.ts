@@ -3,8 +3,8 @@ import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
 import { organization, twoFactor } from "better-auth/plugins";
 
-import { db } from "../db";
-import * as schema from "../db/auth-schema";
+import { db } from "../db/client";
+import * as schema from "../db/schema/auth";
 
 export const auth = betterAuth({
   appName: "Facturation PME",

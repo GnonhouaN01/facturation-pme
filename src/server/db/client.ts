@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
-import { authRelations } from "./auth-schema";
+import { authRelations } from "./schema/auth";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 

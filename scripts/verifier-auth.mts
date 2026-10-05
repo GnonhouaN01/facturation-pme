@@ -2,7 +2,7 @@ import { config } from "dotenv";
 
 config({ path: ".env.local" });
 
-const { auth } = await import("../src/lib/auth");
+const { auth } = await import("../src/server/auth/config");
 const contexte = await auth.$context;
 const nombre = await contexte.adapter.count({ model: "user" });
 

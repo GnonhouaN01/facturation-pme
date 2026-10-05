@@ -9,7 +9,8 @@
       "Edit(./.env.local)",
       "Edit(./.env.*.local)",
       "Edit(./drizzle/**)",
-      "Edit(./src/db/auth-schema.ts)",
+      "Edit(./src/server/db/schema/auth.ts)",
+      "Edit(./.claude/**)",
       "Bash(*.env.local*)",
       "Bash(printenv*)",
       "Bash(env)",
@@ -21,7 +22,8 @@
       "Bash(git reset --hard*)",
       "Bash(rm -rf *)",
       "Bash(node scripts/renouveler-mot-de-passe-app.mjs*)",
-      "Bash(node scripts/preparer-url-application.mjs*)"
+      "Bash(node scripts/preparer-url-application.mjs*)",
+      "Bash(node scripts/retablir-acces-dev.mjs*)"
     ],
     "ask": [
       "Bash(npm install*)",
