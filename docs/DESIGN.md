@@ -218,6 +218,9 @@ erDiagram
         text type
         text nom
         text ncc
+        text regime_imposition
+        text adresse
+        text contact
         text telephone
         text email
         timestamp archive_le
