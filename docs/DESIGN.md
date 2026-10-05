@@ -1,7 +1,7 @@
 # DESIGN.md — Dossier de conception
 
 Application de facturation pour petites structures.
-Statut : **validé**. Version du 2 octobre 2026.
+Statut : **validé**. Version du 5 octobre 2026, mise à jour après la configuration.
 
 ## Comment lire ce document
 
@@ -16,7 +16,7 @@ Ce document représente visuellement ce que SPEC.md, USECASES.md et THREATS.md o
 
 Les diagrammes sont écrits en Mermaid. GitHub les affiche directement, et ils se modifient comme du texte.
 
-Les noms de tables et de colonnes sont indicatifs. Ceux des tables gérées par Better Auth seront alignés sur sa documentation en phase 6.
+Les noms de tables et de colonnes sont indicatifs. Dans la base, les tables gérées par Better Auth portent ses propres noms : `user`, `session`, `account`, `verification`, `two_factor`, `organization`, `member`, `invitation`. Leur description exacte est dans `src/server/db/schema/auth.ts`. Dans les diagrammes, UTILISATEUR correspond à `user`, ADHESION à `member`, DOUBLE_AUTH à `two_factor`. L'emplacement de chaque fichier est fixé par STRUCTURE.md.
 
 ---
 
@@ -714,10 +714,10 @@ Ces règles seront inscrites dans CLAUDE.md et vérifiées automatiquement.
 
 | Environnement | Hébergement | Base | Emails | Certification |
 |---|---|---|---|---|
-| Développement | Poste local | Branche Neon de développement | Interceptés localement | Simulateur |
-| Test automatisé | GitHub Actions | Base temporaire, recréée à chaque exécution | Interceptés | Simulateur |
-| Prévisualisation | Vercel, une adresse par PR | Une branche Neon par PR | Interceptés | Simulateur |
-| Production | Vercel | Branche principale de Neon | Resend | Simulateur, avec mention visible |
+| Développement | Poste local | Branche Neon `dev` | Interceptés localement | Simulateur |
+| Test automatisé | GitHub Actions | À définir avec la CI | Interceptés | Simulateur |
+| Prévisualisation | Vercel, une adresse par PR, protégée par connexion | Branche Neon `preview`, commune aux PR | Interceptés | Simulateur |
+| Production | Vercel, région de Francfort | Branche Neon `production` | Service d'envoi, à configurer | Simulateur, avec mention visible |
 
 Chaque environnement a ses propres secrets. Aucun environnement autre que la production n'accède aux données de production (S-83, T-74).
 

@@ -268,7 +268,14 @@ Date de naissance, pièce d'identité, données bancaires des clients, géolocal
 
 ### 7.5 Destinataires extérieurs
 
-Les données ne quittent l'application que vers l'hébergeur, le fournisseur de base de données, le service d'envoi d'emails et, à terme, la plateforme de certification. Leur liste, leur pays d'hébergement et leurs engagements seront établis en phase 4.
+Les données ne quittent l'application que vers l'hébergeur, le fournisseur de base de données, le service d'envoi d'emails et, à terme, la plateforme de certification.
+
+| Destinataire | Rôle | Hébergement |
+|---|---|---|
+| Neon | Base de données | Allemagne (Francfort) |
+| Vercel | Serveur applicatif | Allemagne (Francfort) pour les fonctions. Les pages statiques sont distribuées par un réseau mondial |
+| GitHub | Code source, sans secret ni donnée réelle | États-Unis |
+| Resend, Sentry | Non encore configurés | À relever lors de leur mise en place |
 
 ---
 

@@ -13,6 +13,7 @@ Lis la section utile avant toute tâche. Ne les charge pas en entier.
 - `docs/THREATS.md` : menaces (T), matrice des droits en section 6
 - `docs/DESIGN.md` : modèle de données, chaîne de contrôles en section 3.2, règles d'architecture en 4.3
 - `docs/STACK.md` : outils retenus et choix écartés
+- `docs/STRUCTURE.md` : structure des dossiers, règles d'import en section 7
 - `docs/EXCEPTIONS-SECURITE.md` : failles connues et acceptées
 
 ## Commandes
@@ -28,7 +29,7 @@ Lis la section utile avant toute tâche. Ne les charge pas en entier.
 1. Ne lis, n'affiche et ne modifie jamais `.env.local`. N'écris aucun secret dans le code, les tests, les journaux ou les commits.
 2. Aucun fichier de `src/` ne mentionne `DATABASE_URL_MIGRATION`. L'application n'utilise que `DATABASE_URL`, le rôle restreint `app_facturation`.
 3. Toute table métier porte `organisation_id NOT NULL` et une règle de sécurité au niveau des lignes, activée et forcée. Modèle : `scripts/verifier-isolation.mjs`.
-4. Toute requête passe par la couche d'accès aux données. Aucun import de `drizzle-orm` ailleurs. Aucune requête construite par concaténation.
+4. Toute requête passe par la couche d'accès aux données. `drizzle-orm` ne s'importe que dans `src/server/db/`. Aucune requête construite par concaténation.
 5. Toute action serveur et toute route passe par la fonction commune de contrôle : origine, session, rôle, validation. La matrice des droits vit dans un seul fichier.
 6. Un accès refusé reçoit la même réponse qu'une ressource inexistante (S-02).
 7. Toute entrée externe est validée côté serveur par un schéma Zod. Le serveur recalcule les totaux et ignore ceux reçus.
@@ -36,6 +37,7 @@ Lis la section utile avant toute tâche. Ne les charge pas en entier.
 9. Un document émis, un paiement et le journal d'audit ne sont jamais modifiés ni supprimés.
 10. Aucune nouvelle dépendance sans accord explicite : propose le nom exact, la raison et une alternative. Jamais `npm audit fix`. Composants shadcn par leur nom uniquement, jamais par une adresse.
 11. Aucune route exposée, dont `/api/auth`, hors d'une fiche de fonctionnalité validée.
+12. `process.env` ne se lit que dans `src/server/env.ts`.
 
 ## Méthode de travail
 
@@ -50,7 +52,6 @@ Lis la section utile avant toute tâche. Ne les charge pas en entier.
 
 ## Pièges connus
 
-- Drizzle 1.0 en version candidate avec Better Auth : utiliser `@better-auth/drizzle-adapter/relations-v2`. Le fichier `src/db/auth-schema.ts` est généré par `npx auth@latest generate`, ne l'édite pas à la main.
+- Drizzle 1.0 en version candidate avec Better Auth : utiliser `@better-auth/drizzle-adapter/relations-v2`. Le fichier `src/server/db/schema/auth.ts` est généré par `npx auth@latest generate`, ne l'édite pas à la main.
 - Connexion groupée de Neon : l'organisation active se fixe avec `set_config('app.organisation_id', ..., true)` à l'intérieur d'une transaction.
 - Poste sous Windows avec Git Bash. Fins de ligne au format LF.
-- L'emplacement `src/db/` est provisoire, la structure définitive des dossiers reste à fixer.
