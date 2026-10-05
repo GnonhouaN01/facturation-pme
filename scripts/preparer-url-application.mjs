@@ -88,6 +88,9 @@ if (!verifie)
   arreter("Le mot de passe a ete renouvele, mais la verification de connexion a echoue.");
 
 ecrirePressePapiers(urlApplication);
+if (lirePressePapiers() !== urlApplication)
+  arreter("Le presse-papiers est reste inchange. Relance le script.");
+console.log(`Contenu du presse-papiers : ${urlApplication.replace(nouveau, "****")}`);
 
 console.log(`Branche visee : ${source.hostname}`);
 console.log("Mot de passe de app_facturation renouvele, connexion verifiee.");
