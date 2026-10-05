@@ -8,6 +8,8 @@
       "Edit(./.env)",
       "Edit(./.env.local)",
       "Edit(./.env.*.local)",
+      "Edit(./drizzle/**)",
+      "Edit(./src/db/auth-schema.ts)",
       "Bash(*.env.local*)",
       "Bash(printenv*)",
       "Bash(env)",
@@ -44,6 +46,19 @@
       "Bash(git diff*)",
       "Bash(git log*)",
       "Bash(node scripts/verifier-*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/apres-modification.mjs"
+          }
+        ]
+      }
     ]
   }
 }
