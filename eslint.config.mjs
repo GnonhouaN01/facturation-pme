@@ -18,6 +18,16 @@ const CLIENT = "src/server/db/client.ts";
 // se cumulent pas. Les blocs ci-dessous visent donc des ensembles de fichiers
 // disjoints, et chacun porte toutes les restrictions qui s'y appliquent.
 
+// Import dynamique import("...") et require("...") d'un module dont le nom
+// vérifie l'expression régulière, chaîne ou gabarit sans expression.
+const chargementsDynamiques = (modules, message) =>
+  [
+    `ImportExpression[source.value=${modules}]`,
+    `ImportExpression[source.quasis.0.value.raw=${modules}]`,
+    `CallExpression[callee.name='require'][arguments.0.value=${modules}]`,
+    `CallExpression[callee.name='require'][arguments.0.quasis.0.value.raw=${modules}]`,
+  ].map((selector) => ({ selector, message }));
+
 // A. drizzle-orm et pg restent confinés à la couche d'accès aux données.
 const MESSAGE_A = "drizzle-orm et pg ne s'importent que dans src/server/db/ (CLAUDE.md, règle 4).";
 const IMPORTS_A = {
@@ -27,16 +37,9 @@ const IMPORTS_A = {
   ],
   patterns: [{ group: ["drizzle-orm/*"], message: MESSAGE_A }],
 };
-// Import dynamique import("...") et require("..."), chaîne ou gabarit sans
-// expression. / désigne la barre oblique, que esquery n'accepte pas
-// littéralement dans une expression régulière.
-const MODULES_A = "/^(drizzle-orm|drizzle-orm\\u002F.*|pg)$/";
-const SYNTAXE_A = [
-  `ImportExpression[source.value=${MODULES_A}]`,
-  `ImportExpression[source.quasis.0.value.raw=${MODULES_A}]`,
-  `CallExpression[callee.name='require'][arguments.0.value=${MODULES_A}]`,
-  `CallExpression[callee.name='require'][arguments.0.quasis.0.value.raw=${MODULES_A}]`,
-].map((selector) => ({ selector, message: MESSAGE_A }));
+// / désigne la barre oblique, que esquery n'accepte pas littéralement
+// dans une expression régulière.
+const SYNTAXE_A = chargementsDynamiques("/^(drizzle-orm|drizzle-orm\\u002F.*|pg)$/", MESSAGE_A);
 
 // B. process.env ne se lit que dans src/server/env.ts, y compris par un
 // import du module process.
@@ -48,6 +51,7 @@ const IMPORTS_B = {
   ],
 };
 const PROPRIETES_B = [{ object: "process", property: "env", message: MESSAGE_B }];
+const SYNTAXE_B = chargementsDynamiques("/^(node:)?process$/", MESSAGE_B);
 
 // C. Le rôle propriétaire n'apparaît nulle part dans l'application.
 const SYNTAXE_C = [
@@ -92,14 +96,23 @@ const eslintConfig = defineConfig([
     ignores: [ENV, CLIENT],
     rules: { "no-restricted-properties": ["error", ...PROPRIETES_B] },
   },
-  // Syntaxe interdite : imports dynamiques (A) et rôle propriétaire (C).
+  // Syntaxe interdite : imports dynamiques (A et B) et rôle propriétaire (C).
   {
     files: [SRC],
-    ignores: [DB],
+    ignores: [DB, ENV],
+    rules: { "no-restricted-syntax": ["error", ...SYNTAXE_A, ...SYNTAXE_B, ...SYNTAXE_C] },
+  },
+  {
+    files: [ENV],
     rules: { "no-restricted-syntax": ["error", ...SYNTAXE_A, ...SYNTAXE_C] },
   },
   {
     files: [DB],
+    ignores: [CLIENT],
+    rules: { "no-restricted-syntax": ["error", ...SYNTAXE_B, ...SYNTAXE_C] },
+  },
+  {
+    files: [CLIENT],
     rules: { "no-restricted-syntax": ["error", ...SYNTAXE_C] },
   },
   // Override default ignores of eslint-config-next.
