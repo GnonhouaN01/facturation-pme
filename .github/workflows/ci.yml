@@ -47,3 +47,63 @@ jobs:
 
       - name: Auditer les dépendances livrées
         run: npm audit --omit=dev --audit-level=high
+
+  integration:
+    name: Base de données et bout en bout
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: facturation_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL_MIGRATION: postgresql://postgres:postgres@localhost:5432/facturation_test
+      DATABASE_URL: postgresql://app_facturation:mot-de-passe-de-test@localhost:5432/facturation_test
+      BETTER_AUTH_SECRET: secret-de-test-sans-valeur-hors-de-la-ci
+      BETTER_AUTH_URL: http://localhost:3000
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v7
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Préparer la base de test
+        run: node scripts/preparer-base-test.mjs
+
+      - name: Appliquer les migrations
+        run: npm run db:migrate
+
+      - name: Vérifier les connexions et les rôles
+        run: node scripts/verifier-connexion.mjs
+
+      - name: Vérifier l'isolation entre organisations
+        run: node scripts/verifier-isolation.mjs
+
+      - name: Vérifier Better Auth
+        run: npx tsx scripts/verifier-auth.mts
+
+      - name: Construire l'application
+        run: npm run build
+
+      - name: Installer Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Lancer les tests de bout en bout
+        run: npm run test:e2e
