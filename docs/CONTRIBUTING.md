@@ -73,3 +73,25 @@ Un test écrit après le code doit être vu en échec une fois, en faussant temp
 - Lire toute commande soumise à autorisation avant de l'accepter. Ne jamais accorder « toujours autoriser » à une commande que l'on ne comprend pas.
 - Les permissions et les fichiers du dossier `.claude/` se modifient à la main, jamais par l'assistant.
 - Quand il signale un écart ou une question, trancher soi-même et l'écrire dans le document concerné.
+
+## 7. Migrations de base de données
+
+| Base | Qui applique | Comment |
+|---|---|---|
+| `dev` | Le développeur | `npm run db:migrate`, sur son poste |
+| Base de test de la CI | La CI | Automatiquement, depuis une base vide, à chaque PR |
+| `preview` | GitHub Actions | Workflow « Migrations », choix `preview` |
+| `production` | GitHub Actions | Workflow « Migrations », choix `production`, après approbation |
+
+Ordre pour une fonctionnalité qui modifie la base :
+
+1. Générer la migration, lire le SQL, l'appliquer sur `dev`.
+2. Ouvrir la PR. La CI rejoue toutes les migrations sur une base neuve.
+3. Fusionner, puis lancer aussitôt le workflow « Migrations » pour `production` et l'approuver.
+4. Lancer le workflow pour `preview`.
+
+Règles :
+
+- L'adresse du rôle propriétaire de `preview` et de `production` n'existe que dans les environnements GitHub. Elle n'est jamais copiée sur un poste.
+- Une migration ajoute avant de retirer : une colonne se crée dans une première livraison, l'ancienne se supprime dans une suivante, une fois le code déployé.
+- Une migration appliquée ne se modifie plus. Une erreur se corrige par une nouvelle migration.
