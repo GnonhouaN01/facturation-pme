@@ -16,10 +16,6 @@ updates:
         patterns:
           - "next"
           - "eslint-config-next"
-      drizzle:
-        patterns:
-          - "drizzle-orm"
-          - "drizzle-kit"
       better-auth:
         patterns:
           - "better-auth"
@@ -28,6 +24,10 @@ updates:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-major"
+      # Drizzle publie des versions intermediaires (suffixe en fin de numero) que
+      # Dependabot propose a tort. Mise a jour manuelle jusqu'a la version 1.0 stable.
+      - dependency-name: "drizzle-orm"
+      - dependency-name: "drizzle-kit"
 
   - package-ecosystem: github-actions
     directory: /
