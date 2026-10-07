@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qualite:
+    name: Qualité
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v7
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Vérifier le formatage
+        run: npm run format:check
+
+      - name: Analyser le code
+        run: npm run lint
+
+      - name: Vérifier les types
+        run: npm run typecheck
+
+      - name: Lancer les tests unitaires
+        run: npm test
+
+      - name: Construire l'application
+        run: npm run build
+
+      - name: Auditer les dépendances livrées
+        run: npm audit --omit=dev --audit-level=high

@@ -13,7 +13,8 @@
     "db:migrate": "drizzle-kit migrate",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",
