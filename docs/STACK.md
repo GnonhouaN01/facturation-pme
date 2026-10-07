@@ -114,6 +114,7 @@ Chaque environnement a son propre mot de passe pour le rôle `app_facturation` e
 | `scripts/renouveler-mot-de-passe-app.mjs` | Renouvelle le mot de passe applicatif de la branche `dev` |
 | `scripts/preparer-url-application.mjs` | Prépare l'adresse applicative d'une autre branche, pour Vercel |
 | `scripts/retablir-acces-dev.mjs` | Réinscrit dans `.env.local` les deux adresses de la branche `dev`, après recréation de la branche ou renouvellement du mot de passe du propriétaire |
+| `scripts/preparer-base-test.mjs` | Prépare la base temporaire de la CI : rôle restreint et droits. Refuse toute base non locale |
 
 ## 11. Mise en garde : expiration des branches Neon
 
@@ -122,3 +123,17 @@ Dans la console de Neon, la case « Automatically delete branch after » est coc
 - Toute nouvelle branche durable se crée avec cette case **décochée**.
 - La branche `production`, branche par défaut, ne peut pas expirer.
 - Après la recréation d'une branche, son serveur change : relancer `scripts/retablir-acces-dev.mjs` pour `dev`, ou `scripts/preparer-url-application.mjs` puis mettre à jour Vercel pour `preview`.
+
+## 12. Décisions des phases 9 et 10
+
+| Sujet | Décision | Raison |
+|---|---|---|
+| Envoi d'emails | Compte Gmail dédié à l'application, environ 500 messages par jour, expéditeur en `@gmail.com` | Gratuit, sans nom de domaine. Remplace Resend, qui en exige un |
+| Marqueur serveur | Paquet `server-only` 0.0.1, en tête des points d'entrée de `src/server/` | Fait échouer la construction si du code serveur part vers le navigateur |
+| Intégration continue | GitHub Actions : un groupe « Qualité », un groupe « Base de données et bout en bout » avec PostgreSQL 18 temporaire | Vérification sur une machine neuve à chaque PR |
+| Contrôles obligatoires | Qualité, Base de données et bout en bout, CodeQL | Aucune fusion possible si l'un échoue |
+| Règles d'architecture | ESLint : Drizzle et le pilote hors de `src/server/db/`, `process.env` hors de `src/server/env.ts`, mention de `DATABASE_URL_MIGRATION` dans `src/` | Règles vérifiées par la CI, variantes de contournement comprises |
+| Migrations de `preview` et de `production` | Workflow « Migrations », lancé à la demande depuis `main`, avec approbation pour la production | Le secret du rôle propriétaire ne quitte jamais GitHub |
+| Mises à jour des dépendances | Dependabot hebdomadaire, paquets liés regroupés, versions majeures écartées, Drizzle mis à jour à la main | Éviter les mises à jour partielles et les versions intermédiaires |
+| Tests avec base sur le poste | Branche `dev` de Neon, chaque test créant et supprimant ses organisations | Pas de PostgreSQL à installer localement |
+

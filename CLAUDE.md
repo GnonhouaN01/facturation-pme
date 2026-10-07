@@ -16,6 +16,10 @@ Lis la section utile avant toute tâche. Ne les charge pas en entier.
 - `docs/STRUCTURE.md` : structure des dossiers, règles d'import en section 7
 - `docs/EXCEPTIONS-SECURITE.md` : failles connues et acceptées
 - `docs/CONTRIBUTING.md` : conventions de branches, de commits et de PR. Modèle de fiche : `docs/features/_modele.md`
+- `docs/PLAN.md` : jalons, ordre des fonctionnalités, stratégie de tests, définition de « terminé »
+- `docs/CONFIGURATION.md` : installation et réglages, commandes de référence
+- `docs/PLAN.md` : jalons, ordre des fonctionnalités, stratégie de tests, définition de « terminé »
+- `docs/CONFIGURATION.md` : installation et réglages, commandes de référence
 
 ## Commandes
 
