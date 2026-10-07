@@ -231,4 +231,4 @@ Les variables du thème shadcn/ui reprennent ces jetons.
 
 ### État du système
 
-Première version : un thème clair, dix-sept couleurs, neuf styles de texte, sept pas d'espacement, trois rayons. Pas encore de thème sombre, de logo ni de composants documentés.
+Première version : un thème clair, dix-huit couleurs, neuf styles de texte, sept pas d'espacement, trois rayons. Pas encore de thème sombre, de logo ni de composants documentés.
