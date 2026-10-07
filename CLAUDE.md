@@ -15,6 +15,7 @@ Lis la section utile avant toute tâche. Ne les charge pas en entier.
 - `docs/STACK.md` : outils retenus et choix écartés
 - `docs/STRUCTURE.md` : structure des dossiers, règles d'import en section 7
 - `docs/EXCEPTIONS-SECURITE.md` : failles connues et acceptées
+- `docs/CONTRIBUTING.md` : conventions de branches, de commits et de PR. Modèle de fiche : `docs/features/_modele.md`
 
 ## Commandes
 
