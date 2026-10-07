@@ -1,0 +1,46 @@
+name: Migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      environnement:
+        description: Base à migrer
+        type: choice
+        required: true
+        options:
+          - preview
+          - production
+
+permissions:
+  contents: read
+
+concurrency:
+  group: migrations-${{ inputs.environnement }}
+  cancel-in-progress: false
+
+jobs:
+  migrer:
+    name: Migrer ${{ inputs.environnement }}
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ inputs.environnement }}
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v7
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Appliquer les migrations
+        env:
+          DATABASE_URL_MIGRATION: ${{ secrets.DATABASE_URL_MIGRATION }}
+        run: |
+          export DATABASE_URL_MIGRATION="${DATABASE_URL_MIGRATION/sslmode=require/sslmode=verify-full}"
+          npm run db:migrate
