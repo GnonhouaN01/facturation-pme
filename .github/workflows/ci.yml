@@ -97,7 +97,7 @@ jobs:
         run: node scripts/verifier-isolation.mjs
 
       - name: Vérifier Better Auth
-        run: npx tsx scripts/verifier-auth.mts
+        run: npm run verifier:auth
 
       - name: Construire l'application
         run: npm run build
