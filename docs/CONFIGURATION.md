@@ -185,6 +185,17 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 
 **Résultat.** Dans `pg_roles`, `app_facturation` a ses quatre attributs sensibles à `false`, alors que `neondb_owner` peut contourner l'isolation.
 
+**Tables en ajout seul.** Les droits par défaut ci-dessus valent pour toute nouvelle table. Une table en ajout seul (aujourd'hui `journal_audit`, depuis la fonctionnalité 0.3) se les voit retirer par une migration `retirer-droits-<table>` : le rôle de l'application n'y garde que `SELECT` et `INSERT`. Vérification manuelle, en lecture seule, avec le rôle de l'application, sur chaque branche après le workflow des migrations :
+
+```sql
+SELECT privilege_type
+FROM information_schema.role_table_grants
+WHERE table_schema = 'public' AND table_name = 'journal_audit' AND grantee = 'app_facturation'
+ORDER BY privilege_type;
+```
+
+Attendu : exactement `INSERT` et `SELECT`.
+
 ### 7c et 7d. Drizzle et première migration
 
 ```
@@ -370,5 +381,6 @@ Les deux workflows n'ont que le droit de lire le code. Les mots de passe écrits
 | Renouveler le mot de passe applicatif de `dev` | `node scripts/renouveler-mot-de-passe-app.mjs` |
 | Rétablir l'accès à `dev` après recréation de la branche, et reposer la marque de test | `node scripts/retablir-acces-dev.mjs` |
 | Créer la migration qui force la règle d'une nouvelle table | `npx drizzle-kit generate --custom --name forcer-isolation-<table>`, puis coller à la main `ALTER TABLE "<table>" FORCE ROW LEVEL SECURITY;` |
+| Créer la migration qui retire les droits de modification d'une table en ajout seul | `npx drizzle-kit generate --custom --name retirer-droits-<table>`, puis coller à la main `REVOKE UPDATE, DELETE, TRUNCATE ON TABLE "<table>" FROM "app_facturation";` |
 | Afficher les adresses sans les mots de passe | `sed -E 's#://([^:]+):[^@]+@#://\1:****@#' .env.local \| grep DATABASE` |
 | Auditer le code livré | `npm audit --omit=dev` |

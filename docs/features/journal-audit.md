@@ -1,6 +1,6 @@
 # Fonctionnalité : journal d'audit
 
-Statut : validée
+Statut : en cours
 
 Jalon 0, fonctionnalité 0.3 de `docs/PLAN.md`. Taille S.
 
@@ -342,27 +342,27 @@ Le rôle `app_facturation` existe sur les quatre bases (`dev`, `preview`, `produ
 
 ## Critères d'acceptation
 
-- [ ] `journal_audit` est déclarée avec `colonneOrganisation()`, `regleIsolation()` et l'index `(organisation_id, cree_le)` ; la migration générée a été relue et ne touche pas `temoin_isolation`.
-- [ ] Règle activée et forcée en base ; le test d'inventaire passe et inclut `journal_audit`.
-- [ ] Le rôle de l'application a `SELECT` et `INSERT`, et n'a ni `UPDATE`, ni `DELETE`, ni `TRUNCATE` sur `journal_audit`, sur `dev` et en CI ; puis vérifié sur `production` et `preview` après le workflow.
-- [ ] `UPDATE`, `DELETE`, `TRUNCATE` et `INSERT ... ON CONFLICT DO UPDATE` sur le journal sont refusés par `42501`, et les lignes restent intactes.
-- [ ] Supprimer une organisation qui a une entrée au journal est refusé (`23001`) ; supprimer le compte de l'auteur laisse l'entrée intacte, `auteur_id` compris.
-- [ ] `journaliser` n'a pas de paramètre d'organisation ; l'entrée écrite porte l'organisation de la transaction ; une entrée qui fournit une organisation est refusée.
-- [ ] Une action annulée n'a pas de trace ; une trace invalide annule l'action.
-- [ ] Sans organisation active, `journaliser` n'écrit rien.
-- [ ] Une action hors liste, une clé inconnue, un texte libre dans les détails, un identifiant invalide sont refusés par `EntreeJournalInvalide`, au message fixe, sans valeur reçue ni `cause`, et sans requête envoyée.
-- [ ] Le test sur les schémas de détails échoue si l'un admet une clé supplémentaire ou un champ autre qu'identifiant, valeur énumérée, entier ou booléen.
-- [ ] La liste fermée contient exactement les onze actions de la section 6.1.
-- [ ] `journaliser(db, ...)` ne compile pas.
-- [ ] ESLint refuse l'import de `src/server/db/requetes/journal.ts` hors de `src/server/journal/audit.ts` et des tests.
-- [ ] `verifierIsolation(journalAudit, ..., { ajoutSeul: true })` passe (contrôles 0 à 9) ; la même option sur `temoin_isolation` échoue au contrôle 0 ; `verifierIsolation(temoinIsolation, ...)` sans option passe toujours ses huit contrôles inchangés.
-- [ ] Le test d'inventaire échoue si l'on rend temporairement `UPDATE` au rôle de l'application sur `journal_audit` (vérification manuelle sur `dev`, annulée ensuite).
-- [ ] `nettoyer` ne lève pas d'erreur avec une table en ajout seul, supprime les organisations sans entrée au journal et laisse les autres.
-- [ ] `CLAUDE.md` contient l'exception E1 ; `STRUCTURE.md` (sections 3.1 et 7) est à jour.
+- [x] `journal_audit` est déclarée avec `colonneOrganisation()`, `regleIsolation()` et l'index `(organisation_id, cree_le)` ; la migration générée a été relue et ne touche pas `temoin_isolation`.
+- [x] Règle activée et forcée en base ; le test d'inventaire passe et inclut `journal_audit`.
+- [ ] Le rôle de l'application a `SELECT` et `INSERT`, et n'a ni `UPDATE`, ni `DELETE`, ni `TRUNCATE` sur `journal_audit`, sur `dev` et en CI ; puis vérifié sur `production` et `preview` après le workflow. `dev` : prouvé (`schema-journal.integration.test.ts` et test d'inventaire). CI et branches déployées : à constater.
+- [x] `UPDATE`, `DELETE`, `TRUNCATE` et `INSERT ... ON CONFLICT DO UPDATE` sur le journal sont refusés par `42501`, et les lignes restent intactes.
+- [x] Supprimer une organisation qui a une entrée au journal est refusé (`23001`) ; supprimer le compte de l'auteur laisse l'entrée intacte, `auteur_id` compris.
+- [x] `journaliser` n'a pas de paramètre d'organisation ; l'entrée écrite porte l'organisation de la transaction ; une entrée qui fournit une organisation est refusée.
+- [x] Une action annulée n'a pas de trace ; une trace invalide annule l'action.
+- [x] Sans organisation active, `journaliser` n'écrit rien.
+- [x] Une action hors liste, une clé inconnue, un texte libre dans les détails, un identifiant invalide sont refusés par `EntreeJournalInvalide`, au message fixe, sans valeur reçue ni `cause`, et sans requête envoyée.
+- [x] Le test sur les schémas de détails échoue si l'un admet une clé supplémentaire ou un champ autre qu'identifiant, valeur énumérée, entier ou booléen.
+- [x] La liste fermée contient exactement les onze actions de la section 6.1.
+- [x] `journaliser(db, ...)` ne compile pas.
+- [x] ESLint refuse l'import de `src/server/db/requetes/journal.ts` hors de `src/server/journal/audit.ts` et des tests.
+- [x] `verifierIsolation(journalAudit, ..., { ajoutSeul: true })` passe (contrôles 0 à 9) ; la même option sur `temoin_isolation` échoue au contrôle 0 ; `verifierIsolation(temoinIsolation, ...)` sans option passe toujours ses huit contrôles inchangés.
+- [x] Le test d'inventaire échoue si l'on rend temporairement `UPDATE` au rôle de l'application sur `journal_audit` (vérification manuelle sur `dev`, annulée ensuite). Vérifié par le développeur sur `dev` : avec `GRANT UPDATE` rendu au rôle de l'application sur `journal_audit`, les tests d'intégration donnent 7 failed dans 3 fichiers ; après `REVOKE`, 64 passed, et les droits valent lire et ajouter seulement (`UPDATE`, `DELETE`, `TRUNCATE` à `false`).
+- [x] `nettoyer` ne lève pas d'erreur avec une table en ajout seul, supprime les organisations sans entrée au journal et laisse les autres.
+- [x] `CLAUDE.md` contient l'exception E1 ; `STRUCTURE.md` (sections 3.1 et 7) est à jour.
 - [x] `DESIGN.md` (auteur sans clé étrangère, index, `TRUNCATE`), `USECASES.md` (UC-09), `SPEC.md` (point ouvert sur les connexions sensibles) et `CONFIGURATION.md` (organisations de test laissées sur `dev`) sont à jour (faits à la validation).
-- [ ] Tout nouveau fichier de `src/server/` commence par `import "server-only";`.
-- [ ] Aucune dépendance ajoutée : `package-lock.json` inchangé.
-- [ ] `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:integration` (sur `dev` et en CI) passent.
+- [x] Tout nouveau fichier de `src/server/` commence par `import "server-only";`.
+- [x] Aucune dépendance ajoutée : `package-lock.json` inchangé.
+- [ ] `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:integration` (sur `dev` et en CI) passent. `dev` : prouvé le 2026-10-09. CI : à constater sur la PR.
 
 ## Tests à écrire
 
@@ -372,49 +372,49 @@ Valeurs factices ou aléatoires (`crypto.randomUUID()`), aucun identifiant fixe 
 
 Fichier : `src/server/journal/audit.test.ts` (sans base : la validation précède toute requête ; `tx` factice dont l'insertion est espionnée).
 
-- [ ] Entrée valide pour une action de la liste : `insererEntreeJournal` appelé une fois, avec le `type_ressource` de la liste, sans organisation ni `cree_le`.
-- [ ] Action absente de la liste (dont une action reportée, `facture.emise`), chaîne vide, casse différente (`Membre.ajoute`) : refus, aucune insertion.
-- [ ] Clé supplémentaire `organisationId`, `organisation_id`, `typeRessource`, `creeLe` : refus.
-- [ ] `auteurId` ou `ressourceId` vide, non UUID, entouré d'espaces, avec un essai d'injection (`' OR '1'='1`) : refus.
-- [ ] Détails avec une clé inconnue (`email`, `nom`, `telephone`, `motif`) : refus.
-- [ ] Message exactement « Entrée du journal d'audit invalide. » ; ni le message, ni `String(erreur)`, ni `JSON.stringify(erreur)` ne contiennent une valeur reçue ; pas de `cause`.
-- [ ] `// @ts-expect-error` : `journaliser(db, ...)` ne compile pas (vérifié par `npm run typecheck`).
+- [x] Entrée valide pour une action de la liste : `insererEntreeJournal` appelé une fois, avec le `type_ressource` de la liste, sans organisation ni `cree_le`.
+- [x] Action absente de la liste (dont une action reportée, `facture.emise`), chaîne vide, casse différente (`Membre.ajoute`) : refus, aucune insertion.
+- [x] Clé supplémentaire `organisationId`, `organisation_id`, `typeRessource`, `creeLe` : refus.
+- [x] `auteurId` ou `ressourceId` vide, non UUID, entouré d'espaces, avec un essai d'injection (`' OR '1'='1`) : refus.
+- [x] Détails avec une clé inconnue (`email`, `nom`, `telephone`, `motif`) : refus.
+- [x] Message exactement « Entrée du journal d'audit invalide. » ; ni le message, ni `String(erreur)`, ni `JSON.stringify(erreur)` ne contiennent une valeur reçue ; pas de `cause`.
+- [x] `// @ts-expect-error` : `journaliser(db, ...)` ne compile pas (vérifié par `npm run typecheck`).
 
 Fichier : `src/server/journal/actions.test.ts`.
 
-- [ ] La liste contient exactement les onze actions de la section 6.1, et leur type de ressource.
-- [ ] Pour chaque action, `z.toJSONSchema` du schéma des détails : objet, `additionalProperties: false`, chaque propriété est une chaîne `format: uuid`, une chaîne d'un `enum`, un entier ou un booléen.
-- [ ] Le contrôle accepte un schéma de démonstration fait des quatre briques, et refuse des schémas de démonstration contenant `z.string()`, `z.iso.date()`, `z.number()` (non entier), `z.array(...)`, un `z.object` ouvert ou un objet imbriqué (le contrôle ne réussit pas à vide).
-- [ ] Chaque type de ressource appartient à la liste fermée des types (`organisation`, `invitation`, `membre`).
+- [x] La liste contient exactement les onze actions de la section 6.1, et leur type de ressource.
+- [x] Pour chaque action, `z.toJSONSchema` du schéma des détails : objet, `additionalProperties: false`, chaque propriété est une chaîne `format: uuid`, une chaîne d'un `enum`, un entier ou un booléen.
+- [x] Le contrôle accepte un schéma de démonstration fait des quatre briques, et refuse des schémas de démonstration contenant `z.string()`, `z.iso.date()`, `z.number()` (non entier), `z.array(...)`, un `z.object` ouvert ou un objet imbriqué (le contrôle ne réussit pas à vide).
+- [x] Chaque type de ressource appartient à la liste fermée des types (`organisation`, `invitation`, `membre`).
 
 Fichier : `src/server/db/regles-import.test.ts` (ajouts).
 
-- [ ] Import de `requetes/journal.ts` depuis `src/server/services/`, `src/app/` ou `src/server/db/requetes/autre.ts` : erreur.
-- [ ] Le même import depuis `src/server/journal/audit.ts` et depuis un fichier `*.test.ts` : aucune erreur.
+- [x] Import de `requetes/journal.ts` depuis `src/server/services/`, `src/app/` ou `src/server/db/requetes/autre.ts` : erreur.
+- [x] Le même import depuis `src/server/journal/audit.ts` et depuis un fichier `*.test.ts` : aucune erreur.
 
 ### Tests d'intégration
 
 Fichier : `src/server/db/schema-journal.integration.test.ts`.
 
-- [ ] `verifierIsolation(journalAudit, fabriquer, { ajoutSeul: true })` : contrôles 0 à 9.
-- [ ] Le rôle de l'application a `SELECT` et `INSERT`, pas `UPDATE`, `DELETE` ni `TRUNCATE` (`has_table_privilege`).
-- [ ] Une entrée écrite a `cree_le` non nul, compris entre le début et la fin du test.
+- [x] `verifierIsolation(journalAudit, fabriquer, { ajoutSeul: true })` : contrôles 0 à 9.
+- [x] Le rôle de l'application a `SELECT` et `INSERT`, pas `UPDATE`, `DELETE` ni `TRUNCATE` (`has_table_privilege`).
+- [x] Une entrée écrite a `cree_le` non nul, compris entre le début et la fin du test.
 
 Fichier : `src/server/db/schema-isolation.integration.test.ts` (inventaire, section 8.2).
 
-- [ ] L'ensemble des tables en ajout seul est exactement `TABLES_AJOUT_SEUL`.
-- [ ] Aucune table de `public` n'accorde `TRUNCATE` au rôle de l'application.
-- [ ] Toute table portant `organisation_id`, hors exemption, a un index qui commence par `organisation_id`.
+- [x] L'ensemble des tables en ajout seul est exactement `TABLES_AJOUT_SEUL`.
+- [x] Aucune table de `public` n'accorde `TRUNCATE` au rôle de l'application.
+- [x] Toute table portant `organisation_id`, hors exemption, a un index qui commence par `organisation_id`.
 
 Fichier : `src/server/db/outils-test/outils-test.integration.test.ts` (ajouts).
 
-- [ ] `verifierIsolation(temoinIsolation, ..., { ajoutSeul: true })` échoue au contrôle 0.
-- [ ] `nettoyer` avec `tablesAjoutSeul: [journalAudit]` : l'organisation sans entrée est supprimée, celle qui en a une reste, aucune erreur, appelable deux fois.
+- [x] `verifierIsolation(temoinIsolation, ..., { ajoutSeul: true })` échoue au contrôle 0.
+- [x] `nettoyer` avec `tablesAjoutSeul: [journalAudit]` : l'organisation sans entrée est supprimée, celle qui en a une reste, aucune erreur, appelable deux fois.
 
 Fichier : `src/server/db/journal.integration.test.ts`. Ces tests et les tests d'attaque vivent dans `src/server/db/`, et non dans `src/server/journal/` : les règles ESLint de la 0.2 n'autorisent `db` et `drizzle-orm` que dans les tests de `src/server/db/` (constaté en écrivant les tests).
 
-- [ ] Dans une transaction de A, `journaliser` écrit une entrée qui porte l'organisation A, l'auteur, l'action, le type de ressource de la liste, la ressource, les détails ; une transaction de B ne la voit pas.
-- [ ] Deux entrées écrites dans une même transaction portent le même `cree_le`.
+- [x] Dans une transaction de A, `journaliser` écrit une entrée qui porte l'organisation A, l'auteur, l'action, le type de ressource de la liste, la ressource, les détails ; une transaction de B ne la voit pas.
+- [x] Deux entrées écrites dans une même transaction portent le même `cree_le`.
 
 ### Tests d'attaque
 
@@ -422,38 +422,38 @@ Les quatre tests obligatoires du modèle (sans session, autre organisation par u
 
 Effacer ou modifier ses traces (T-21), organisation A active, sur une entrée validée de A :
 
-- [ ] Modification (`UPDATE ... SET action = ...`, puis `SET auteur_id = ...`) : refus `42501`, entrée intacte.
-- [ ] Suppression (`DELETE` filtré sur l'entrée, puis sans filtre) : refus `42501`, entrée intacte.
-- [ ] Vidage (`TRUNCATE journal_audit`) : refus `42501`, entrées de A et de B intactes.
-- [ ] Réécriture par `INSERT ... ON CONFLICT (id) DO UPDATE` avec l'identifiant de l'entrée : refus `42501`, entrée intacte.
-- [ ] Sans organisation active, par `db` : `UPDATE` et `DELETE` refusés `42501` (le refus de droit précède la règle).
-- [ ] Suppression de l'organisation A par `db` : refus `23001`, entrées intactes.
-- [ ] Suppression du compte de l'auteur (ligne `user` créée pour le test, puis supprimée par `db`) : la suppression réussit, l'entrée reste avec le même `auteur_id`.
+- [x] Modification (`UPDATE ... SET action = ...`, puis `SET auteur_id = ...`) : refus `42501`, entrée intacte.
+- [x] Suppression (`DELETE` filtré sur l'entrée, puis sans filtre) : refus `42501`, entrée intacte.
+- [x] Vidage (`TRUNCATE journal_audit`) : refus `42501`, entrées de A et de B intactes.
+- [x] Réécriture par `INSERT ... ON CONFLICT (id) DO UPDATE` avec l'identifiant de l'entrée : refus `42501`, entrée intacte.
+- [x] Sans organisation active, par `db` : `UPDATE` et `DELETE` refusés `42501` (le refus de droit précède la règle).
+- [x] Suppression de l'organisation A par `db` : refus `23001`, entrées intactes.
+- [x] Suppression du compte de l'auteur (ligne `user` créée pour le test, puis supprimée par `db`) : la suppression réussit, l'entrée reste avec le même `auteur_id`.
 
 Trace au nom d'une autre organisation :
 
-- [ ] `journaliser` avec une entrée contenant `organisationId: b` : `EntreeJournalInvalide`, rien n'est écrit.
-- [ ] Organisation A active, `tx.insert(journalAudit).values({ organisationId: b, ... })` direct : refus `42501`.
-- [ ] Organisation A active, l'entrée écrite par `journaliser` porte A ; relue dans une transaction de B : absente.
+- [x] `journaliser` avec une entrée contenant `organisationId: b` : `EntreeJournalInvalide`, rien n'est écrit.
+- [x] Organisation A active, `tx.insert(journalAudit).values({ organisationId: b, ... })` direct : refus `42501`.
+- [x] Organisation A active, l'entrée écrite par `journaliser` porte A ; relue dans une transaction de B : absente.
 
 Sans organisation active :
 
-- [ ] `journaliser` dans une transaction ouverte par `db.transaction` sans `set_config`, puis avec le réglage fixé à `''` : refus (code constaté en phase rouge, `42501` attendu), aucune ligne écrite.
+- [x] `journaliser` dans une transaction ouverte par `db.transaction` sans `set_config`, puis avec le réglage fixé à `''` : refus (code constaté en phase rouge, `42501` attendu), aucune ligne écrite.
 
 Annulation de la transaction (S-70) :
 
-- [ ] Action (insertion dans `temoin_isolation`) puis `journaliser`, puis exception levée dans `travail` : ni la ligne témoin ni l'entrée n'existent.
-- [ ] Action puis `journaliser` avec des détails invalides : `EntreeJournalInvalide` remonte, la ligne témoin n'existe pas.
-- [ ] `journaliser` puis action refusée par la base (insertion témoin pour B, `42501`) : l'entrée n'existe pas.
-- [ ] Action et `journaliser` réussis : les deux existent après la validation.
+- [x] Action (insertion dans `temoin_isolation`) puis `journaliser`, puis exception levée dans `travail` : ni la ligne témoin ni l'entrée n'existent.
+- [x] Action puis `journaliser` avec des détails invalides : `EntreeJournalInvalide` remonte, la ligne témoin n'existe pas.
+- [x] `journaliser` puis action refusée par la base (insertion témoin pour B, `42501`) : l'entrée n'existe pas.
+- [x] Action et `journaliser` réussis : les deux existent après la validation.
 
 Injection :
 
-- [ ] Valeurs d'injection SQL dans `ressourceId`, `auteurId` et `action` : refusées par la validation, rien n'est écrit.
+- [x] Valeurs d'injection SQL dans `ressourceId`, `auteurId` et `action` : refusées par la validation, rien n'est écrit.
 
 ### Tests de bout en bout
 
-- [ ] Aucun. Aucune page, aucune route.
+- [x] Aucun. Aucune page, aucune route.
 
 ## Fichiers concernés
 
@@ -533,6 +533,10 @@ Chacune est ajoutée à `src/server/journal/actions.ts`, avec ses détails et se
 
 Les noms ci-dessus sont indicatifs ; chaque fiche les fixe.
 
+### Au jalon 5, avec la question du déclencheur
+
+- `cree_le` fourni par l'appelant : le rôle de l'application peut encore donner sa propre valeur de `cree_le` lors d'une insertion directe dans `journal_audit`. `journaliser` ne le permet pas, et la règle ESLint confine l'insertion à `requetes/journal.ts`, mais la base elle-même ne l'interdit pas. Pistes : droit `INSERT` limité aux colonnes autres que `cree_le` (forme de migration personnalisée à valider), ou déclencheur qui impose `now()`. Consigné à la relecture de l'étape 4 de l'implémentation, sans changement du code.
+
 ### Conservation et purge
 
 Hors périmètre, et sans rien à prévoir en 0.3 : `THREATS.md` section 7.2 fixe la conservation à « la durée de vie de l'organisation », suppression « avec l'organisation ». Aucune purge par ancienneté n'est exigée. Le seul effet à prévoir, la suppression avec l'organisation, est reporté à la 2.5 ci-dessus. Si le cadre légal ivoirien (point ouvert de `THREATS.md` section 10) impose une durée, elle fera l'objet de sa propre fiche.
@@ -550,3 +554,20 @@ Hors périmètre, et sans rien à prévoir en 0.3 : `THREATS.md` section 7.2 fix
 9. **Vérification après déploiement.** Requête manuelle en lecture seule (section « Ordre de déploiement »). `scripts/verifier-tables.mjs` n'est pas modifié.
 
 Exigence confirmée à la validation : le schéma des détails est strict. Il refuse toute clé inconnue et n'accepte que des identifiants, des valeurs énumérées, des nombres et des booléens. Aucun texte libre (section 6.2).
+
+## Notes de l'implémentation
+
+### Correction du typage de `audit.test.ts`, validée par le développeur
+
+Constat : `npm run typecheck` refusait `src/server/journal/audit.test.ts`. Le test parcourt la table `RESSOURCES` des actions attendues et passe chaque nom à `journaliser`, dont le paramètre `action` est typé par la liste fermée (`ActionJournal`, section 7). Le comportement testé était juste ; seul le typage du test était faux. Deux lignes du test ont changé, aucune assertion :
+
+- `const RESSOURCES: Record<ActionJournal, string>` (au lieu de `Record<string, string>`), avec `import type { ActionJournal } from "./actions"` ;
+- `test.each(Object.entries(RESSOURCES) as [ActionJournal, string][])`.
+
+1. **Pourquoi le défaut n'était pas visible en phase rouge.** La liste des actions était alors vide (`ACTIONS_JOURNAL = {}`, typée `Record<string, ...>`) : `ActionJournal` valait donc `string`, et toute chaîne était acceptée par le type. Le défaut n'est apparu qu'avec la liste des onze actions, qui a donné à `ActionJournal` son type précis.
+2. **Pourquoi deux lignes, et non une.** La première recommandation (changer seulement le type de `RESSOURCES`) **n'avait pas été essayée** avant d'être proposée. Appliquée, elle laissait l'erreur : en TypeScript, `Object.entries` renvoie toujours des clés de type `string`, quel que soit le type de l'objet. Le second changement convertit le résultat du parcours. Cette conversion est sûre : le type `Record<ActionJournal, string>` interdit à `RESSOURCES` toute clé hors de la liste.
+3. **Pourquoi l'option B est écartée.** Élargir `EntreeJournal.action` à `string` aurait fait passer le test sans le modifier, mais aurait retiré à toute l'application la vérification des noms d'action à la compilation : une action mal orthographiée n'aurait été refusée qu'à l'exécution, par `EntreeJournalInvalide`.
+
+### Code de refus sans organisation active
+
+Constaté sur `dev` : `42501`. C'est la règle d'isolation (`WITH CHECK`) qui refuse l'insertion, avant la contrainte `NOT NULL`. Les deux tests d'attaque « sans organisation active » passent sans ajustement.

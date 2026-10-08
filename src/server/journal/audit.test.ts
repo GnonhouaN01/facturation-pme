@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { BaseDeDonnees, TransactionOrganisation } from "../db/client";
 import { insererEntreeJournal } from "../db/requetes/journal";
 
+import type { ActionJournal } from "./actions";
 import { EntreeJournalInvalide, journaliser, type EntreeJournal } from "./audit";
 
 // Test sans base : la validation précède toute requête. L'insertion est
@@ -20,7 +21,7 @@ const MESSAGE = "Entrée du journal d'audit invalide.";
 // Transaction factice : la validation ne doit jamais s'en servir.
 const tx = {} as TransactionOrganisation;
 
-const RESSOURCES: Record<string, string> = {
+const RESSOURCES: Record<ActionJournal, string> = {
   "organisation.parametres_modifies": "organisation",
   "organisation.instructions_paiement_modifiees": "organisation",
   "organisation.visibilite_modifiee": "organisation",
@@ -51,7 +52,7 @@ beforeEach(() => {
 });
 
 describe("journaliser : entrée valide", () => {
-  test.each(Object.entries(RESSOURCES))(
+  test.each(Object.entries(RESSOURCES) as [ActionJournal, string][])(
     "%s : une insertion, type de ressource %s lu dans la liste, sans organisation ni horodatage",
     async (action, ressource) => {
       const auteurId = randomUUID();

@@ -12,6 +12,7 @@ const TESTS = "src/**/*.test.{ts,tsx}";
 const TESTS_DB = "src/server/db/**/*.test.{ts,tsx}";
 const OUTILS_TEST = "src/server/db/outils-test/**";
 const CONFIG_AUTH = "src/server/auth/config.ts";
+const JOURNAL_AUDIT = "src/server/journal/audit.ts";
 
 // En configuration plate, une règle déclarée par un bloc postérieur remplace
 // entièrement celle d'un bloc antérieur pour un même fichier : les options ne
@@ -81,6 +82,19 @@ const IMPORTS_E = {
   patterns: [{ regex: "(^|/)db/client$", importNames: ["db"], message: MESSAGE_E }],
 };
 
+// F. L'insertion au journal d'audit ne s'importe que depuis la fonction
+// d'écriture, qui valide l'entrée. Depuis un autre fichier de requetes/,
+// l'import relatif « ./journal » est aussi refusé.
+const MESSAGE_F =
+  "src/server/db/requetes/journal.ts ne s'importe que depuis src/server/journal/audit.ts : écrire au journal par journaliser (docs/features/journal-audit.md, section 7).";
+const IMPORTS_F = {
+  patterns: [{ regex: "(^|/)requetes/journal$", message: MESSAGE_F }],
+};
+const IMPORTS_F_REQUETES = {
+  patterns: [{ regex: "^\\./journal$", message: MESSAGE_F }],
+};
+const SYNTAXE_F = chargementsDynamiques("/(^|\\u002F)requetes\\u002Fjournal$/", MESSAGE_F);
+
 const restreindreImports = (...listes) => [
   "error",
   {
@@ -92,17 +106,31 @@ const restreindreImports = (...listes) => [
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
-  // Imports statiques (A, B, D et E).
+  // Imports statiques (A, B, D, E et F).
   {
     files: [SRC],
-    ignores: [DB, ENV, TESTS, CONFIG_AUTH],
+    ignores: [DB, ENV, TESTS, CONFIG_AUTH, JOURNAL_AUDIT],
+    rules: {
+      "no-restricted-imports": restreindreImports(
+        IMPORTS_A,
+        IMPORTS_B,
+        IMPORTS_D,
+        IMPORTS_E,
+        IMPORTS_F,
+      ),
+    },
+  },
+  {
+    files: [JOURNAL_AUDIT],
     rules: {
       "no-restricted-imports": restreindreImports(IMPORTS_A, IMPORTS_B, IMPORTS_D, IMPORTS_E),
     },
   },
   {
     files: [CONFIG_AUTH],
-    rules: { "no-restricted-imports": restreindreImports(IMPORTS_A, IMPORTS_B, IMPORTS_D) },
+    rules: {
+      "no-restricted-imports": restreindreImports(IMPORTS_A, IMPORTS_B, IMPORTS_D, IMPORTS_F),
+    },
   },
   {
     files: [TESTS],
@@ -111,12 +139,21 @@ const eslintConfig = defineConfig([
   },
   {
     files: [ENV],
-    rules: { "no-restricted-imports": restreindreImports(IMPORTS_A, IMPORTS_D, IMPORTS_E) },
+    rules: {
+      "no-restricted-imports": restreindreImports(IMPORTS_A, IMPORTS_D, IMPORTS_E, IMPORTS_F),
+    },
   },
   {
     files: [DB],
     ignores: [TESTS, OUTILS_TEST],
-    rules: { "no-restricted-imports": restreindreImports(IMPORTS_B, IMPORTS_D) },
+    rules: {
+      "no-restricted-imports": restreindreImports(
+        IMPORTS_B,
+        IMPORTS_D,
+        IMPORTS_F,
+        IMPORTS_F_REQUETES,
+      ),
+    },
   },
   {
     files: [TESTS_DB, OUTILS_TEST],
@@ -128,12 +165,20 @@ const eslintConfig = defineConfig([
     ignores: [ENV],
     rules: { "no-restricted-properties": ["error", ...PROPRIETES_B] },
   },
-  // Syntaxe interdite : imports dynamiques (A, B et D) et rôle propriétaire (C).
+  // Syntaxe interdite : imports dynamiques (A, B, D et F) et rôle
+  // propriétaire (C).
   {
     files: [SRC],
     ignores: [DB, ENV, TESTS],
     rules: {
-      "no-restricted-syntax": ["error", ...SYNTAXE_A, ...SYNTAXE_B, ...SYNTAXE_C, ...SYNTAXE_D],
+      "no-restricted-syntax": [
+        "error",
+        ...SYNTAXE_A,
+        ...SYNTAXE_B,
+        ...SYNTAXE_C,
+        ...SYNTAXE_D,
+        ...SYNTAXE_F,
+      ],
     },
   },
   {
@@ -148,7 +193,9 @@ const eslintConfig = defineConfig([
   {
     files: [DB],
     ignores: [TESTS, OUTILS_TEST],
-    rules: { "no-restricted-syntax": ["error", ...SYNTAXE_B, ...SYNTAXE_C, ...SYNTAXE_D] },
+    rules: {
+      "no-restricted-syntax": ["error", ...SYNTAXE_B, ...SYNTAXE_C, ...SYNTAXE_D, ...SYNTAXE_F],
+    },
   },
   {
     files: [TESTS_DB, OUTILS_TEST],
