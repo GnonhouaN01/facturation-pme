@@ -1,6 +1,6 @@
 # Fonctionnalité : accès aux données
 
-Statut : brouillon
+Statut : validée
 
 Jalon 0, fonctionnalité 0.2 de `docs/PLAN.md`. Taille M.
 
@@ -27,20 +27,9 @@ Cas d'utilisation concernés : aucun directement. Tous les cas d'utilisation d'u
 
 ## Préalable : le type des identifiants d'organisation
 
-Ce point conditionne toute la fiche, et doit être tranché avant la validation (question ouverte n° 1).
+Tranché (décision 1) : identifiants `uuid` partout (option U1). Livré par `docs/features/identifiants-uuid.md`, et déployé sur `dev`, `preview` et `production`. Les tables de Better Auth ont des colonnes `id` en `uuid` fabriquées par la base (`gen_random_uuid()`), et leurs clés étrangères sont en `uuid`. Une clé étrangère `organisation_id uuid` vers `organization.id uuid` est donc possible, et la conversion `::uuid` de la règle s'applique à de vrais UUID.
 
-`docs/DESIGN.md` et `scripts/verifier-isolation.mjs` supposent des identifiants `uuid`, et la règle convertit le réglage en `::uuid`. Or les tables de Better Auth sont générées avec des identifiants `text` (`organization.id text PRIMARY KEY`), produits par le générateur par défaut de Better Auth, qui ne fabrique pas des UUID. Deux conséquences :
-
-- une clé étrangère `organisation_id uuid` vers `organization.id text` est impossible : PostgreSQL exige des types compatibles ;
-- la conversion `::uuid` d'un identifiant de Better Auth échouerait.
-
-| Option | Effet | Coût |
-|---|---|---|
-| **U1. Identifiants `uuid` partout** : `advanced.database.generateId: "uuid"` dans la configuration de Better Auth (option présente dans la version 1.7.7, qui génère alors `uuid("id").default(gen_random_uuid())` pour PostgreSQL) | Conforme à `DESIGN.md` et au script. Validation stricte possible (format UUID). Clé étrangère `uuid` vers `uuid` | Régénérer `auth.ts` (procédure des « Pièges connus »), migration qui change le type des colonnes `id` et des clés étrangères de huit tables. À vérifier : que le générateur convertit aussi les colonnes de référence (`organization_id`, `user_id`), et que les tables ne contiennent aucune ligne à identifiant non UUID |
-| U2. Identifiants `text` | Aucune migration des tables de Better Auth | Règle comparant des `text`, validation d'un format propre à Better Auth (non documenté comme stable), `DESIGN.md` à corriger |
-| U3. `organisation_id uuid` sans clé étrangère vers `organization` | Aucune migration de Better Auth | Perd la contrainte de `DESIGN.md` section 2.4 (S-01, T-30). Écartée |
-
-**Recommandation : U1**, dans une petite fiche préalable dédiée (« identifiants UUID »), livrée avant la 0.2, parce qu'elle touche un fichier généré et les migrations de Better Auth, hors du périmètre de l'accès aux données. La suite de cette fiche suppose U1. Si U2 est retenue, les sections 1.4, 2 et les tests de validation de l'identifiant changent.
+Options écartées à l'époque : U2 (identifiants `text`, règle comparant des `text`, format propre à Better Auth) et U3 (`organisation_id` sans clé étrangère, contraire à `DESIGN.md` section 2.4).
 
 ## Solution retenue
 
@@ -68,6 +57,8 @@ Dans l'ordre :
 
 `TransactionOrganisation` est le type de `tx` exporté par `client.ts`. Les futures fonctions de `src/server/db/requetes/` le prennent en premier paramètre : une requête métier ne peut donc pas être appelée sans transaction ouverte par cette fonction.
 
+`client.ts` exporte aussi une fabrique `creerAcces(pool)`, qui renvoie `{ db, executerDansOrganisation }` liés au `Pool` reçu. Les exports `db` et `executerDansOrganisation` du module sont l'instance liée au `Pool` principal. La fabrique sert aux tests qui exigent une connexion précise (`Pool` d'une seule connexion, section 4.3) ou un `Pool` factice (tests unitaires).
+
 #### 1.2 Pourquoi c'est sûr avec le regroupement de connexions
 
 - Le troisième argument `true` de `set_config` rend le réglage **local à la transaction** : PostgreSQL le remet à sa valeur précédente au `COMMIT` comme au `ROLLBACK`.
@@ -88,13 +79,14 @@ Remarque : après une transaction qui l'a fixé, le réglage ne disparaît pas d
 
 Il n'existe pas de chemin « sans organisation » dans la fonction : l'identifiant est un paramètre obligatoire. Si du code interroge la base par `db` hors de `executerDansOrganisation` :
 
-- `current_setting('app.organisation_id', true)` vaut `NULL` (jamais fixé sur cette connexion) ou `''` (fixé puis rétabli) ; `NULLIF` ramène les deux à `NULL` ;
-- la condition `organisation_id = NULL` n'est jamais vraie : **aucune ligne visible**, aucune ligne modifiée ni supprimée ;
-- une insertion est **refusée** par `WITH CHECK` (erreur PostgreSQL `42501`).
+- `current_setting('app.organisation_id', true)` vaut `NULL` (jamais fixé sur cette connexion) ou `''` (fixé puis rétabli) ; `NULLIF` ramène les deux à `NULL`, et `NULL::uuid` vaut `NULL` sans erreur ;
+- la condition `organisation_id = NULL` n'est jamais vraie : **une lecture renvoie zéro ligne, sans erreur**, aucune ligne n'est modifiée ni supprimée ;
+- une insertion est **refusée** par `WITH CHECK` (erreur PostgreSQL `42501`) ;
+- **aucune erreur de conversion** (`22P02`) n'apparaît sur la valeur vide `''` : sans `NULLIF`, `''::uuid` échouerait, et une lecture sans organisation deviendrait une erreur au lieu d'un résultat vide. Les tests vérifient les deux états de la connexion, `NULL` et `''`.
 
-C'est le comportement attendu par T-53 : « une requête sans contexte d'organisation ne renvoie aucune ligne ». Il est prouvé par les contrôles 1 et 6 (section 4.3).
+C'est le comportement attendu par T-53 : « une requête sans contexte d'organisation ne renvoie aucune ligne ». Il est prouvé par les contrôles 1 et 6 (section 4.3) et par les tests de `client.integration.test.ts`.
 
-`db` reste exporté pour Better Auth, dont les tables ne portent pas de règle (`docs/DESIGN.md`, section 2.5). L'interdiction d'importer `db` ailleurs que dans `src/server/auth/config.ts` et `client.ts` est la question ouverte n° 10.
+`db` reste exporté pour Better Auth, dont les tables ne portent pas de règle (`docs/DESIGN.md`, section 2.5). Décision 10 : une règle ESLint interdit dès la 0.2 d'importer `db` ailleurs que dans `src/server/auth/config.ts` et `src/server/db/` (section 4.1).
 
 #### 1.4 Identifiant invalide
 
@@ -112,7 +104,7 @@ Un identifiant valide mais inconnu (aucune organisation de ce numéro) ne provoq
 
 Un fichier `src/server/db/schema/isolation.ts` (sans `server-only`, règle 13 : drizzle-kit le charge) fournit :
 
-- `colonneOrganisation()` : `uuid("organisation_id").notNull().references(() => organization.id, { onDelete: ... })` (comportement à la suppression : question ouverte n° 8) ;
+- `colonneOrganisation()` : `uuid("organisation_id").notNull().references(() => organization.id, { onDelete: "restrict" })`. Décision 8 : `ON DELETE RESTRICT` pour toute table, table témoin comprise. Une organisation qui a des lignes ne peut pas être supprimée directement ; l'outillage de test supprime les lignes avant l'organisation (section 4.2) ;
 - `regleIsolation()` : un `pgPolicy("isolation_organisation", ...)` pour toutes les commandes (`for: "all"`), sans clause `to`, donc pour tous les rôles, avec :
 
 ```sql
@@ -122,45 +114,55 @@ WITH CHECK (organisation_id = NULLIF(current_setting('app.organisation_id', true
 
 Une table métier se déclare avec `pgTable.withRLS(...)`, `colonneOrganisation()` et `regleIsolation()`. L'expression est la même que celle du script, à l'identique.
 
-#### 2.2 Le forçage n'est pas généré par Drizzle
+#### 2.2 Le forçage : une migration personnalisée
 
 Vérifié dans `node_modules/drizzle-kit` (version 1.0.0-rc.4) : l'outil ne produit que `ENABLE` ou `DISABLE ROW LEVEL SECURITY`, jamais `FORCE`. La règle 3 de `CLAUDE.md` exige pourtant une règle « activée et forcée ». Sans forçage, le propriétaire des tables (`neondb_owner`, utilisé par les migrations et les scripts) n'est pas soumis à la règle.
 
-| Option | Avantage | Inconvénient |
-|---|---|---|
-| **F1. Migration personnalisée** : `npx drizzle-kit generate --custom --name forcer-isolation-<table>`, qui crée un fichier SQL vide, puis y écrire `ALTER TABLE ... FORCE ROW LEVEL SECURITY;` | Dans la chaîne normale des migrations, appliquée partout par le workflow | Écrire dans un fichier de `drizzle/`, contraire à « ne modifie jamais le dossier `drizzle/` à la main ». Demande une exception écrite et bornée |
-| F2. Ne pas forcer | Rien à faire | Contraire à la règle 3. Écartée |
-| F3. Déclencheur sur événement qui force la règle de toute table créée | Automatique | Exige un super-utilisateur, non garanti chez Neon. Écartée |
-| F4. Forçage par un script de `scripts/` après chaque migration | Pas de fichier écrit à la main dans `drizzle/` | Étape hors du workflow des migrations, facile à oublier en production. Écartée |
+Retenu (décision 2) : **une migration personnalisée**, dans la chaîne normale des migrations, appliquée partout par le workflow. Exception écrite et bornée à « ne modifie jamais le dossier `drizzle/` à la main » :
 
-**Recommandation : F1, complétée par le test d'inventaire de la section 4.4**, qui échoue si une table portant `organisation_id` n'est pas forcée. L'exception à la règle sur `drizzle/` serait limitée aux migrations créées par `--custom` et ne contenant que des `FORCE ROW LEVEL SECURITY` (question ouverte n° 2).
+- elle ne vaut que pour une migration créée par `npx drizzle-kit generate --custom --name forcer-isolation-<table>`, et dont le seul contenu est une ou plusieurs lignes `ALTER TABLE "<table>" FORCE ROW LEVEL SECURITY;` ;
+- l'assistant crée le fichier vide par la commande et indique la ligne exacte à coller ; **le développeur colle la ligne lui-même**. L'assistant n'écrit jamais dans `drizzle/` ;
+- le test d'inventaire (section 4.4) échoue si une table portant `organisation_id` n'est pas forcée : un oubli ne passe pas la CI.
+
+Options écartées :
+
+| Option | Raison de l'écarter |
+|---|---|
+| Ne pas forcer | Contraire à la règle 3 |
+| Déclencheur sur événement qui force la règle de toute table créée | Exige un super-utilisateur, non garanti chez Neon |
+| Forçage par un script de `scripts/` après chaque migration | Étape hors du workflow des migrations, facile à oublier en production |
 
 #### 2.3 Sur quoi prouver le modèle
 
-Aucune table métier n'existe, et le rôle de l'application ne peut pas créer de table.
+Retenu (décision 3) : **une table témoin permanente, créée par migration avec le modèle**, présente en production.
 
-| Option | Avantage | Inconvénient |
+`temoin_isolation`, déclarée dans `schema/technique.ts` sous le nom `temoinIsolation` :
+
+| Colonne SQL | Propriété Drizzle | Définition |
 |---|---|---|
-| **P1. Une table témoin permanente, créée par migration avec le modèle** : `temoin_isolation (id uuid, organisation_id, valeur text)`, dans `schema/technique.ts` | Prouve toute la chaîne réelle : modèle Drizzle, SQL généré et relu, migration appliquée, droits par défaut, règle forcée, six contrôles par le rôle de l'application. Sert de référence au test d'inventaire (section 4.4) | Une table sans sens métier en production, vide. Le rôle de l'application y a les droits ordinaires |
-| P2. Table créée pendant les tests par le rôle propriétaire | Rien en production | Les tests devraient connaître `DATABASE_URL_MIGRATION` : contraire à la règle 2 et à `STRUCTURE.md` section 5. Ne prouve pas le SQL généré par Drizzle. Écartée |
-| P3. Table temporaire (`CREATE TEMP TABLE`) créée par le rôle de l'application | Rien en production, aucun rôle propriétaire | Ne passe pas par Drizzle ni par les migrations. Une table temporaire est liée à la session : avec le regroupement de Neon, elle peut disparaître entre deux transactions, ce qui fausse le contrôle 6. Dépend du droit `TEMPORARY`, qu'il vaudrait mieux retirer (voir « Suites »). Écartée |
-| P4. Attendre la table du journal d'audit (0.3) | Pas de table sans usage | La 0.2 serait livrée sans preuve. Le journal est en ajout seul : le contrôle 5 (modification) y rencontre un refus de droit, pas un résultat vide. Écartée |
+| `id` | `id` | `uuid`, clé primaire, `gen_random_uuid()` par défaut |
+| `organisation_id` | `organisationId` | `colonneOrganisation()` |
+| `valeur` | `valeur` | `text NOT NULL` |
 
-**Recommandation : P1** (question ouverte n° 3). La table témoin ne reçoit de lignes que des tests, sur `dev` et en CI.
+Elle prouve toute la chaîne réelle : modèle Drizzle, SQL généré et relu, migration appliquée, droits par défaut, règle forcée, contrôles par le rôle de l'application. Elle sert de référence au test d'inventaire (section 4.4). Elle ne reçoit de lignes que des tests, sur `dev` et en CI ; elle reste vide en production.
+
+Options écartées :
+
+| Option | Raison de l'écarter |
+|---|---|
+| Table créée pendant les tests par le rôle propriétaire | Les tests devraient connaître `DATABASE_URL_MIGRATION` : contraire à la règle 2 et à `STRUCTURE.md` section 5. Ne prouve pas le SQL généré par Drizzle |
+| Table temporaire créée par le rôle de l'application | Ne passe pas par Drizzle ni par les migrations. Liée à la session : avec le regroupement de Neon, elle peut disparaître entre deux transactions, ce qui fausse le contrôle 6. Dépend du droit `TEMPORARY`, qu'il vaudrait mieux retirer (voir « Reporté ») |
+| Attendre la table du journal d'audit (0.3) | La 0.2 serait livrée sans preuve. Le journal est en ajout seul : le contrôle 5 y rencontre un refus de droit, pas un résultat vide |
 
 ### 3. La séparation des tests sans base et avec base
 
-| Option | Avantage | Inconvénient |
-|---|---|---|
-| **N1. Suffixe de fichier** : `*.integration.test.ts` pour tout test qui touche la base, y compris les tests d'attaque (`client.attaque.integration.test.ts`) | Visible dans le nom, sélection par motif, conforme au niveau « Intégration » de `PLAN.md` section 4.1. Les tests d'attaque restent comptables par `*.attaque*.test.ts` | Suffixe composé un peu long |
-| N2. Dossier séparé | Simple à sélectionner | Contraire à « à côté du fichier testé » (`STRUCTURE.md` section 6). Écartée |
-| N3. Sauter les tests quand la base est absente (`describe.skipIf`) | Un seul motif | Une base absente ou mal configurée donne une suite verte qui n'a rien testé. Écartée |
+Retenu (décision 12) : **un suffixe de fichier**, `*.integration.test.ts`, pour tout test qui touche la base, y compris les tests d'attaque (`client.attaque.integration.test.ts`). Visible dans le nom, sélection par motif. Les tests d'attaque restent comptables par `*.attaque*.test.ts`. `docs/PLAN.md` section 4.1 et `docs/STRUCTURE.md` section 6 sont mis à jour.
 
-**Recommandation : N1**, avec deux projets Vitest (`test.projects`, présent dans Vitest 5) dans `vitest.config.mts` :
+Deux projets Vitest (`test.projects`, présent dans Vitest 5) dans `vitest.config.mts` :
 
 | Projet | Fichiers | Particularités |
 |---|---|---|
-| `unitaires` | `src/**/*.test.ts`, sauf `src/**/*.integration.test.ts` | Inchangé par rapport à aujourd'hui. Ne reçoit aucune variable de `.env.local` |
+| `unitaires` | `src/**/*.test.ts`, sauf `src/**/*.integration.test.ts` | Ne reçoit aucune variable de `.env.local` |
 | `integration` | `src/**/*.integration.test.ts` | `setupFiles` : le garde-fou (section 5). `test.env` : les variables de `.env.local` (section 4.1) |
 
 Scripts de `package.json` :
@@ -173,66 +175,73 @@ Scripts de `package.json` :
 
 Le nom de `npm test` ne change pas : le job « Qualité » et l'habitude restent valables.
 
+Options écartées : un dossier séparé (contraire à « à côté du fichier testé », `STRUCTURE.md` section 6) ; sauter les tests quand la base est absente (`describe.skipIf`), qui donne une suite verte n'ayant rien testé.
+
+Un test qui ne touche pas la base reste un test unitaire, même s'il porte sur l'outillage : la décision du garde-fou (`garde-base.attaque.test.ts`) et les règles ESLint (`regles-import.test.ts`) tournent dans `npm test`, donc dans le job « Qualité ».
+
+Un test ne vit pas dans `src/server/db/schema/` : drizzle-kit charge tous les fichiers `schema/*.ts` et lirait un fichier de test comme un schéma (même raison que `schema-auth.test.ts`). Le test du modèle s'appelle donc `src/server/db/schema-isolation.integration.test.ts`.
+
 ### 4. L'outillage de test
 
 #### 4.1 Emplacement, et adresse de la base sans `process.env`
 
-| Option | Avantage | Inconvénient |
-|---|---|---|
-| **L1. Dans `src/server/db/outils-test/`**, en passant par `client.ts`, donc par `env.ts` | Les tests exercent la vraie fonction et le vrai `Pool`. Drizzle reste confiné à `src/server/db/` (règle 4). Aucun `process.env` hors de `env.ts` (règle 12) | Du code de test dans `src/`, qu'il faut empêcher d'importer depuis l'application |
-| L2. Dans `tests/` à la racine, avec `pg` et `process.env` comme les scripts | Hors du champ d'ESLint | Une seconde connexion, qui ne teste pas la vraie fonction. Contourne l'esprit des règles 4 et 12. Écartée |
-
-**Recommandation : L1.**
+Retenu : **dans `src/server/db/outils-test/`**, en passant par `client.ts`, donc par `env.ts`. Les tests exercent la vraie fonction et le vrai `Pool`. Drizzle reste confiné à `src/server/db/` (règle 4). Aucun `process.env` hors de `env.ts` (règle 12). Écarté : `tests/` à la racine avec `pg` et `process.env`, qui ouvre une seconde connexion, ne teste pas la vraie fonction et contourne l'esprit des règles 4 et 12.
 
 - L'adresse vient de `env.DATABASE_URL`, lue par `env.ts`. `env.ts` valide aussi `BETTER_AUTH_SECRET` et `BETTER_AUTH_URL` : les trois variables doivent être présentes.
-- **En local**, Vitest ne charge pas `.env.local` dans `process.env`. `vitest.config.mts` (à la racine, hors de `src/`, donc hors de la règle 12) lit `.env.local` avec `dotenv` dans un objet séparé (`config({ path: ".env.local", processEnv: {}, quiet: true })`, option `processEnv` présente dans la version installée), et le passe au seul projet `integration` par `test.env`. Le projet `unitaires` ne reçoit rien. Ni l'assistant ni le code n'affichent ces valeurs.
+- **En local**, Vitest ne charge pas `.env.local` dans `process.env`. `vitest.config.mts` (à la racine, hors de `src/`, donc hors de la règle 12) lit `.env.local` avec `dotenv` dans un objet séparé (`config({ path: ".env.local", processEnv: {}, quiet: true })`), et le passe au seul projet `integration` par `test.env`. Le projet `unitaires` ne reçoit rien. Ni l'assistant ni le code n'affichent ces valeurs.
 - **En CI**, `.env.local` n'existe pas : les variables viennent de l'environnement du job.
 - Un fichier de `outils-test/` ne se termine pas par `.test.ts` : Vitest ne l'exécute pas, et aucune page ne l'important, `next build` ne l'inclut pas.
-- Une règle ESLint (`no-restricted-imports`) interdit d'importer `src/server/db/outils-test/` depuis un fichier qui n'est pas un test (`*.test.ts`) ni un fichier de ce dossier : ces fonctions suppriment des organisations.
+
+Deux règles ESLint (`no-restricted-imports`), vérifiées par `src/server/db/regles-import.test.ts` :
+
+| Règle | Fichiers autorisés | Raison |
+|---|---|---|
+| L'outillage de test (`src/server/db/outils-test/`) ne s'importe, statiquement ou dynamiquement, que depuis un fichier de test (`*.test.ts`) ou un fichier de ce dossier | `src/**/*.test.ts`, `src/server/db/outils-test/**` | Ces fonctions créent et suppriment des organisations |
+| `db` (export de `src/server/db/client.ts`) ne s'importe que dans `src/server/auth/config.ts` et `src/server/db/` (décision 10). L'import d'espace de noms (`import * as`) et la réexportation sont aussi refusés hors de ces fichiers | `src/server/auth/config.ts`, `src/server/db/**` | `db` n'a pas d'organisation active : hors de Better Auth, tout passe par `executerDansOrganisation` |
+
+`executerDansOrganisation`, `TransactionOrganisation` et `OrganisationActiveInvalide` restent importables ailleurs.
 
 #### 4.2 Deux organisations aux identifiants aléatoires, et leur nettoyage
 
-`creerDeuxOrganisations()` dans `src/server/db/outils-test/organisations.ts` :
+`creerDeuxOrganisations({ tables })` dans `src/server/db/outils-test/organisations.ts` :
 
 - insère deux lignes dans `organization` (table de Better Auth, sans règle), avec `id` = `crypto.randomUUID()`, `slug` = `test-<identifiant>`, `name` = `Test <identifiant>`, `created_at` = maintenant ;
 - renvoie `{ a, b, nettoyer }`.
 
 `nettoyer()` :
 
-- pour chaque organisation, supprime ses lignes des tables métier qu'on lui indique, dans `executerDansOrganisation` (la règle interdit de le faire sans contexte), puis supprime l'organisation ;
+- pour chaque organisation, supprime ses lignes des tables indiquées par `tables`, dans `executerDansOrganisation` (la règle interdit de le faire sans contexte), **puis** supprime l'organisation : la clé étrangère est en `ON DELETE RESTRICT` (décision 8) ;
 - ne lève pas d'erreur si une suppression ne trouve rien, pour pouvoir être appelée deux fois ;
 - ne cible que les deux identifiants créés, jamais un motif (`slug LIKE 'test-%'`) : un test ne supprime que ce qu'il a créé.
 
-Utilisation obligatoire : `nettoyer` est enregistré dès la création par `onTestFinished` (ou `afterAll` pour un fichier entier), de sorte qu'un test en échec nettoie aussi. Un processus tué laisse des lignes : voir la question ouverte n° 7.
+Utilisation obligatoire : `nettoyer` est enregistré dès la création par `onTestFinished` (ou `afterAll` pour un fichier entier), de sorte qu'un test en échec nettoie aussi.
+
+Un processus tué laisse des lignes. Décision 7 : pas de script de balayage. Les organisations de test gardent le préfixe `test-` dans leur `slug`, ce qui permet de les reconnaître à la main ; la recréation de la branche `dev` les efface, comme le prévoit `PLAN.md` section 7. En CI, la base est neuve à chaque exécution.
 
 #### 4.3 La vérification générique d'isolation
 
-`verifierIsolation(table, fabriquer)` dans `src/server/db/outils-test/isolation.ts`, où `table` est un objet table de Drizzle portant `organisation_id`, et `fabriquer(organisationId)` renvoie les valeurs d'une ligne valide de cette table (fourni par le test de chaque table, puisque les colonnes obligatoires diffèrent).
+`verifierIsolation(table, fabriquer)` dans `src/server/db/outils-test/isolation.ts`, où `table` est un objet table de Drizzle portant `organisationId`, et `fabriquer(organisationId)` renvoie les valeurs d'une ligne valide de cette table (fourni par le test de chaque table, puisque les colonnes obligatoires diffèrent). Elle lève une erreur qui nomme le contrôle en échec, et résout sans valeur si tous passent.
 
-Elle crée ses deux organisations, insère une ligne pour A et une pour B (chacune dans sa transaction), puis reprend les six contrôles de `scripts/verifier-isolation.mjs` :
+Elle crée ses deux organisations, insère une ligne pour A et une pour B (chacune dans sa transaction), puis passe huit contrôles : les six de `scripts/verifier-isolation.mjs`, et deux ajoutés (décision 9).
 
 | # | Contrôle | Attendu |
 |---|---|---|
-| 1 | Sans organisation active, compter les lignes des deux organisations | 0 |
+| 1 | Sans organisation active, compter les lignes des deux organisations | 0, sans erreur |
 | 2 | Organisation A active, compter | 1 |
 | 3 | Organisation A active, lire | La ligne lue porte l'`organisation_id` de A |
 | 4 | Organisation A active, insérer une ligne pour B | Refus, code PostgreSQL `42501` |
 | 5 | Organisation A active, modifier les lignes de B | 0 ligne modifiée |
-| 6 | Après la transaction, sur **la même connexion**, compter | 0 |
-
-Proposé en plus, au même titre (question ouverte n° 9) :
-
-| # | Contrôle | Attendu |
-|---|---|---|
-| 7 | Organisation A active, supprimer les lignes de B | 0 ligne supprimée, et la ligne de B existe toujours |
+| 6 | Après la transaction, sur **la même connexion**, compter | 0, sans erreur |
+| 7 | Organisation A active, supprimer les lignes de B | 0 ligne supprimée, et la ligne de B existe toujours (relue dans une transaction de B) |
 | 8 | Organisation A active, modifier sa propre ligne pour lui donner l'`organisation_id` de B | Refus, code `42501` (`WITH CHECK` s'applique aussi à `UPDATE`) |
 
 Précisions :
 
 - les comptages portent sur les lignes des deux organisations créées, pas sur la table entière, parce que d'autres tests peuvent écrire en parallèle ;
-- le contrôle 6 exige la même connexion : la fonction utilise un `Pool` dédié d'une seule connexion. `client.ts` expose pour cela une fabrique interne (`creerAcces(pool)`), dont `executerDansOrganisation` est l'instance liée au `Pool` principal ;
+- le contrôle 6 exige la même connexion : la fonction utilise un `Pool` dédié d'une seule connexion, par `creerAcces` ;
 - les requêtes sur une table quelconque utilisent l'objet table de Drizzle, jamais un nom de table concaténé (S-86) ;
-- l'insertion refusée du contrôle 4 se fait sous un point de sauvegarde, comme dans le script, pour que la transaction continue.
+- les insertions et modifications refusées (contrôles 4 et 8) se font chacune dans leur propre transaction, annulée par le refus ;
+- le code d'erreur se lit par `codeDuRefus(promesse)`, exporté par le même fichier, qui parcourt la chaîne des `cause` (Drizzle enveloppe l'erreur de `pg`) et renvoie le code PostgreSQL, « aucun refus » si la promesse réussit, « aucun code » si l'erreur n'en porte pas.
 
 La table témoin est la première à passer cette vérification. Chaque future table métier l'appellera dans son propre test d'intégration (`PLAN.md`, section 4.4, « Isolation par table »).
 
@@ -241,8 +250,11 @@ La table témoin est la première à passer cette vérification. Chaque future t
 Un test lit le catalogue de PostgreSQL (`pg_class`, `pg_attribute`, `pg_policies`, lisibles par le rôle de l'application) et vérifie que **toute table du schéma `public` qui porte une colonne `organisation_id`** :
 
 - a cette colonne `NOT NULL` et de type `uuid` ;
+- a une clé étrangère de cette colonne vers `organization.id`, en `ON DELETE RESTRICT` ;
 - a sa règle activée (`relrowsecurity`) **et forcée** (`relforcerowsecurity`) ;
-- a exactement une règle, nommée `isolation_organisation`, pour toutes les commandes, dont les expressions `USING` et `WITH CHECK` sont identiques à celles de `temoin_isolation`.
+- a exactement une règle, nommée `isolation_organisation`, pour toutes les commandes et le rôle `public`, dont les expressions `USING` et `WITH CHECK` sont identiques à celles de `temoin_isolation`.
+
+Il vérifie aussi que, sur `temoin_isolation`, les expressions `USING` et `WITH CHECK` sont identiques entre elles et contiennent `NULLIF(current_setting('app.organisation_id'`.
 
 Une table créée plus tard sans le modèle, ou sans la migration de forçage, fait échouer la suite. Le test vérifie aussi qu'il trouve au moins `temoin_isolation`, pour ne pas réussir sur un catalogue vide.
 
@@ -252,42 +264,57 @@ Les tables de Better Auth portent `organization_id` (en anglais) et ne sont pas 
 
 #### 5.1 Comment reconnaître la base sans lire de secret
 
-Les trois branches de Neon ont des hôtes différents, et une branche recréée change d'hôte (c'est arrivé, `CONFIGURATION.md` étape 10).
+Les trois branches de Neon ont des hôtes différents, et une branche recréée change d'hôte (c'est arrivé, `CONFIGURATION.md` étape 10). Le garde-fou ne peut donc pas s'appuyer sur l'hôte.
 
-| Option | Avantage | Inconvénient |
-|---|---|---|
-| G1. Liste noire des hôtes de `preview` et `production`, écrite dans le dépôt | Simple | Ouverte par défaut : une nouvelle branche ou un hôte changé passe. Écartée |
-| G2. Liste blanche des hôtes autorisés (`localhost`, hôte de `dev`), écrite dans le dépôt | Fermée par défaut | L'hôte de `dev` change à chaque recréation de la branche : modification du dépôt à chaque fois. Publie l'identifiant du point d'accès |
-| **G3. Marque posée dans la base de test elle-même** : `ALTER DATABASE <base> SET app.environnement = 'test'`, exécuté une fois par le rôle propriétaire sur `dev` et sur la base de la CI. Le garde-fou lit `current_setting('app.environnement', true)` par le rôle de l'application | Fermée par défaut : une base sans marque est refusée. Indépendante des hôtes. Ne lit aucun secret : la valeur n'en est pas un | La marque est copiée par une branche créée **depuis** `dev`. Une erreur humaine pourrait la poser sur `production` |
-| G4. API de Neon pour connaître le nom de la branche | Exact | Exige une clé d'API, donc un secret de plus. Écartée |
-| G5. Variable déclarative (`ENVIRONNEMENT=dev`) | Simple | Ne vérifie pas la base réellement visée : une adresse de `preview` copiée par erreur passe. Écartée |
+Retenu (décision 4) : **une marque posée dans la base de test elle-même, sous la forme d'un commentaire de base**.
 
-**Recommandation : G3**, avec deux contrôles de plus dans la même requête :
+- Pose, par le rôle propriétaire, sur la base visée : `COMMENT ON DATABASE <nom> IS 'environnement:test'`. Dans les scripts, le nom n'est pas écrit en dur ni concaténé en JavaScript : l'instruction passe par un bloc `DO` qui lit `current_database()` et forme l'instruction avec `format('COMMENT ON DATABASE %I IS %L', current_database(), 'environnement:test')`.
+- Lecture, par le rôle de l'application : `SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = current_database()`.
+- Le garde-fou exige **exactement** la valeur `environnement:test`. Toute autre valeur (casse différente, espace, autre environnement), une valeur vide ou l'absence de commentaire est un refus. Il est fermé par défaut : une base sans marque est refusée.
+- Vérifié par le développeur : la marque est posée et lue sur `dev`, et absente de `preview` et de `production`.
+
+**Voie écartée : un paramètre de base (`ALTER DATABASE <nom> SET app.environnement = 'test'`)**, lu par `current_setting('app.environnement', true)`. C'était la recommandation du brouillon. Neon la refuse : sur `dev`, `neondb_owner` reçoit « permission denied to set parameter ». Le rôle propriétaire de Neon n'est pas super-utilisateur, et PostgreSQL réserve la pose d'un paramètre personnalisé au niveau de la base à un rôle qui en a reçu le droit (`GRANT SET ON PARAMETER`), droit que seul un super-utilisateur peut accorder. Le commentaire de base n'exige que d'être propriétaire de la base, ce que `neondb_owner` est, et il est lisible par tous les rôles. Il se distingue aussi d'un réglage : il ne modifie le comportement d'aucune connexion.
+
+Limites, acceptées :
+
+- la marque est copiée par une branche créée **depuis** `dev`. `preview` et `production` ne sont jamais créées depuis `dev` (`CONFIGURATION.md` étape 10 : elles le sont depuis `production`) ;
+- une branche `dev` recréée depuis `production` n'a pas la marque : les tests refusent de tourner jusqu'à ce qu'elle soit reposée par `scripts/retablir-acces-dev.mjs`. C'est le comportement voulu ;
+- une erreur humaine pourrait poser la marque sur `production`. Les deux scripts qui la posent refusent l'hôte de production (`retablir-acces-dev.mjs`) ou tout hôte autre que `localhost` (`preparer-base-test.mjs`).
+
+Options écartées :
+
+| Option | Raison de l'écarter |
+|---|---|
+| Liste noire des hôtes de `preview` et `production` | Ouverte par défaut : une nouvelle branche ou un hôte changé passe |
+| Liste blanche des hôtes autorisés | L'hôte de `dev` change à chaque recréation de la branche. Publie l'identifiant du point d'accès |
+| Paramètre de base `ALTER DATABASE ... SET` | Refusé par Neon (ci-dessus) |
+| API de Neon pour connaître le nom de la branche | Exige une clé d'API, donc un secret de plus |
+| Variable déclarative (`ENVIRONNEMENT=dev`) | Ne vérifie pas la base réellement visée : une adresse de `preview` copiée par erreur passe |
+
+La requête du garde-fou porte deux contrôles de plus :
 
 ```sql
-SELECT current_setting('app.environnement', true) AS environnement,
+SELECT shobj_description(d.oid, 'pg_database') AS marque,
        current_user AS role,
        (SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user) AS contourne
+FROM pg_database d
+WHERE d.datname = current_database()
 ```
 
-Le garde-fou refuse si `environnement` n'est pas exactement `test`, si `role` n'est pas `app_facturation`, ou si `contourne` n'est pas `false` (T-53).
-
-Conditions de la recommandation :
-
-- `preview` et `production` ne sont jamais créées depuis `dev` (`CONFIGURATION.md` étape 10 : elles le sont depuis `production`) ;
-- une branche `dev` recréée depuis `production` n'a pas la marque : les tests refusent de tourner jusqu'à ce qu'elle soit reposée. C'est le comportement voulu ;
-- à vérifier avant validation : que `neondb_owner` peut poser un paramètre personnalisé au niveau de la base sur Neon (question ouverte n° 4). Repli si ce n'est pas le cas : `COMMENT ON DATABASE`, lu par `shobj_description`.
+Le garde-fou refuse si `marque` n'est pas exactement `environnement:test`, si `role` n'est pas `app_facturation`, ou si `contourne` n'est pas `false` (T-53).
 
 #### 5.2 Où et quand il s'exécute
 
-- Fonction `verifierBaseDeTest()` dans `src/server/db/outils-test/garde-base.ts`, qui passe par `client.ts`, donc par la même adresse que les tests.
-- Appelée par le fichier `setupFiles` du projet `integration`, avant le chargement de chaque fichier de test. Un refus fait échouer tous les tests du fichier, avant toute écriture. Coût : une requête par fichier.
-- Message de refus : « Tests refusés : la base visée n'est pas marquée comme base de test. », suivi de la raison (marque absente, rôle inattendu, rôle qui contourne l'isolation). Jamais l'hôte, le nom de la base ni l'adresse (S-54).
+- Dans `src/server/db/outils-test/garde-base.ts` :
+  - `deciderBaseDeTest(etat)`, fonction pure appliquée au résultat de la requête (`{ marque, role, contourne }`), qui lève l'erreur de refus ;
+  - `verifierBaseDeTest()`, qui exécute la requête par `client.ts`, donc par la même adresse que les tests, puis appelle `deciderBaseDeTest`.
+- Appelée par le fichier `setupFiles` du projet `integration` (`outils-test/preparation.ts`), avant le chargement de chaque fichier de test. Un refus fait échouer tous les tests du fichier, avant toute écriture. Coût : une requête par fichier.
+- Message de refus : « Tests refusés : » suivi de la raison (« la base visée n'est pas marquée comme base de test », « le rôle de connexion n'est pas app_facturation », « le rôle de connexion contourne l'isolation »). Jamais l'hôte, le nom de la base, l'adresse, ni la valeur lue de la marque ou du rôle (S-54).
 - Il n'y a aucun moyen de désactiver le garde-fou (ni variable, ni option).
 
 ### Alternatives écartées
 
-Les options écartées de chaque difficulté figurent dans les tableaux ci-dessus. S'y ajoutent :
+Les options écartées de chaque difficulté figurent ci-dessus. S'y ajoutent :
 
 | Alternative | Raison de l'écarter |
 |---|---|
@@ -296,6 +323,7 @@ Les options écartées de chaque difficulté figurent dans les tableaux ci-dessu
 | Fixer l'organisation par une fonction SQL `SECURITY DEFINER` | Un objet de plus en base, sans gain : `set_config` local suffit et n'exige aucun droit |
 | Passer l'organisation à chaque requête par un filtre du code seulement | C'est la première barrière de S-04, pas la seconde. Le filtre du code reste exigé dans `requetes/`, en plus de la règle |
 | Valider l'identifiant par une expression régulière écrite à la main | Zod est imposé par `docs/STACK.md` et déjà installé |
+| PgBouncer dans la CI | Une image de conteneur de plus, donc une dépendance (décision 5). Le regroupement est prouvé sur `dev` seulement |
 
 ## Règles de sécurité et permissions
 
@@ -312,42 +340,40 @@ Les options écartées de chaque difficulté figurent dans les tableaux ci-dessu
   - **T-53** : une requête sans organisation active ne voit aucune ligne ; le rôle utilisé est `app_facturation`, sans droit de contourner l'isolation ; toute table portant `organisation_id` a sa règle activée et forcée.
   - **T-74**, en partie : les tests ne peuvent pas écrire dans `preview` ni `production`.
 - Matrice des droits : aucune ligne. Aucune action, aucune route.
-- Tables créées : `temoin_isolation`, avec `organisation_id uuid NOT NULL`, clé étrangère vers `organization.id`, règle `isolation_organisation` activée et forcée. Aucune table modifiée (hors préalable U1).
+- Tables créées : `temoin_isolation`, avec `organisation_id uuid NOT NULL`, clé étrangère vers `organization.id` en `ON DELETE RESTRICT`, règle `isolation_organisation` activée et forcée. Aucune table modifiée.
 
 ## Dépendances nouvelles
 
-Aucune (règle 10). Sont utilisés des paquets déjà déclarés : `drizzle-orm`, `pg`, `zod` (dépendances), `dotenv`, `vitest` (dépendances de développement). `crypto.randomUUID()` vient de Node.js.
-
-Seule exception possible : une image de conteneur PgBouncer dans la CI, si la question ouverte n° 5 le retient. Elle serait alors proposée selon la règle 10 (nom exact, raison, alternative).
+Aucune (règle 10). Sont utilisés des paquets déjà déclarés : `drizzle-orm`, `pg`, `zod` (dépendances), `dotenv`, `vitest`, `eslint` (dépendances de développement). `crypto.randomUUID()` vient de Node.js. Pas de PgBouncer en CI (décision 5).
 
 ## Migration
 
 Deux migrations, dans cet ordre, relues avant `npm run db:migrate` :
 
-1. Générée par `npm run db:generate` : création de `temoin_isolation`, de sa clé étrangère, de `ENABLE ROW LEVEL SECURITY` et de la règle `isolation_organisation`. Lecture du SQL : vérifier l'expression exacte de la règle, l'absence de clause `TO`, et `NOT NULL` sur `organisation_id`.
-2. Créée par `npx drizzle-kit generate --custom`, si l'option F1 est retenue : `ALTER TABLE "temoin_isolation" FORCE ROW LEVEL SECURITY;`, seule instruction du fichier.
+1. Générée par `npm run db:generate` : création de `temoin_isolation`, de sa clé étrangère en `ON DELETE RESTRICT`, de `ENABLE ROW LEVEL SECURITY` et de la règle `isolation_organisation`. Lecture du SQL : vérifier l'expression exacte de la règle, l'absence de clause `TO`, `NOT NULL` sur `organisation_id` et `ON DELETE restrict`.
+2. Créée par `npx drizzle-kit generate --custom --name forcer-isolation-temoin`, qui produit un fichier SQL vide. L'assistant indique la ligne exacte, le développeur la colle : `ALTER TABLE "temoin_isolation" FORCE ROW LEVEL SECURITY;`, seule instruction du fichier (décision 2).
 
 Ordre de déploiement : la CI les applique sur sa base neuve ; puis `dev` en local ; puis `production` et `preview` par le workflow `migrations.yml`. Une table vide en production, sans effet sur l'application.
 
-La marque `app.environnement` n'est **pas** une migration : une migration l'appliquerait aussi à `production`.
+La marque de test n'est **pas** une migration : une migration l'appliquerait aussi à `production`.
 
 ## Conséquences sur la CI et les scripts
 
 ### Job « Qualité » de `ci.yml`
 
-Aucune étape ajoutée. `npm test` ne lance plus que le projet `unitaires` : aucun test avec base n'y tourne, comme aujourd'hui. `npm run build` n'inclut pas `outils-test/`.
+Aucune étape ajoutée. `npm test` ne lance que le projet `unitaires`, qui comprend maintenant `client.test.ts`, `garde-base.attaque.test.ts` et `regles-import.test.ts`. Aucun test avec base n'y tourne. `npm run build` n'inclut pas `outils-test/`.
 
 ### Job « Base de données et bout en bout » de `ci.yml`
 
 | Étape | Changement |
 |---|---|
-| `Préparer la base de test` | `scripts/preparer-base-test.mjs` pose en plus la marque : `ALTER DATABASE facturation_test SET app.environnement = 'test'`. Le script refuse déjà tout hôte autre que `localhost` |
+| `Préparer la base de test` | `scripts/preparer-base-test.mjs` pose en plus la marque `environnement:test` par `COMMENT ON DATABASE` (section 5.1). Le script refuse déjà tout hôte autre que `localhost` |
 | `Appliquer les migrations` | Applique les deux nouvelles migrations |
-| `Vérifier l'isolation entre organisations` | Inchangé (question ouverte n° 11) |
+| `Vérifier l'isolation entre organisations` | Inchangé : `scripts/verifier-isolation.mjs` reste dans la CI (décision 11). Il prouve l'isolation pour le rôle propriétaire sur une table créée hors de Drizzle |
 | **Nouvelle étape** `Lancer les tests d'intégration`, après la précédente | `npm run test:integration` |
 | Les autres | Inchangées |
 
-Limite : le PostgreSQL de la CI n'a pas de regroupement de connexions. Les tests de concurrence y prouvent la portée du réglage et la réutilisation des connexions par le `Pool` de `pg`, pas le comportement de PgBouncer. Celui-ci n'est prouvé qu'en local sur `dev`, qui passe par le regroupement de Neon (question ouverte n° 5).
+**Limite (décision 5)** : le PostgreSQL de la CI n'a pas de regroupement de connexions. Les tests de concurrence y prouvent la portée du réglage et la réutilisation des connexions par le `Pool` de `pg`, pas le comportement de PgBouncer. Celui-ci n'est prouvé qu'en local sur `dev`, qui passe par le regroupement de Neon. Une régression propre au regroupement ne serait donc vue que par un lancement local de `npm run test:integration`, exigé avant de dire qu'une tâche touchant la base est terminée.
 
 ### Workflow `migrations.yml`
 
@@ -357,35 +383,37 @@ Inchangé. Il appliquera les deux migrations en production puis sur `preview`.
 
 | Script | Effet |
 |---|---|
-| `preparer-base-test.mjs` | Pose la marque de test (ci-dessus) |
-| `verifier-isolation.mjs` | Inchangé |
+| `preparer-base-test.mjs` | Pose la marque de test sur la base de la CI |
+| `retablir-acces-dev.mjs` | Pose la marque de test sur `dev`, après le changement du mot de passe, par le rôle propriétaire déjà utilisé par le script (décision 6). Le script refuse déjà le serveur de production |
+| `verifier-isolation.mjs` | Inchangé, reste dans la CI (décision 11) |
 | Les autres | Inchangés |
-
-La marque sur `dev` se pose une fois, et à chaque recréation de la branche : par une instruction SQL dans l'éditeur SQL de Neon, branche `dev` choisie explicitement, documentée dans `CONFIGURATION.md` (étape 7 et rubrique « Rétablir l'accès à `dev` »). L'automatiser dans `retablir-acces-dev.mjs` est la question ouverte n° 6.
 
 ### Documents
 
-- `CLAUDE.md` : commandes (`npm run test:integration`) ; « avant de dire qu'une tâche est terminée », ajout de `npm run test:integration` quand la base est concernée ; si F1 est retenue, l'exception bornée à la règle sur `drizzle/` ; la règle 3 renvoie au modèle de `schema/isolation.ts` au lieu du script.
-- `docs/PLAN.md` section 4.1 et `docs/STRUCTURE.md` section 6 : convention `*.integration.test.ts`.
+- `CLAUDE.md` : commandes (`npm run test:integration`) ; « avant de dire qu'une tâche est terminée », ajout de `npm run test:integration` quand la base est concernée ; l'exception bornée à la règle sur `drizzle/` (section 2.2) ; la règle 3 renvoie au modèle de `schema/isolation.ts` au lieu du script.
+- `docs/PLAN.md` section 4.1 et `docs/STRUCTURE.md` section 6 : convention `*.integration.test.ts` (fait à la validation de la fiche).
 - `docs/STRUCTURE.md` section 3.1 : `schema/isolation.ts`, `outils-test/`.
-- `docs/CONFIGURATION.md` : pose de la marque sur `dev`, commande `npm run test:integration`.
+- `docs/CONFIGURATION.md` : pose de la marque sur `dev` par `retablir-acces-dev.mjs`, commande `npm run test:integration`.
 
 ## Critères d'acceptation
 
 - [ ] `executerDansOrganisation` fixe l'organisation par `set_config('app.organisation_id', $1, true)` en première instruction de la transaction, l'identifiant en paramètre lié.
 - [ ] `grep -rnE "SET( LOCAL)? app\.|set_config\([^)]*false" src/` ne trouve rien.
 - [ ] Un identifiant invalide lève `OrganisationActiveInvalide`, au message fixe, sans `cause`, sans la valeur, et sans qu'aucune connexion soit prise.
-- [ ] Une requête par `db` hors de la fonction ne voit aucune ligne de `temoin_isolation`, et toute insertion y est refusée.
+- [ ] Sans organisation fixée, une lecture de `temoin_isolation` par `db` renvoie zéro ligne sans erreur, sur une connexion neuve (réglage `NULL`) comme après une transaction (réglage `''`) ; une insertion est refusée par `42501` ; aucune erreur `22P02`.
 - [ ] Après une transaction, réussie ou annulée, la connexion rendue au `Pool` n'a plus d'organisation active.
 - [ ] Deux transactions simultanées sur deux organisations ne voient chacune que leurs lignes.
 - [ ] `temoin_isolation` est déclarée uniquement avec `colonneOrganisation()` et `regleIsolation()`, et sa règle est activée et forcée en base.
-- [ ] `verifierIsolation` passe sur `temoin_isolation` (six contrôles, plus les deux proposés s'ils sont retenus).
+- [ ] La clé étrangère du modèle est en `ON DELETE RESTRICT` : supprimer une organisation qui a une ligne dans `temoin_isolation` est refusé.
+- [ ] `verifierIsolation` passe sur `temoin_isolation` (huit contrôles).
 - [ ] Le test d'inventaire passe, et échoue si l'on retire temporairement le forçage d'une table (vérification manuelle, annulée ensuite).
-- [ ] `creerDeuxOrganisations` produit des identifiants différents à chaque appel, et `nettoyer` ne laisse aucune ligne, y compris quand le test échoue.
-- [ ] Les tests d'intégration refusent de s'exécuter sur une base sans la marque `app.environnement = 'test'`, avec un rôle autre que `app_facturation`, ou avec un rôle qui contourne l'isolation. Le message ne contient ni hôte, ni nom de base, ni adresse.
+- [ ] `creerDeuxOrganisations` produit des identifiants différents à chaque appel, des `slug` préfixés par `test-`, et `nettoyer` ne laisse aucune ligne, y compris quand le test échoue.
+- [ ] Les tests d'intégration refusent de s'exécuter sur une base sans la marque exacte `environnement:test`, avec un rôle autre que `app_facturation`, ou avec un rôle qui contourne l'isolation. Le message ne contient ni hôte, ni nom de base, ni adresse, ni valeur lue.
+- [ ] `preparer-base-test.mjs` et `retablir-acces-dev.mjs` posent la marque.
 - [ ] `npm test` ne lance aucun fichier `*.integration.test.ts` et réussit sans base.
 - [ ] `npm run test:integration` réussit en CI et en local sur `dev`.
-- [ ] ESLint refuse l'import de `src/server/db/outils-test/` depuis un fichier qui n'est pas un test.
+- [ ] `scripts/verifier-isolation.mjs` reste une étape de la CI.
+- [ ] ESLint refuse l'import de `src/server/db/outils-test/` depuis un fichier qui n'est pas un test, et l'import de `db` hors de `src/server/auth/config.ts` et de `src/server/db/`.
 - [ ] `grep -rn "process.env" src/` ne trouve toujours que `src/server/env.ts` ; `grep -rn "DATABASE_URL_MIGRATION" src/` ne trouve rien.
 - [ ] Tout nouveau fichier de `src/server/`, hors de `schema/`, commence par `import "server-only";`.
 - [ ] Aucune dépendance ajoutée : `package-lock.json` inchangé.
@@ -397,11 +425,27 @@ Toutes les valeurs sont factices ou aléatoires. Aucun test n'utilise d'identifi
 
 ### Tests unitaires
 
-Fichier : `src/server/db/client.test.ts` (sans base : la validation a lieu avant toute connexion).
+Fichier : `src/server/db/client.test.ts` (sans base : la validation a lieu avant toute connexion ; `env` est remplacé par une valeur factice).
 
-- [ ] Chaîne vide, texte quelconque, nombre, `undefined`, UUID entouré d'espaces, `11111111-1111-1111-1111-111111111111` : `OrganisationActiveInvalide`, et `travail` n'est jamais appelé.
+- [ ] Chaîne vide, texte quelconque, nombre, `undefined`, `null`, UUID entouré d'espaces, UUID en majuscules entouré d'espaces, `11111111-1111-1111-1111-111111111111` : `OrganisationActiveInvalide`, et `travail` n'est jamais appelé.
 - [ ] Le message de l'erreur est exactement le message fixe ; ni le message, ni `String(erreur)`, ni `JSON.stringify(erreur)` ne contiennent la valeur reçue ; aucune propriété `cause`.
 - [ ] Aucune connexion n'est demandée au `Pool` (`Pool` factice passé à `creerAcces`).
+
+Fichier : `src/server/db/outils-test/garde-base.attaque.test.ts` (fonction pure `deciderBaseDeTest`).
+
+- [ ] Marque `environnement:test`, rôle `app_facturation`, `contourne = false` : accepté.
+- [ ] Marque absente, vide, `environnement:Test`, `environnement:test ` (espace), ` environnement:test`, `environnement:production`, `environnement:preview`, `test` : refus, raison « marque ».
+- [ ] Rôle `neondb_owner` ou `postgres` : refus, raison « rôle ».
+- [ ] `contourne = true` ou `null` : refus, raison « contourne ».
+- [ ] Le message commence par « Tests refusés : » et ne contient ni la marque lue, ni le rôle lu.
+
+Fichier : `src/server/db/regles-import.test.ts` (ESLint par son API, sur du code fourni en texte, sans écrire de fichier).
+
+- [ ] Import statique ou dynamique de `outils-test/` depuis un fichier de l'application (`src/app/`, `src/server/db/requetes/`) : erreur `no-restricted-imports` ou `no-restricted-syntax`.
+- [ ] Le même import depuis un fichier `*.test.ts`, `*.integration.test.ts`, ou depuis un fichier de `outils-test/` : aucune erreur.
+- [ ] `import { db }`, `import * as client`, `export { db } from` de `client.ts` depuis `src/server/services/` ou `src/app/` : erreur.
+- [ ] `import { executerDansOrganisation }` depuis `src/server/services/` : aucune erreur.
+- [ ] `import { db }` depuis `src/server/auth/config.ts` et depuis `src/server/db/requetes/` : aucune erreur.
 
 ### Tests d'intégration
 
@@ -410,19 +454,21 @@ Fichier : `src/server/db/client.integration.test.ts`.
 - [ ] Dans la transaction, `current_setting('app.organisation_id')` vaut l'identifiant fourni.
 - [ ] La valeur renvoyée par `travail` est renvoyée par la fonction.
 - [ ] Une exception dans `travail` annule les écritures de la transaction et remonte telle quelle.
-- [ ] Après la transaction, sur la même connexion (`Pool` d'une connexion), `current_setting('app.organisation_id', true)` vaut `''` ou `NULL`.
+- [ ] Après la transaction, réussie ou annulée, sur la même connexion (`Pool` d'une connexion), `current_setting('app.organisation_id', true)` vaut `''` ou `NULL`.
+- [ ] Sans organisation fixée, sur une connexion neuve (`NULL`) et après une transaction (`''`) : lecture de `temoin_isolation` = 0 ligne sans erreur ; insertion refusée par `42501`, jamais `22P02`.
 
-Fichier : `src/server/db/schema/isolation.integration.test.ts`.
+Fichier : `src/server/db/schema-isolation.integration.test.ts`.
 
-- [ ] `verifierIsolation(temoinIsolation, ...)` : tous les contrôles passent.
+- [ ] `verifierIsolation(temoinIsolation, ...)` : les huit contrôles passent.
 - [ ] Test d'inventaire (section 4.4).
+- [ ] Supprimer une organisation qui a une ligne dans `temoin_isolation` : refus `23503` (`ON DELETE RESTRICT`).
 
 Fichier : `src/server/db/outils-test/outils-test.integration.test.ts`.
 
-- [ ] Deux appels à `creerDeuxOrganisations` donnent quatre identifiants distincts.
+- [ ] Deux appels à `creerDeuxOrganisations` donnent quatre identifiants distincts, et des `slug` préfixés par `test-`.
 - [ ] Après `nettoyer`, les organisations et leurs lignes de `temoin_isolation` ont disparu.
 - [ ] `nettoyer` appelé deux fois ne lève pas d'erreur.
-- [ ] Un test volontairement en échec, dans un fichier isolé, nettoie quand même (vérifié par un comptage dans le fichier suivant, ou par `onTestFinished`).
+- [ ] Un test qui échoue volontairement (`test.fails`) après avoir créé des organisations et des lignes, `nettoyer` enregistré par `onTestFinished` : le test suivant constate qu'elles ont disparu.
 - [ ] Le garde-fou accepte la base marquée de la CI et de `dev`.
 
 ### Tests de concurrence
@@ -432,7 +478,7 @@ Fichier : `src/server/db/client.concurrence.integration.test.ts`.
 - [ ] **Deux transactions simultanées, deux organisations.** A et B ouvrent chacune une transaction ; une barrière en JavaScript attend que les deux aient fixé leur organisation avant que l'une ou l'autre lise ; chacune lit, écrit, relit, puis valide. Chacune ne voit que ses lignes, et le chevauchement est prouvé par la barrière (pas par une attente fixe).
 - [ ] **Réutilisation de la connexion.** `Pool` d'une seule connexion : transaction de A validée, puis requête sans organisation : 0 ligne. Même chose après une transaction de A annulée par une exception.
 - [ ] **Alternance sur un petit `Pool`.** Quarante transactions lancées ensemble, alternant A et B, sur un `Pool` de trois connexions : chacune ne voit que les lignes de son organisation, et une requête sans organisation après coup n'en voit aucune.
-- [ ] Ces tests, lancés en local sur `dev`, traversent le regroupement de Neon. En CI, ils ne prouvent que le comportement de PostgreSQL et du `Pool`.
+- [ ] Ces tests, lancés en local sur `dev`, traversent le regroupement de Neon. En CI, ils ne prouvent que le comportement de PostgreSQL et du `Pool` (décision 5).
 
 ### Tests d'attaque
 
@@ -442,7 +488,7 @@ Fichier : `src/server/db/client.attaque.integration.test.ts`.
 
 - [ ] T-30 : organisation A active, lecture filtrée sur l'identifiant d'une ligne de B : aucune ligne.
 - [ ] T-30 : organisation A active, insertion d'une ligne pour B : refus `42501`.
-- [ ] T-30 : organisation A active, modification et suppression des lignes de B : 0 ligne.
+- [ ] T-30 : organisation A active, modification et suppression des lignes de B : 0 ligne, et la ligne de B est intacte.
 - [ ] T-30 : organisation A active, déplacement de sa propre ligne vers B par `UPDATE` : refus `42501`.
 - [ ] T-53 : requête par `db`, sans organisation active : 0 ligne ; insertion refusée.
 - [ ] T-53 : le rôle de la connexion est `app_facturation`, sans `BYPASSRLS`.
@@ -450,12 +496,7 @@ Fichier : `src/server/db/client.attaque.integration.test.ts`.
 
 Le risque qu'un code disposant de `tx` exécute lui-même `set_config` vers une autre organisation n'a pas de test ici : Drizzle laisse `execute` disponible sur toute transaction. Il est reporté à la 0.4 (voir « Reporté »).
 
-Fichier : `src/server/db/outils-test/garde-base.attaque.integration.test.ts`.
-
-- [ ] Garde-fou face à une connexion simulée dont la marque est absente, vaut `Test`, `production` ou `test ` : refus, message sans hôte ni adresse.
-- [ ] Garde-fou face à un rôle autre que `app_facturation`, ou à `contourne = true` : refus.
-
-Ces deux derniers tests utilisent une fonction pure de décision (`deciderBaseDeTest(resultat)`) appliquée au résultat de la requête, pour ne pas avoir besoin d'une base non marquée.
+Les tests d'attaque du garde-fou sont des tests unitaires (`garde-base.attaque.test.ts`, ci-dessus) : ils portent sur la fonction pure de décision et n'ont pas besoin d'une base non marquée.
 
 ### Tests de bout en bout
 
@@ -476,10 +517,11 @@ Créés :
 - `src/server/db/client.integration.test.ts`
 - `src/server/db/client.concurrence.integration.test.ts`
 - `src/server/db/client.attaque.integration.test.ts`
-- `src/server/db/schema/isolation.integration.test.ts`
+- `src/server/db/schema-isolation.integration.test.ts`
+- `src/server/db/regles-import.test.ts`
 - `src/server/db/outils-test/outils-test.integration.test.ts`
-- `src/server/db/outils-test/garde-base.attaque.integration.test.ts`
-- `drizzle/<horodatage>_<nom>/` : deux migrations, générées par drizzle-kit
+- `src/server/db/outils-test/garde-base.attaque.test.ts`
+- `drizzle/<horodatage>_<nom>/` : deux migrations, la seconde créée vide par drizzle-kit et remplie par le développeur
 
 Modifiés :
 
@@ -487,8 +529,8 @@ Modifiés :
 - `src/server/db/schema/technique.ts` : `temoin_isolation`
 - `vitest.config.mts` : projets `unitaires` et `integration`, lecture de `.env.local` pour le second
 - `package.json` : scripts `test`, `test:watch`, `test:integration`
-- `eslint.config.mjs` : import de `outils-test/` réservé aux tests
-- `scripts/preparer-base-test.mjs` : marque de test
+- `eslint.config.mjs` : import de `outils-test/` réservé aux tests, import de `db` réservé à `auth/config.ts` et `db/`
+- `scripts/preparer-base-test.mjs`, `scripts/retablir-acces-dev.mjs` : marque de test
 - `.github/workflows/ci.yml` : étape « Lancer les tests d'intégration »
 - `CLAUDE.md`, `docs/PLAN.md`, `docs/STRUCTURE.md`, `docs/CONFIGURATION.md` : voir « Documents »
 - `docs/features/acces-donnees.md` : statut
@@ -497,7 +539,7 @@ Modifiés :
 
 ### À la fonctionnalité 0.3 (journal d'audit)
 
-- La table `journal_audit` utilise `colonneOrganisation()` et `regleIsolation()`, et passe `verifierIsolation`. Ses contrôles 5 et 7 (modification, suppression) rencontreront un refus de droit plutôt qu'un résultat vide : la vérification générique devra accepter l'un ou l'autre, ou recevoir une option « ajout seul ».
+- La table `journal_audit` utilise `colonneOrganisation()` et `regleIsolation()`, et passe `verifierIsolation`. Ses contrôles 5, 7 et 8 (modification, suppression, déplacement) rencontreront un refus de droit plutôt qu'un résultat vide : la vérification générique devra accepter l'un ou l'autre, ou recevoir une option « ajout seul ».
 - La fonction d'écriture au journal reçoit la `TransactionOrganisation` de l'action, pour que l'action et sa trace réussissent ou échouent ensemble (S-70).
 - Le retrait des droits `UPDATE` et `DELETE` au rôle de l'application sur cette table.
 
@@ -513,17 +555,28 @@ Modifiés :
 - 0.8 (contrôle après déploiement) pourra s'appuyer sur `temoin_isolation` : une lecture sans organisation active en production doit renvoyer 0 ligne.
 - Retirer le droit `TEMPORARY` sur la base au rôle de l'application (`REVOKE TEMPORARY ON DATABASE ... FROM PUBLIC`) : une table temporaire appartient au rôle qui la crée et échappe aux règles non forcées. Durcissement à proposer dans sa propre fiche.
 
-## Questions ouvertes
+## Décisions
 
-1. **Type des identifiants.** Retiens-tu U1 (identifiants `uuid` dans Better Auth), et dans une fiche préalable dédiée, livrée avant la 0.2 ? Ou U2 (`text`), avec correction de `DESIGN.md` ?
-2. **Forçage de la règle.** Acceptes-tu une exception à « ne modifie jamais le dossier `drizzle/` à la main », limitée aux migrations créées par `drizzle-kit generate --custom` et ne contenant que des `ALTER TABLE ... FORCE ROW LEVEL SECURITY` ? Sinon, quelle voie préfères-tu ?
-3. **Table témoin.** Acceptes-tu une table `temoin_isolation`, vide et sans usage métier, présente en production ?
-4. **Marque de la base de test.** Peux-tu vérifier sur `dev`, dans l'éditeur SQL de Neon, que `ALTER DATABASE neondb SET app.environnement = 'test'` est accepté pour `neondb_owner`, puis qu'une nouvelle connexion par le rôle de l'application lit `test` ? Je ne peux pas le vérifier sans toucher à la base.
-5. **Regroupement de connexions en CI.** Faut-il ajouter un PgBouncer en mode transaction dans le job d'intégration (une image de conteneur, donc une dépendance à valider selon la règle 10), ou accepter que le comportement du regroupement ne soit prouvé qu'en local sur `dev` ?
-6. **Pose de la marque sur `dev`.** Instruction SQL manuelle documentée dans `CONFIGURATION.md`, ou ajout dans `scripts/retablir-acces-dev.mjs`, qui sert déjà après chaque recréation de la branche ?
-7. **Lignes laissées par un test interrompu.** Le nettoyage ne couvre pas un processus tué. Faut-il un script de balayage (organisations dont le `slug` commence par `test-`, supprimées avec leurs lignes par le rôle propriétaire), ou la recréation de la branche `dev` suffit-elle, comme le dit `PLAN.md` section 7 ?
-8. **Suppression d'une organisation.** Quel comportement pour la clé étrangère du modèle : `ON DELETE RESTRICT` (une organisation qui a des données ne peut pas être supprimée directement) ou `CASCADE` ? `DESIGN.md` interdit la cascade vers un document émis, mais ne dit rien du cas général. Pour la table témoin seule, `CASCADE` simplifierait le nettoyage.
-9. **Contrôles supplémentaires.** Ajoutes-tu les contrôles 7 (suppression chez B) et 8 (déplacement d'une ligne vers B) à la vérification générique, en plus des six du script ?
-10. **Usage de `db`.** Faut-il, dès la 0.2, interdire par ESLint l'import de `db` ailleurs que dans `src/server/auth/config.ts` et `src/server/db/`, ou le reporter à la 0.4 avec le reste de l'analyse du code ?
-11. **Avenir de `scripts/verifier-isolation.mjs`.** Le garder dans la CI (il prouve l'isolation pour le rôle propriétaire sur une table créée hors de Drizzle), ou le retirer quand les tests d'intégration le remplacent ?
-12. **Convention de nom.** Valides-tu `*.integration.test.ts` (et `*.attaque.integration.test.ts`), avec la mise à jour de `PLAN.md` section 4.1 et de `STRUCTURE.md` section 6 ?
+1. **Type des identifiants.** U1 : identifiants `uuid` partout. Livré par `docs/features/identifiants-uuid.md`, déployé sur `dev`, `preview` et `production`.
+2. **Forçage de la règle.** Migration `drizzle-kit generate --custom` acceptée, pour `FORCE ROW LEVEL SECURITY` uniquement. L'assistant crée le fichier vide par la commande et indique la ligne exacte ; le développeur la colle. L'assistant n'écrit jamais dans `drizzle/`.
+3. **Table témoin.** `temoin_isolation` acceptée, présente en production.
+4. **Marque de la base de test.** `ALTER DATABASE ... SET` est refusé par Neon (« permission denied to set parameter », vérifié sur `dev`). La marque est un commentaire de base, `COMMENT ON DATABASE <nom> IS 'environnement:test'`, posé par le rôle propriétaire, lu par `shobj_description(oid, 'pg_database')`. Vérifié : posée et lue sur `dev`, absente de `preview` et de `production`. Le garde-fou exige exactement cette valeur ; toute autre valeur, ou son absence, est un refus.
+5. **Regroupement de connexions en CI.** Pas de PgBouncer en CI. Le regroupement n'est prouvé que sur `dev` ; la limite est notée.
+6. **Pose de la marque.** Ajoutée à `scripts/retablir-acces-dev.mjs` et à `scripts/preparer-base-test.mjs`.
+7. **Lignes laissées par un test interrompu.** Pas de script de balayage. Les organisations de test gardent un `slug` préfixé par `test-`.
+8. **Suppression d'une organisation.** `ON DELETE RESTRICT` partout, table témoin comprise. L'outillage nettoie les lignes avant l'organisation.
+9. **Contrôles supplémentaires.** Contrôles 7 (suppression chez B) et 8 (déplacement vers B) ajoutés.
+10. **Usage de `db`.** Règle ESLint dès la 0.2 : `db` ne s'importe que dans `src/server/auth/config.ts` et `src/server/db/`.
+11. **`scripts/verifier-isolation.mjs`.** Reste dans la CI.
+12. **Convention de nom.** `*.integration.test.ts` validée ; `PLAN.md` et `STRUCTURE.md` mis à jour.
+
+Exigences ajoutées à la validation :
+
+- Sans organisation fixée, une lecture renvoie zéro ligne sans erreur, et une écriture est refusée. Aucune erreur de conversion sur une valeur vide (section 1.3).
+- Règle ESLint : l'outillage de test ne s'importe que depuis un fichier de test (section 4.1).
+
+Choix faits en rédigeant les tests, à confirmer à la relecture :
+
+- Le test du modèle est placé dans `src/server/db/schema-isolation.integration.test.ts`, et non dans `schema/`, que drizzle-kit charge en entier.
+- Les tests du garde-fou portent sur une fonction pure : ils deviennent des tests unitaires (`garde-base.attaque.test.ts`), lancés par `npm test`.
+- Les règles ESLint sont vérifiées par un test (`regles-import.test.ts`), qui utilise l'API d'`eslint`, déjà installé.

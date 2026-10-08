@@ -201,11 +201,17 @@ Les libellés de l'interface, regroupés par domaine. Aucun texte destiné à l'
 
 | Type | Emplacement | Nom |
 |---|---|---|
-| Test unitaire | À côté du fichier testé | `montants.test.ts` |
-| Test d'attaque | À côté du service ou de l'action visés | `factures.attaque.test.ts` |
+| Test unitaire, sans base | À côté du fichier testé | `montants.test.ts` |
+| Test d'intégration, avec base | À côté du service ou de la requête testés | `factures.integration.test.ts` |
+| Test d'attaque avec base | À côté du service ou de l'action visés | `factures.attaque.integration.test.ts` |
+| Test d'attaque sans base | À côté de la fonction visée | `env-schema.attaque.test.ts` |
 | Test de bout en bout | `e2e/` | `devis-acceptation.spec.ts` |
 
-Le suffixe `.attaque.test.ts` distingue les tests qui tentent de violer une exigence de sécurité. On peut ainsi les compter, les lancer seuls, et vérifier que chaque menace de priorité haute en possède au moins un (NF-06).
+Le suffixe `.integration.test.ts` marque tout test qui touche la base : `npm test` ne lance que les autres, `npm run test:integration` ne lance que ceux-là. Un test ne vit jamais dans `src/server/db/schema/`, que drizzle-kit charge en entier.
+
+Le suffixe `.attaque` distingue les tests qui tentent de violer une exigence de sécurité. On peut ainsi les compter (`*.attaque*.test.ts`), les lancer seuls, et vérifier que chaque menace de priorité haute en possède au moins un (NF-06).
+
+L'outillage des tests avec base vit dans `src/server/db/outils-test/`. Il ne s'importe que depuis un fichier de test (règle ESLint).
 
 ---
 

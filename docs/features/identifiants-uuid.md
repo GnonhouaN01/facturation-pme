@@ -1,6 +1,6 @@
 # Fonctionnalité : identifiants UUID
 
-Statut : en cours
+Statut : livrée
 
 Préalable à la fonctionnalité 0.2 (`docs/features/acces-donnees.md`, section « Préalable », option U1 retenue). Hors de la numérotation de `docs/PLAN.md`. Taille S.
 
@@ -325,10 +325,10 @@ Drizzle n'a pas de migration descendante : un retour passe toujours par une nouv
 - [x] Deux migrations générées par drizzle-kit, sans modification à la main : suppression des 8 tables, puis création en `uuid`. Aucune ne touche `compteur_debit`.
 - [x] Aucune migration déjà appliquée n'est modifiée.
 - [ ] Les 8 comptes de la section 4 sont à 0 sur `dev`, `preview` et `production` avant leur migration respective. `dev` : prouvé avant sa migration (section 4.4). `preview` et `production` : à revérifier juste avant leur migration.
-- [ ] En CI et sur `dev` : `verifier-identifiants.mjs` réussit, `verifier:auth` réussit, `verifier-tables.mjs` liste 9 tables. `dev` : prouvé le 2026-10-08 (15 colonnes `uuid`, 0 utilisateur lu, 9 tables ; `verifier-isolation.mjs` passe aussi). CI : à constater sur la PR.
-- [ ] En CI : `npm run verifier:creation-auth` réussit, et ne laisse aucune ligne.
+- [x] En CI et sur `dev` : `verifier-identifiants.mjs` réussit, `verifier:auth` réussit, `verifier-tables.mjs` liste 9 tables. `dev` : prouvé le 2026-10-08 (15 colonnes `uuid`, 0 utilisateur lu, 9 tables ; `verifier-isolation.mjs` passe aussi). CI : verte sur la PR.
+- [x] En CI : `npm run verifier:creation-auth` réussit, et ne laisse aucune ligne. Prouvé par la CI verte sur la PR (le script échoue si son nettoyage échoue).
 - [x] `npm run verifier:creation-auth` sur `dev` (hôte Neon) refuse de s'exécuter, sans afficher l'hôte.
-- [ ] Après migration, la requête de vérification des types donne le résultat attendu sur `production` et `preview`.
+- [x] Après migration, la requête de vérification des types donne le résultat attendu sur `production` et `preview`. `preview` puis `production` migrées par le workflow `migrations.yml` ; sur chacune, 15 colonnes `uuid` et 9 tables accessibles vérifiées. Branche `avant-uuid` créée dans Neon avant la migration de `production`.
 - [x] `CLAUDE.md` contient la procédure corrigée et vérifiée ; la mention « non vérifié » a disparu ou est remplacée par le constat.
 - [x] `DESIGN.md` et `CONFIGURATION.md` sont à jour.
 - [x] `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` passent.
@@ -359,10 +359,10 @@ Fichier : `src/server/db/schema-auth.test.ts` (hors de `schema/`, voir section 5
 `scripts/verifier-creation-auth.mts`, lancé par le script npm `verifier:creation-auth` (`tsx --conditions=react-server`, comme `verifier:auth`) :
 
 - [x] Refuse de s'exécuter si l'hôte de `DATABASE_URL` n'est pas `localhost` ou `127.0.0.1` (même garde que `preparer-base-test.mjs`), avant de charger la configuration de Better Auth et avant toute connexion : il écrit.
-- [ ] Crée un utilisateur et une organisation par l'adaptateur de Better Auth (`contexte.adapter.create`), sans fournir d'`id`.
-- [ ] Vérifie que chaque `id` renvoyé est un UUID, et qu'il est égal à celui relu par l'adaptateur.
-- [ ] Crée une adhésion (`member`) qui relie les deux : la clé étrangère `uuid` accepte la ligne.
-- [ ] Supprime ses lignes dans tous les cas, succès ou échec (`finally`), en les retrouvant par l'adresse email et le `slug` uniques qu'il a choisis, pour couvrir aussi une création interrompue avant d'avoir renvoyé son `id`. Un échec du nettoyage est signalé et fait échouer le script.
+- [x] Crée un utilisateur et une organisation par l'adaptateur de Better Auth (`contexte.adapter.create`), sans fournir d'`id`.
+- [x] Vérifie que chaque `id` renvoyé est un UUID, et qu'il est égal à celui relu par l'adaptateur.
+- [x] Crée une adhésion (`member`) qui relie les deux : la clé étrangère `uuid` accepte la ligne.
+- [x] Supprime ses lignes dans tous les cas, succès ou échec (`finally`), en les retrouvant par l'adresse email et le `slug` uniques qu'il a choisis, pour couvrir aussi une création interrompue avant d'avoir renvoyé son `id`. Un échec du nettoyage est signalé et fait échouer le script.
 
 Avant le changement de configuration, ce script échoue en CI : Better Auth fabrique alors un identifiant de 32 caractères, qui n'est pas un UUID.
 
@@ -374,7 +374,7 @@ Les quatre tests d'attaque obligatoires du modèle ne s'appliquent pas : aucune 
 
 ### Tests de bout en bout
 
-- [ ] Aucun nouveau. Les tests existants doivent continuer de passer.
+- [x] Aucun nouveau. Les tests existants doivent continuer de passer : CI verte sur la PR.
 
 ## Fichiers concernés
 
