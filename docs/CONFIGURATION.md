@@ -148,6 +148,14 @@ git status --short
 
 **Résultat.** `git status --short` ne montre jamais `.env.local`.
 
+**Contraintes sur les valeurs.** `src/server/env-schema.ts` les vérifie au lancement du serveur et au premier import de `src/server/env.ts`. Une valeur invalide est signalée par le nom de la variable et la raison, jamais par la valeur.
+
+| Variable | Contrainte |
+|---|---|
+| `DATABASE_URL` | Adresse `postgres:` ou `postgresql:`, rôle exactement `app_facturation`. Hors de `localhost` et `127.0.0.1` : `sslmode=verify-full`, une seule fois. `channel_binding` n'est pas exigé |
+| `BETTER_AUTH_SECRET` | Au moins 32 caractères |
+| `BETTER_AUTH_URL` | Adresse `https:`. `http:` n'est admis que sur `localhost` ou `127.0.0.1`. Facultative en prévisualisation Vercel (étape 10) |
+
 **Si un secret est exposé :** le renouveler immédiatement. Supprimer le commit ne suffit pas.
 
 ## Étape 7 — Base de données Neon, rôles et Drizzle
@@ -266,6 +274,8 @@ Le script attend que l'adresse du propriétaire soit copiée dans Neon, renouvel
 | `BETTER_AUTH_URL` | Config | Production |
 
 `DATABASE_URL_MIGRATION` n'est jamais saisie dans Vercel.
+
+En prévisualisation, `BETTER_AUTH_URL` n'est pas saisie : quand elle est absente et que `VERCEL_ENV` vaut `preview`, l'application la déduit de `VERCEL_URL`, fournie par Vercel à chaque déploiement, préfixée par `https://`. En production, son absence empêche l'application de fonctionner.
 
 **Résultat.** Le site répond. Chaque PR obtient une prévisualisation protégée par connexion.
 

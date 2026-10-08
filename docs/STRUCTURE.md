@@ -150,7 +150,11 @@ Chaque module est défini par une interface, avec plusieurs implémentations. La
 
 ### 3.6 `env.ts` : les variables d'environnement
 
-Le seul fichier qui lit `process.env`. Il valide chaque variable au démarrage avec un schéma, et arrête l'application avec un message clair si l'une manque. Aucun autre fichier ne lit directement une variable d'environnement.
+Le seul fichier qui lit `process.env`. Aucun autre fichier ne lit directement une variable d'environnement.
+
+- `env-schema.ts`, à côté, contient le schéma Zod et la fonction pure `validerEnvironnement`. Elle reçoit les variables en paramètre, ce qui permet de la tester sans toucher à `process.env`. En cas d'erreur, son message nomme chaque variable fautive et la raison, jamais la valeur.
+- `env.ts` appelle cette fonction sur `process.env` à son chargement et exporte l'objet `env`, seule source des variables pour le reste de `src/server/`.
+- `src/instrumentation.ts` importe `env.ts` dans sa fonction `register`, que Next.js appelle au lancement du serveur : une variable invalide est consignée dès le démarrage. Le serveur ne s'arrête pas pour autant : tout module qui importe `env.ts` échoue au chargement, mais les pages statiques, qui ne lisent aucune variable, restent servies.
 
 ---
 

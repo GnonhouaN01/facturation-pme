@@ -17,6 +17,12 @@ jobs:
     name: Qualité
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Valeurs factices, identiques à celles du job d'intégration : aucune base
+    # ne tourne ici, elles ne servent qu'à passer la validation de src/server/env.ts.
+    env:
+      DATABASE_URL: postgresql://app_facturation:mot-de-passe-de-test@localhost:5432/facturation_test
+      BETTER_AUTH_SECRET: secret-de-test-sans-valeur-hors-de-la-ci
+      BETTER_AUTH_URL: http://localhost:3000
     steps:
       - name: Récupérer le code
         uses: actions/checkout@v7
