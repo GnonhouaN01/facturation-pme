@@ -1,6 +1,6 @@
 # Fonctionnalité : journal d'audit
 
-Statut : en cours
+Statut : livrée
 
 Jalon 0, fonctionnalité 0.3 de `docs/PLAN.md`. Taille S.
 
@@ -344,7 +344,7 @@ Le rôle `app_facturation` existe sur les quatre bases (`dev`, `preview`, `produ
 
 - [x] `journal_audit` est déclarée avec `colonneOrganisation()`, `regleIsolation()` et l'index `(organisation_id, cree_le)` ; la migration générée a été relue et ne touche pas `temoin_isolation`.
 - [x] Règle activée et forcée en base ; le test d'inventaire passe et inclut `journal_audit`.
-- [ ] Le rôle de l'application a `SELECT` et `INSERT`, et n'a ni `UPDATE`, ni `DELETE`, ni `TRUNCATE` sur `journal_audit`, sur `dev` et en CI ; puis vérifié sur `production` et `preview` après le workflow. `dev` : prouvé (`schema-journal.integration.test.ts` et test d'inventaire). CI et branches déployées : à constater.
+- [x] Le rôle de l'application a `SELECT` et `INSERT`, et n'a ni `UPDATE`, ni `DELETE`, ni `TRUNCATE` sur `journal_audit`, sur `dev` et en CI ; puis vérifié sur `production` et `preview` après le workflow. `dev` : prouvé (`schema-journal.integration.test.ts` et test d'inventaire). CI : verte sur la PR. `production` puis `preview` : migrées par le workflow, puis vérifiées : isolation activée et forcée ; lire et ajouter à `true` ; modifier, supprimer, vider à `false` ; `scripts/verifier-tables.mjs` liste 11 tables.
 - [x] `UPDATE`, `DELETE`, `TRUNCATE` et `INSERT ... ON CONFLICT DO UPDATE` sur le journal sont refusés par `42501`, et les lignes restent intactes.
 - [x] Supprimer une organisation qui a une entrée au journal est refusé (`23001`) ; supprimer le compte de l'auteur laisse l'entrée intacte, `auteur_id` compris.
 - [x] `journaliser` n'a pas de paramètre d'organisation ; l'entrée écrite porte l'organisation de la transaction ; une entrée qui fournit une organisation est refusée.
@@ -362,7 +362,7 @@ Le rôle `app_facturation` existe sur les quatre bases (`dev`, `preview`, `produ
 - [x] `DESIGN.md` (auteur sans clé étrangère, index, `TRUNCATE`), `USECASES.md` (UC-09), `SPEC.md` (point ouvert sur les connexions sensibles) et `CONFIGURATION.md` (organisations de test laissées sur `dev`) sont à jour (faits à la validation).
 - [x] Tout nouveau fichier de `src/server/` commence par `import "server-only";`.
 - [x] Aucune dépendance ajoutée : `package-lock.json` inchangé.
-- [ ] `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:integration` (sur `dev` et en CI) passent. `dev` : prouvé le 2026-10-09. CI : à constater sur la PR.
+- [x] `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:integration` (sur `dev` et en CI) passent. `dev` : prouvé le 2026-10-09. CI : verte sur la PR.
 
 ## Tests à écrire
 

@@ -103,15 +103,20 @@ src/server/
 │   │   ├── factures.ts
 │   │   └── paiements.ts
 │   └── requetes/            Fonctions de lecture et d'écriture, par domaine
+│       ├── adhesions.ts     Lecture de l'adhésion dans la transaction de l'organisation active
 │       └── journal.ts       Insertion au journal d'audit (importée par journal/audit.ts seul)
 ├── auth/
 │   ├── config.ts            Configuration de Better Auth
-│   └── session.ts           Lecture de la session et de l'adhésion
+│   └── session.ts           Lecture de la session
 ├── autorisation/
-│   ├── matrice.ts           La matrice rôles x actions, unique
-│   └── verifier.ts          « Ce rôle peut-il faire cette action ? »
+│   └── matrice.ts           Les rôles, la matrice rôles x droits, unique, et peut()
 ├── actions/
-│   └── action.ts            La fonction commune de contrôle
+│   ├── action.ts            La fonction commune de contrôle : declarerAction, la chaîne
+│   ├── origine.ts           Contrôle de l'origine de la requête
+│   ├── refus.ts             Modèle de résultat, traduction des erreurs
+│   ├── exposer.ts           Adaptateur Next.js des actions serveur
+│   ├── registre.ts          Liste de toutes les actions déclarées
+│   └── <domaine>.ts         Déclarations des actions d'un domaine
 ├── services/                Règles métier, par domaine
 │   ├── clients.ts
 │   ├── devis.ts
@@ -133,15 +138,20 @@ src/server/
 - **`client.ts`** crée la connexion avec le rôle restreint, et fournit `executerDansOrganisation`, qui ouvre une transaction en fixant l'organisation active. **Toute requête métier passe par cette fonction**, et les fonctions de `requetes/` reçoivent sa `TransactionOrganisation`. `db`, sans organisation active, n'est importé que par `auth/config.ts` et par `db/` (règle ESLint).
 - **`schema/`** décrit les tables. Un fichier par domaine, pour que chaque fiche de fonctionnalité touche un fichier précis. `auth.ts` est produit par l'outil de Better Auth et ne se modifie pas à la main. `isolation.ts` est le modèle unique de la règle de sécurité au niveau des lignes (`colonneOrganisation()`, `regleIsolation()`) ; `technique.ts` contient la table témoin `temoin_isolation`. Aucun fichier de test dans `schema/`, que drizzle-kit charge en entier.
 - **`outils-test/`** contient l'outillage des tests avec base : création et nettoyage d'organisations, vérification générique d'isolation, garde-fou contre toute base non marquée. Il ne s'importe que depuis un fichier de test (règle ESLint).
-- **`requetes/`** contient les fonctions qui lisent et écrivent. Ce sont les seules à utiliser Drizzle. `requetes/journal.ts` insère une entrée du journal d'audit sans la valider : il ne s'importe que depuis `server/journal/audit.ts` (règle ESLint).
+- **`requetes/`** contient les fonctions qui lisent et écrivent. Ce sont les seules à utiliser Drizzle. `requetes/journal.ts` insère une entrée du journal d'audit sans la valider : il ne s'importe que depuis `server/journal/audit.ts` (règle ESLint). `requetes/adhesions.ts` lit le rôle de l'utilisateur dans l'organisation de la transaction, verrouillé en partage (`FOR SHARE`) jusqu'à la fin de l'action.
+- **`executerDansOrganisation`** ne s'importe que dans `server/actions/action.ts`, dans `db/` et dans les tests (règle ESLint) : un service n'ouvre jamais de transaction, il reçoit celle de la chaîne.
 
 ### 3.2 `autorisation/` : un seul fichier pour les droits
 
-`matrice.ts` est la transcription exacte du tableau de THREATS.md, section 6. Les contrôles d'accès la lisent, et les tests aussi : un test parcourt chaque case et vérifie que le serveur répond comme la matrice le dit. Un droit n'est donc défini qu'à un seul endroit (menace T-50).
+`matrice.ts` est la transcription exacte du tableau de THREATS.md, section 6 : les quatre rôles (`proprietaire`, `comptable`, `commercial`, `lecteur`), un droit par ligne du tableau, et `peut(role, droit)`. Toute autre valeur de rôle n'a aucun droit. Les contrôles d'accès la lisent, et les tests aussi : un test compare chaque case au tableau de THREATS.md, et un autre vérifie, pour chaque action déclarée et chaque rôle, que la chaîne répond comme la matrice le dit. Un droit n'est donc défini qu'à un seul endroit (menace T-50). Fiche : `docs/features/chaine-controles.md`.
 
 ### 3.3 `actions/` : la chaîne de contrôles
 
-`action.ts` contient la fonction commune décrite dans DESIGN.md, section 3.2. Elle enchaîne, dans l'ordre : origine de la requête, session, rôle, validation des données. Une action déclarée à travers elle ne peut pas atteindre un service sans avoir passé ces quatre contrôles.
+`action.ts` contient la fonction commune décrite dans DESIGN.md, section 3.2. Elle enchaîne, dans l'ordre : origine de la requête, session, organisation active, puis, dans la transaction de cette organisation, adhésion et rôle, matrice, validation des données, service et trace au journal. Une action déclarée à travers elle ne peut pas atteindre un service sans avoir passé ces contrôles.
+
+- Une action se **déclare** dans `actions/<domaine>.ts` par `declarerAction` (droit, schéma d'entrée, action du journal, nouvelle authentification), et figure dans `registre.ts`.
+- Elle s'**expose** dans `src/app/(app)/<domaine>/actions.ts`, fichier `"use server"`, uniquement sous la forme `export const x = exposer(declaration)`. Une règle ESLint et un test d'inventaire refusent toute autre forme.
+- Le service reçoit un contexte (utilisateur, organisation, rôle, transaction) et écrit au journal par `ctx.journaliser`, lié à l'action déclarée et à l'auteur de la session.
 
 ### 3.4 `services/` : les règles métier
 
@@ -233,11 +243,18 @@ Ces règles seront vérifiées automatiquement par l'analyse du code, en phase 9
 | Dossier | Peut importer | Ne peut pas importer |
 |---|---|---|
 | `app/`, `components/` | `components/`, `schemas/`, `lib/`, `textes/`, et `server/` uniquement par les actions et les services | `server/db/` |
-| `server/actions/` | `server/auth/`, `server/autorisation/`, `schemas/` | `server/db/requetes/` directement |
-| `server/services/` | `server/db/`, `server/modules/`, `server/journal/`, `lib/`, `schemas/` | `app/`, `components/` |
+| `server/actions/` | `server/auth/`, `server/autorisation/`, `server/db/client.ts` (`executerDansOrganisation`), `server/db/requetes/adhesions.ts`, `server/journal/`, `server/services/`, `schemas/` ; `next/headers` dans `exposer.ts` seulement | Les autres fichiers de `server/db/requetes/` |
+| `server/services/` | `server/db/` (sauf `executerDansOrganisation`), `server/modules/`, `lib/`, `schemas/` | `app/`, `components/`, `server/journal/` (le journal s'écrit par `ctx.journaliser`) |
 | `server/journal/` | `server/db/` (le type `TransactionOrganisation` et `requetes/journal.ts`), `zod` | Tout le reste du projet |
 | `server/db/` | `drizzle-orm`, `pg`, `server/env.ts` | Tout le reste de `server/` |
 | `schemas/`, `lib/`, `textes/` | Rien du projet, sauf entre eux | `server/`, `app/`, `components/` |
+
+Règles de la chaîne de contrôles (fonctionnalité 0.4, vérifiées par ESLint à partir de sa troisième PR) :
+
+- `journaliser` ne s'importe que dans `server/actions/action.ts` et les tests.
+- `executerDansOrganisation` ne s'importe que dans `server/actions/action.ts`, `server/db/` et les tests.
+- La chaîne `app.organisation_id` n'apparaît que dans `server/db/client.ts` et `server/db/schema/isolation.ts`.
+- `"use server"` n'apparaît qu'en tête des fichiers `src/app/**/actions.ts`, dont chaque export est `exposer(...)`.
 
 Quatre règles s'y ajoutent :
 
@@ -268,7 +285,7 @@ Les dossiers et fichiers de ce document se créent au fur et à mesure, avec la 
 | Je veux ajouter... | Il va dans... |
 |---|---|
 | Une page | `src/app/(app)/<domaine>/` ou `src/app/(public)/` |
-| Une action de modification | `src/app/(app)/<domaine>/actions.ts`, déclarée par la fonction commune |
+| Une action de modification | Déclarée par `declarerAction` dans `src/server/actions/<domaine>.ts` et inscrite dans `registre.ts`, puis exposée par `exposer` dans `src/app/(app)/<domaine>/actions.ts` |
 | Une règle métier | `src/server/services/<domaine>.ts` |
 | Une requête à la base | `src/server/db/requetes/<domaine>.ts` |
 | Une table | `src/server/db/schema/<domaine>.ts`, puis une migration générée |

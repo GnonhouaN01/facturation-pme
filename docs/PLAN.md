@@ -53,11 +53,14 @@ Aucun écran métier. Ce jalon construit ce dont toutes les fonctionnalités aur
 
 | # | Fonctionnalité | Cas d'utilisation | Exigences et menaces | Taille |
 |---|---|---|---|---|
-| 1.1 | Inscription et vérification de l'email | UC-01 | F-001, S-10, S-11, S-15, T-07 | M |
+| 1.1 | Inscription et vérification de l'email. Avant toute exposition de `/api/auth` : fermeture des points d'entrée natifs du module organisation de Better Auth (`/organization/*`), qui contournent la chaîne de contrôles. Origine acceptée sur `preview` (adresse de branche de Vercel) et réglage équivalent de Better Auth | UC-01 | F-001, S-10, S-11, S-15, T-07, T-55 | M |
 | 1.2 | Connexion et déconnexion | UC-02 | F-002, S-11, S-82, T-01, T-03 | M |
 | 1.3 | Réinitialisation du mot de passe | UC-03 | F-002, S-15, S-17, T-04 | M |
 | 1.4 | Double authentification et codes de secours | UC-04 | F-003, S-12, S-13, T-02, T-06 | M |
 | 1.5 | Sessions actives | UC-05 | F-004, S-17 | S |
+| 1.6 | Nouvelle authentification avant une action sensible | UC-07, UC-10, UC-13, UC-30 | S-14, T-12, T-44 | M |
+
+La 1.6 livre le mécanisme qu'attend la chaîne de contrôles : jusque-là, toute action déclarée avec `nouvelleAuthentification: true` est refusée (`docs/features/chaine-controles.md`). Elle précède donc les fonctionnalités 2.2, 2.4, 2.5 et 7.2. La 1.4 active, dans la chaîne, l'exigence de double authentification par rôle (S-12, S-13) et écrit le test de T-02.
 
 **Démontrable à la fin :** un visiteur crée un compte, le vérifie, active la double authentification et gère ses sessions.
 
@@ -220,7 +223,7 @@ S'y ajoutent, selon la fonctionnalité, les tests propres aux menaces citées da
 |---|---|
 | T-30, T-50, T-53 | 0 |
 | T-35, T-40 | 0 |
-| T-01 à T-04 | 1 |
+| T-01 à T-04, T-55 | 1 |
 | T-12, T-51, T-52 | 2 |
 | T-31, T-34 | 3 |
 | T-32 | 4 |
@@ -270,7 +273,7 @@ Une fonctionnalité n'est terminée que si toutes ces conditions sont réunies.
 | Jalon | Séances estimées |
 |---|---|
 | 0. Fondations | 19 à 33 |
-| 1. Comptes | 13 à 22 |
+| 1. Comptes | 16 à 27 |
 | 2. Organisations | 16 à 27 |
 | 3. Clients et catalogue | 10 à 17 |
 | 4. Devis | 22 à 37 |
@@ -278,11 +281,11 @@ Une fonctionnalité n'est terminée que si toutes ces conditions sont réunies.
 | 6. Paiements et relances | 12 à 20 |
 | 7. Pilotage | 13 à 22 |
 | 8. Exploitation et vitrine | 11 à 19 |
-| **Total** | **137 à 232** |
+| **Total** | **140 à 237** |
 
 Chaque ligne additionne les tailles des fonctionnalités du jalon : 1 à 2 séances pour S, 3 à 5 pour M, 6 à 10 pour L.
 
-À raison de cinq séances par semaine, cela représente entre six et onze mois. Les jalons 0 à 5, qui forment un produit démontrable, demandent entre 101 et 171 séances, soit cinq à huit mois.
+À raison de cinq séances par semaine, cela représente entre six et onze mois. Les jalons 0 à 5, qui forment un produit démontrable, demandent entre 104 et 176 séances, soit cinq à huit mois.
 
 Cette estimation est une fourchette, pas un engagement. Elle repose sur le rythme observé pendant la configuration, où les imprévus ont représenté une part importante du temps.
 
