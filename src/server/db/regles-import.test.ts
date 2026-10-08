@@ -101,3 +101,42 @@ describe("db ne s'importe que dans auth/config.ts et db/", { timeout: 60_000 }, 
     expect(await refus(code, fichier)).toEqual([]);
   });
 });
+
+// 0.3 : l'insertion au journal d'audit ne s'importe que depuis la fonction
+// d'écriture, qui valide l'entrée. Fiche : docs/features/journal-audit.md,
+// section 7.
+const JOURNAL_ALIAS = `import { insererEntreeJournal } from "@/server/db/requetes/journal";
+export const f = insererEntreeJournal;
+`;
+const JOURNAL_DYNAMIQUE = `export const f = () => import("@/server/db/requetes/journal");
+`;
+const JOURNAL_RELATIF_REQUETES = `import { insererEntreeJournal } from "./journal";
+export const f = insererEntreeJournal;
+`;
+const JOURNAL_RELATIF_AUDIT = `import { insererEntreeJournal } from "../db/requetes/journal";
+export const f = insererEntreeJournal;
+`;
+
+describe(
+  "l'insertion au journal ne s'importe que depuis journal/audit.ts et les tests",
+  { timeout: 60_000 },
+  () => {
+    test.each([
+      ["service", JOURNAL_ALIAS, "src/server/services/essai.ts"],
+      ["import dynamique depuis un service", JOURNAL_DYNAMIQUE, "src/server/services/essai.ts"],
+      ["page de l'application", JOURNAL_ALIAS, "src/app/essai/page.tsx"],
+      ["autre requête", JOURNAL_RELATIF_REQUETES, "src/server/db/requetes/essai.ts"],
+      ["autre fichier de journal/", JOURNAL_RELATIF_AUDIT, "src/server/journal/essai.ts"],
+    ])("%s : refusé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).not.toEqual([]);
+    });
+
+    test.each([
+      ["journal/audit.ts", JOURNAL_RELATIF_AUDIT, "src/server/journal/audit.ts"],
+      ["test unitaire de journal/", JOURNAL_RELATIF_AUDIT, "src/server/journal/essai.test.ts"],
+      ["test d'intégration de db/", JOURNAL_ALIAS, "src/server/db/essai.integration.test.ts"],
+    ])("%s : autorisé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).toEqual([]);
+    });
+  },
+);

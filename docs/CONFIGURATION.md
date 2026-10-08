@@ -226,6 +226,8 @@ npm run test:integration
 
 Sur `dev`, les requêtes traversent le réseau jusqu'à Neon et le regroupement de connexions : compter une trentaine de secondes. C'est le seul endroit où le comportement avec PgBouncer est prouvé.
 
+Depuis la fonctionnalité 0.3 (`docs/features/journal-audit.md`), chaque exécution laisse sur `dev` environ 4 organisations de test, reconnaissables à leur `slug` préfixé par `test-`. Elles ont écrit au journal d'audit, que le rôle de l'application ne peut pas supprimer, et la clé en `ON DELETE RESTRICT` interdit alors de supprimer l'organisation. C'est accepté : elles ne gênent aucun test (chaque test ne compte que ses propres organisations), et la recréation de la branche `dev` les efface. En CI, la base est neuve à chaque exécution.
+
 ## Étape 8 — Better Auth
 
 **But.** Installer la bibliothèque d'authentification et créer ses tables, sans rien exposer.

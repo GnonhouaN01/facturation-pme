@@ -277,6 +277,7 @@ Ces points reposent sur des informations non confirmées auprès d'une source of
 2. **Taux de TVA.** Taux réduits et exonérations applicables : à vérifier auprès de la DGI.
 3. **Numérotation.** Le format et la remise à zéro annuelle de la référence interne sont une proposition : à confirmer.
 4. **Offres gratuites.** Limites de l'hébergement, de la base et de l'envoi d'emails : à vérifier en phase 4.
+5. **Connexions sensibles (S-70).** Le terme n'est pas défini. Une connexion concerne un compte, sans organisation : elle ne peut pas aller dans le journal d'audit, qui exige une organisation. À définir dans les fiches du jalon 1, avec le lieu où ces évènements sont enregistrés (`docs/features/journal-audit.md`, décision 5).
 
 ---
 
