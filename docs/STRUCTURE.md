@@ -103,6 +103,7 @@ src/server/
 │   │   ├── factures.ts
 │   │   └── paiements.ts
 │   └── requetes/            Fonctions de lecture et d'écriture, par domaine
+│       └── journal.ts       Insertion au journal d'audit (importée par journal/audit.ts seul)
 ├── auth/
 │   ├── config.ts            Configuration de Better Auth
 │   └── session.ts           Lecture de la session et de l'adhésion
@@ -122,7 +123,8 @@ src/server/
 │   ├── pdf/                 Génération des documents
 │   └── email/               Interface, envoi réel, interception locale
 ├── journal/
-│   └── audit.ts             Écriture au journal d'audit
+│   ├── actions.ts           Liste fermée des actions, schémas stricts des détails
+│   └── audit.ts             journaliser : seule écriture au journal d'audit
 └── env.ts                   Lecture et validation des variables d'environnement
 ```
 
@@ -131,9 +133,7 @@ src/server/
 - **`client.ts`** crée la connexion avec le rôle restreint, et fournit `executerDansOrganisation`, qui ouvre une transaction en fixant l'organisation active. **Toute requête métier passe par cette fonction**, et les fonctions de `requetes/` reçoivent sa `TransactionOrganisation`. `db`, sans organisation active, n'est importé que par `auth/config.ts` et par `db/` (règle ESLint).
 - **`schema/`** décrit les tables. Un fichier par domaine, pour que chaque fiche de fonctionnalité touche un fichier précis. `auth.ts` est produit par l'outil de Better Auth et ne se modifie pas à la main. `isolation.ts` est le modèle unique de la règle de sécurité au niveau des lignes (`colonneOrganisation()`, `regleIsolation()`) ; `technique.ts` contient la table témoin `temoin_isolation`. Aucun fichier de test dans `schema/`, que drizzle-kit charge en entier.
 - **`outils-test/`** contient l'outillage des tests avec base : création et nettoyage d'organisations, vérification générique d'isolation, garde-fou contre toute base non marquée. Il ne s'importe que depuis un fichier de test (règle ESLint).
-- **`requetes/`** contient les fonctions qui lisent et écrivent. Ce sont les seules à utiliser Drizzle.
-
-**Règle : aucun fichier hors de `src/server/db/` n'importe `drizzle-orm`.** C'est l'exigence S-86.
+- **`requetes/`** contient les fonctions qui lisent et écrivent. Ce sont les seules à utiliser Drizzle. `requetes/journal.ts` insère une entrée du journal d'audit sans la valider : il ne s'importe que depuis `server/journal/audit.ts` (règle ESLint).
 
 ### 3.2 `autorisation/` : un seul fichier pour les droits
 
@@ -158,6 +158,14 @@ Le seul fichier qui lit `process.env`. Aucun autre fichier ne lit directement un
 - `env-schema.ts`, à côté, contient le schéma Zod et la fonction pure `validerEnvironnement`. Elle reçoit les variables en paramètre, ce qui permet de la tester sans toucher à `process.env`. En cas d'erreur, son message nomme chaque variable fautive et la raison, jamais la valeur.
 - `env.ts` appelle cette fonction sur `process.env` à son chargement et exporte l'objet `env`, seule source des variables pour le reste de `src/server/`.
 - `src/instrumentation.ts` importe `env.ts` dans sa fonction `register`, que Next.js appelle au lancement du serveur : une variable invalide est consignée dès le démarrage. Le serveur ne s'arrête pas pour autant : tout module qui importe `env.ts` échoue au chargement, mais les pages statiques, qui ne lisent aucune variable, restent servies.
+
+### 3.7 `journal/` : l'écriture au journal d'audit
+
+- **`actions.ts`** tient la liste fermée des actions journalisables, leur type de ressource et le schéma strict de leurs détails (identifiants, valeurs énumérées, entiers, booléens ; aucun texte libre).
+- **`audit.ts`** fournit `journaliser(tx, entree)`, **seule façon d'écrire au journal**. Elle reçoit la `TransactionOrganisation` de l'action, valide l'entrée, puis l'insère : l'action et sa trace sont validées ou annulées ensemble, et l'organisation de l'entrée est celle de la transaction. Fiche : `docs/features/journal-audit.md`.
+- `journal_audit` est une table en ajout seul : le rôle de l'application n'y a ni `UPDATE`, ni `DELETE`, ni `TRUNCATE`.
+
+**Règle : aucun fichier hors de `src/server/db/` n'importe `drizzle-orm`.** C'est l'exigence S-86.
 
 ---
 
@@ -227,14 +235,16 @@ Ces règles seront vérifiées automatiquement par l'analyse du code, en phase 9
 | `app/`, `components/` | `components/`, `schemas/`, `lib/`, `textes/`, et `server/` uniquement par les actions et les services | `server/db/` |
 | `server/actions/` | `server/auth/`, `server/autorisation/`, `schemas/` | `server/db/requetes/` directement |
 | `server/services/` | `server/db/`, `server/modules/`, `server/journal/`, `lib/`, `schemas/` | `app/`, `components/` |
+| `server/journal/` | `server/db/` (le type `TransactionOrganisation` et `requetes/journal.ts`), `zod` | Tout le reste du projet |
 | `server/db/` | `drizzle-orm`, `pg`, `server/env.ts` | Tout le reste de `server/` |
 | `schemas/`, `lib/`, `textes/` | Rien du projet, sauf entre eux | `server/`, `app/`, `components/` |
 
-Trois règles s'y ajoutent :
+Quatre règles s'y ajoutent :
 
 1. **`drizzle-orm` ne s'importe que dans `src/server/db/`.**
 2. **`process.env` ne se lit que dans `src/server/env.ts`.**
-3. **Aucun composant exécuté dans le navigateur n'importe `src/server/`.** Le marqueur `server-only`, qui fait échouer la construction dans ce cas, sera mis en place avec les règles d'analyse du code, car il demande des réglages pour Vitest, les scripts et l'outil de Better Auth.
+3. **`src/server/db/requetes/journal.ts` ne s'importe que depuis `src/server/journal/audit.ts`** et les tests (règle ESLint) : toute écriture au journal passe par `journaliser`.
+4. **Aucun composant exécuté dans le navigateur n'importe `src/server/`.** Le marqueur `server-only`, qui fait échouer la construction dans ce cas, sera mis en place avec les règles d'analyse du code, car il demande des réglages pour Vitest, les scripts et l'outil de Better Auth.
 
 ---
 

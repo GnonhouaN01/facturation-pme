@@ -243,7 +243,7 @@ Les cas marqués ★ sont les plus sensibles pour la sécurité.
 2. Le système affiche l'organisation et le rôle proposés.
 3. Si elle n'a pas de compte, elle en crée un avec l'email invité (UC-01). Sinon, elle se connecte.
 4. Le système vérifie que l'email du compte est celui de l'invitation.
-5. La personne accepte. Le système crée l'adhésion et consomme l'invitation.
+5. La personne accepte. Le système crée l'adhésion, consomme l'invitation et inscrit l'arrivée du membre au journal d'audit.
 6. Si le rôle l'impose, le système demande d'activer la double authentification.
 
 **Erreurs**
@@ -257,7 +257,7 @@ Les cas marqués ★ sont les plus sensibles pour la sécurité.
 - Rejouer un lien déjà utilisé : usage unique.
 - Modifier le rôle dans la requête d'acceptation : le rôle vient de l'invitation enregistrée, jamais de la requête.
 
-**Exigences :** F-012, S-13, S-15, S-16.
+**Exigences :** F-012, S-13, S-15, S-16, S-70.
 
 ### UC-10 — Modifier le rôle d'un membre ou le retirer ★
 

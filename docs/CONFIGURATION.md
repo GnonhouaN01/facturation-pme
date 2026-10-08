@@ -185,6 +185,17 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 
 **Résultat.** Dans `pg_roles`, `app_facturation` a ses quatre attributs sensibles à `false`, alors que `neondb_owner` peut contourner l'isolation.
 
+**Tables en ajout seul.** Les droits par défaut ci-dessus valent pour toute nouvelle table. Une table en ajout seul (aujourd'hui `journal_audit`, depuis la fonctionnalité 0.3) se les voit retirer par une migration `retirer-droits-<table>` : le rôle de l'application n'y garde que `SELECT` et `INSERT`. Vérification manuelle, en lecture seule, avec le rôle de l'application, sur chaque branche après le workflow des migrations :
+
+```sql
+SELECT privilege_type
+FROM information_schema.role_table_grants
+WHERE table_schema = 'public' AND table_name = 'journal_audit' AND grantee = 'app_facturation'
+ORDER BY privilege_type;
+```
+
+Attendu : exactement `INSERT` et `SELECT`.
+
 ### 7c et 7d. Drizzle et première migration
 
 ```
@@ -225,6 +236,8 @@ npm run test:integration
 ```
 
 Sur `dev`, les requêtes traversent le réseau jusqu'à Neon et le regroupement de connexions : compter une trentaine de secondes. C'est le seul endroit où le comportement avec PgBouncer est prouvé.
+
+Depuis la fonctionnalité 0.3 (`docs/features/journal-audit.md`), chaque exécution laisse sur `dev` environ 4 organisations de test, reconnaissables à leur `slug` préfixé par `test-`. Elles ont écrit au journal d'audit, que le rôle de l'application ne peut pas supprimer, et la clé en `ON DELETE RESTRICT` interdit alors de supprimer l'organisation. C'est accepté : elles ne gênent aucun test (chaque test ne compte que ses propres organisations), et la recréation de la branche `dev` les efface. En CI, la base est neuve à chaque exécution.
 
 ## Étape 8 — Better Auth
 
@@ -368,5 +381,6 @@ Les deux workflows n'ont que le droit de lire le code. Les mots de passe écrits
 | Renouveler le mot de passe applicatif de `dev` | `node scripts/renouveler-mot-de-passe-app.mjs` |
 | Rétablir l'accès à `dev` après recréation de la branche, et reposer la marque de test | `node scripts/retablir-acces-dev.mjs` |
 | Créer la migration qui force la règle d'une nouvelle table | `npx drizzle-kit generate --custom --name forcer-isolation-<table>`, puis coller à la main `ALTER TABLE "<table>" FORCE ROW LEVEL SECURITY;` |
+| Créer la migration qui retire les droits de modification d'une table en ajout seul | `npx drizzle-kit generate --custom --name retirer-droits-<table>`, puis coller à la main `REVOKE UPDATE, DELETE, TRUNCATE ON TABLE "<table>" FROM "app_facturation";` |
 | Afficher les adresses sans les mots de passe | `sed -E 's#://([^:]+):[^@]+@#://\1:****@#' .env.local \| grep DATABASE` |
 | Auditer le code livré | `npm audit --omit=dev` |

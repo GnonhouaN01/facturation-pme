@@ -1,11 +1,14 @@
+import { randomUUID } from "node:crypto";
+
 import { count, inArray } from "drizzle-orm";
 import { describe, expect, onTestFinished, test } from "vitest";
 
 import { db, executerDansOrganisation } from "../client";
 import { organization } from "../schema/auth";
-import { temoinIsolation } from "../schema/technique";
+import { journalAudit, temoinIsolation } from "../schema/technique";
 
 import { verifierBaseDeTest } from "./garde-base";
+import { verifierIsolation } from "./isolation";
 import { creerDeuxOrganisations } from "./organisations";
 
 // Fiche : docs/features/acces-donnees.md, sections 4.2 et 5.
@@ -99,5 +102,56 @@ describe("un test en échec nettoie quand même", () => {
 describe("garde-fou", () => {
   test("accepte la base marquée (CI ou dev)", async () => {
     await expect(verifierBaseDeTest()).resolves.toBeUndefined();
+  });
+});
+
+// 0.3 : tables en ajout seul. Fiche : docs/features/journal-audit.md,
+// sections 3 et 8.1.
+
+describe("verifierIsolation en mode ajout seul", () => {
+  test("refuse au contrôle 0 une table qui a encore UPDATE et DELETE", async () => {
+    await expect(
+      verifierIsolation(
+        temoinIsolation,
+        (organisationId) => ({ organisationId, valeur: "ajout seul" }),
+        { ajoutSeul: true },
+      ),
+    ).rejects.toThrow("contrôle 0");
+  });
+});
+
+describe("nettoyer avec une table en ajout seul", () => {
+  test("supprime l'organisation sans entrée, laisse celle qui en a une, sans erreur", async () => {
+    const { a, b, nettoyer } = await creerDeuxOrganisations({
+      tables: [temoinIsolation],
+      tablesAjoutSeul: [journalAudit],
+    });
+    onTestFinished(nettoyer);
+    await ajouterLigne(b, "nettoyage");
+    await executerDansOrganisation(a, (tx) =>
+      tx.insert(journalAudit).values({
+        organisationId: a,
+        auteurId: randomUUID(),
+        action: "membre.ajoute",
+        typeRessource: "membre",
+        ressourceId: randomUUID(),
+      }),
+    );
+
+    await expect(nettoyer()).resolves.toBeUndefined();
+
+    expect(await organisationsRestantes([b])).toBe(0);
+    expect(await lignesTemoin(b)).toBe(0);
+    // A reste sur dev, avec son entrée (décision 8 de la fiche).
+    expect(await organisationsRestantes([a])).toBe(1);
+    const [entrees] = await executerDansOrganisation(a, (tx) =>
+      tx
+        .select({ n: count() })
+        .from(journalAudit)
+        .where(inArray(journalAudit.organisationId, [a])),
+    );
+    expect(entrees?.n).toBe(1);
+
+    await expect(nettoyer()).resolves.toBeUndefined();
   });
 });

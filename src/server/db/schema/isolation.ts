@@ -21,10 +21,15 @@ export function colonneOrganisation() {
     .references(() => organization.id, { onDelete: "restrict" });
 }
 
-// NULLIF ramène à NULL le réglage absent (NULL) ou rétabli après une
-// transaction (''). Sans organisation active, aucune ligne n'est visible et
-// toute écriture est refusée, sans erreur de conversion.
-const CONDITION = sql`organisation_id = NULLIF(current_setting('app.organisation_id', true), '')::uuid`;
+// L'organisation active de la transaction. NULLIF ramène à NULL le réglage
+// absent (NULL) ou rétabli après une transaction (''). Sans organisation
+// active, aucune ligne n'est visible et toute écriture est refusée, sans
+// erreur de conversion. Exporté pour la fonction d'écriture du journal, qui
+// impose cette organisation à la ligne (docs/features/journal-audit.md,
+// section 5).
+export const ORGANISATION_ACTIVE = sql`NULLIF(current_setting('app.organisation_id', true), '')::uuid`;
+
+const CONDITION = sql`organisation_id = ${ORGANISATION_ACTIVE}`;
 
 // Toutes les commandes, tous les rôles (pas de clause to).
 export function regleIsolation() {

@@ -1,6 +1,6 @@
 # Fonctionnalité : accès aux données
 
-Statut : en cours
+Statut : livrée
 
 Jalon 0, fonctionnalité 0.2 de `docs/PLAN.md`. Taille M.
 
@@ -355,7 +355,7 @@ Deux migrations, dans cet ordre, relues avant `npm run db:migrate` :
 1. Générée par `npm run db:generate` : création de `temoin_isolation`, de sa clé étrangère en `ON DELETE RESTRICT`, de `ENABLE ROW LEVEL SECURITY` et de la règle `isolation_organisation`. Lecture du SQL : vérifier l'expression exacte de la règle, la clause `TO public` (drizzle-kit l'écrit toujours ; elle équivaut à l'absence de clause, `public` étant la valeur par défaut de PostgreSQL), `NOT NULL` sur `organisation_id` et `ON DELETE RESTRICT`. Fait : `drizzle/20261008143530_shallow_kronos`, puis `drizzle/20261008143938_forcer-isolation-temoin` (créée vide par la commande, ligne collée par le développeur). Appliquées sur `dev` le 2026-10-08.
 2. Créée par `npx drizzle-kit generate --custom --name forcer-isolation-temoin`, qui produit un fichier SQL vide. L'assistant indique la ligne exacte, le développeur la colle : `ALTER TABLE "temoin_isolation" FORCE ROW LEVEL SECURITY;`, seule instruction du fichier (décision 2).
 
-Ordre de déploiement : la CI les applique sur sa base neuve ; puis `dev` en local ; puis `production` et `preview` par le workflow `migrations.yml`. Une table vide en production, sans effet sur l'application.
+Ordre de déploiement : la CI les applique sur sa base neuve ; puis `dev` en local ; puis `production` et `preview` par le workflow `migrations.yml`. Une table vide en production, sans effet sur l'application. Fait : CI verte sur la PR, puis `production` et `preview` migrées par le workflow et vérifiées.
 
 La marque de test n'est **pas** une migration : une migration l'appliquerait aussi à `production`.
 
@@ -411,9 +411,11 @@ Inchangé. Il appliquera les deux migrations en production puis sur `preview`.
 - [x] Le test d'inventaire passe, et échoue si l'on retire temporairement le forçage d'une table (vérification manuelle, annulée ensuite). Vérifié par le développeur sur `dev` : avec `NO FORCE` sur `temoin_isolation` (`relforcerowsecurity = false`), les tests d'intégration donnent 1 failed, 31 passed ; après rétablissement de `FORCE`, tout repasse, et `relrowsecurity` et `relforcerowsecurity` valent `true`.
 - [x] `creerDeuxOrganisations` produit des identifiants différents à chaque appel, des `slug` préfixés par `test-`, et `nettoyer` ne laisse aucune ligne, y compris quand le test échoue.
 - [x] Les tests d'intégration refusent de s'exécuter sur une base sans la marque exacte `environnement:test`, avec un rôle autre que `app_facturation`, ou avec un rôle qui contourne l'isolation. Le message ne contient ni hôte, ni nom de base, ni adresse, ni valeur lue.
-- [ ] `preparer-base-test.mjs` et `retablir-acces-dev.mjs` posent la marque. Code ajouté, syntaxe vérifiée (`node --check`) ; aucun des deux n'a été exécuté. `preparer-base-test.mjs` sera prouvé par la CI ; `retablir-acces-dev.mjs` à la prochaine recréation de `dev`.
+- [x] `preparer-base-test.mjs` pose la marque. Prouvé par la CI de la PR : la marque posée, le garde-fou l'accepte et les tests d'intégration réussissent.
+- [ ] `retablir-acces-dev.mjs` pose la marque. Code ajouté, syntaxe vérifiée (`node --check`) ; jamais exécuté. À prouver à la prochaine recréation de `dev`.
 - [x] `npm test` ne lance aucun fichier `*.integration.test.ts` et réussit sans base.
-- [ ] `npm run test:integration` réussit en CI et en local sur `dev`. `dev` : prouvé le 2026-10-08 (5 fichiers, 32 tests réussis et 1 échec volontaire attendu). CI : à constater sur la PR.
+- [x] `npm run test:integration` réussit en CI et en local sur `dev`. `dev` : prouvé le 2026-10-08 (5 fichiers, 32 tests réussis et 1 échec volontaire attendu). CI : verte sur la PR.
+- [x] `production` puis `preview` migrées par le workflow `migrations.yml`, et vérifiées : `temoin_isolation` existe, règle activée et forcée, 10 tables accessibles au rôle de l'application.
 - [x] `scripts/verifier-isolation.mjs` reste une étape de la CI.
 - [x] ESLint refuse l'import de `src/server/db/outils-test/` depuis un fichier qui n'est pas un test, et l'import de `db` hors de `src/server/auth/config.ts` et de `src/server/db/`.
 - [x] `grep -rn "process.env" src/` ne trouve toujours que `src/server/env.ts` ; `grep -rn "DATABASE_URL_MIGRATION" src/` ne trouve rien.
@@ -471,7 +473,7 @@ Fichier : `src/server/db/outils-test/outils-test.integration.test.ts`.
 - [x] Après `nettoyer`, les organisations et leurs lignes de `temoin_isolation` ont disparu.
 - [x] `nettoyer` appelé deux fois ne lève pas d'erreur.
 - [x] Un test qui échoue volontairement (`test.fails`) après avoir créé des organisations et des lignes, `nettoyer` enregistré par `onTestFinished` : le test suivant constate qu'elles ont disparu.
-- [ ] Le garde-fou accepte la base marquée de la CI et de `dev`. `dev` : prouvé. CI : à constater sur la PR.
+- [x] Le garde-fou accepte la base marquée de la CI et de `dev`. `dev` : prouvé. CI : prouvé sur la PR.
 
 ### Tests de concurrence
 

@@ -389,7 +389,7 @@ erDiagram
     JOURNAL_AUDIT {
         uuid id PK
         uuid organisation_id FK
-        uuid auteur_id FK
+        uuid auteur_id
         text action
         text type_ressource
         uuid ressource_id
@@ -407,7 +407,7 @@ erDiagram
 
 - **LIEN_PUBLIC** ne stocke que l'empreinte du jeton. Le jeton lui-même n'existe que dans l'adresse envoyée au client. Même en cas de fuite de la base, les liens ne sont pas utilisables (S-20).
 - **COMPTEUR_REFERENCE** tient le dernier numéro attribué, par organisation, par type de document et par année. C'est la ligne que l'émission verrouille pour garantir une suite sans trou ni doublon (R-03, S-32).
-- **JOURNAL_AUDIT** ne reçoit que des ajouts. Le rôle de base de données utilisé par l'application n'a ni le droit de modifier ni celui de supprimer dans cette table (S-70, T-21). Sa colonne `details` ne contient ni secret ni donnée personnelle.
+- **JOURNAL_AUDIT** ne reçoit que des ajouts. Le rôle de base de données utilisé par l'application n'a ni le droit de modifier, ni celui de supprimer, ni celui de vider cette table (`UPDATE`, `DELETE`, `TRUNCATE` retirés ; S-70, T-21). Sa colonne `details` ne contient ni secret ni donnée personnelle : seulement des identifiants, des valeurs énumérées, des nombres et des booléens. **`auteur_id` n'a pas de clé étrangère** : la suppression d'un compte (S-62) ne doit ni être bloquée par ses traces, ni les effacer, ni les modifier ; l'identifiant reste, même s'il ne désigne plus aucun compte. Un index commence par `organisation_id`, suivi de `cree_le`. Fiche : `docs/features/journal-audit.md`.
 - **COMPTEUR_DEBIT** sert à la limitation de débit. Sa clé combine l'action et l'origine, par exemple « lien public, adresse IP » ou « envoi d'email, organisation ». C'est la seule table sans `organisation_id`, car elle compte aussi des visiteurs anonymes.
 
 ### 2.4 Contraintes portées par la base
@@ -426,7 +426,7 @@ Une contrainte est une règle que la base fait respecter elle-même. Elle protè
 | Lignes | Quantité strictement positive, prix et remise positifs ou nuls, remise inférieure ou égale au montant de la ligne | R-08 |
 | PAIEMENT, REMBOURSEMENT | Montant strictement positif, date non future | F-080 |
 | PAIEMENT | Aucune suppression possible. Les colonnes d'annulation se remplissent ensemble ou pas du tout | S-31 |
-| JOURNAL_AUDIT | Ajout seul : ni modification ni suppression | S-70 |
+| JOURNAL_AUDIT | Ajout seul : ni modification, ni suppression, ni vidage (droits retirés au rôle de l'application) | S-70 |
 | Tous les montants | Type entier | R-01 |
 | Suppressions | Aucune suppression en cascade vers un document émis | R-05 |
 
