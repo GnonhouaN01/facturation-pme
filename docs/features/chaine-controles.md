@@ -456,7 +456,7 @@ Cohérence de `main` entre les PR : `STRUCTURE.md` section 7 indique que les rè
 
 ## Critères d'acceptation
 
-- [ ] `matrice.ts` contient les 4 rôles et les 33 droits de la section 8.2 ; le test de conformité compare les 132 cases à `THREATS.md` et échoue si l'on change une valeur dans l'un ou l'autre (vérifié en changeant temporairement une case).
+- [x] `matrice.ts` contient les 4 rôles et les 33 droits de la section 8.2 ; le test de conformité compare les 132 cases à `THREATS.md` et échoue si l'on change une valeur dans l'un ou l'autre (vérifié en changeant temporairement une case).
 - [ ] `declarerAction` avec un droit inconnu, sans `entree`, sans `journal` ou sans `nouvelleAuthentification` ne compile pas (`@ts-expect-error`).
 - [ ] La chaîne applique l'ordre de la section 5 ; un refus à une étape n'exécute aucune étape suivante (vérifié par dépendances espionnes).
 - [ ] Origine absente, différente, `null`, ou `Sec-Fetch-Site` différent de `same-origin` : `refuse`, sans lecture de session.
@@ -490,11 +490,11 @@ Tous écrits avant le code et vus en échec.
 
 `src/server/autorisation/matrice.test.ts` :
 
-- [ ] Conformité à `THREATS.md` section 6 (section 8.4, niveau 1), divergences 1 et 2 exclues par libellé, avec motif.
-- [ ] Le test ne réussit pas à vide : il exige 33 lignes lues, et échoue sur un tableau de démonstration modifié.
-- [ ] Les identifiants des droits sont exactement les 33 de la section 8.2 (décision 7).
-- [ ] `peut` et `perimetre` pour les 132 cases.
-- [ ] `peut("owner", ...)`, `peut("", ...)`, `peut("Proprietaire", ...)` : faux (le type l'interdit ; vérifié à l'exécution par une conversion).
+- [x] Conformité à `THREATS.md` section 6 (section 8.4, niveau 1). Divergence 1 exclue par son groupe (« Par lien, sans compte »), avec motif ; la divergence 2 est une phrase hors du tableau, rien à exclure.
+- [x] Le test ne réussit pas à vide : il exige 33 lignes lues, et échoue sur un tableau de démonstration modifié.
+- [x] Les identifiants des droits sont exactement les 33 de la section 8.2 (décision 7).
+- [x] `peut` et `perimetre` pour les 132 cases.
+- [x] `peut("owner", ...)`, `peut("", ...)`, `peut("Proprietaire", ...)`, rôles multiples, noms de propriétés héritées (`__proto__`, `constructor`), droits inconnus : faux, vérifié à l'exécution (voir « Notes de l'implémentation »).
 
 `src/server/actions/origine.attaque.test.ts` :
 
@@ -621,3 +621,16 @@ Prises à la validation de la fiche, le 2026-10-09.
 15. **Points d'entrée natifs de Better Auth.** Confirmé : la fiche 1.1 les ferme avant toute exposition de `/api/auth` (inscrit dans `PLAN.md`, ligne 1.1), et toute opération d'organisation passe par la chaîne. Menace T-55 ajoutée à `THREATS.md`, avec sa parade.
 
 Vérifié avant la phase rouge, par un essai jetable supprimé ensuite : la forme `export const x = exposer(...)` dans un fichier `"use server"` (section 3.2) et l'import de ces fichiers sous Vitest (section 7).
+
+## Notes de l'implémentation
+
+### PR 1 : signature de `peut` et `perimetre`
+
+`peut(role, droit)` et `perimetre(role, droit)` reçoivent des `string`, et non les types précis `Role` et `Droit`, qui restent exportés. Deux raisons :
+
+1. Le rôle vient de `member.role`, colonne `text` écrite par Better Auth : la chaîne le passera tel quel, sans conversion préalable. La protection est faite à l'exécution : seules les clés propres de la matrice comptent (`Object.hasOwn`), donc `owner`, `member`, `comptable,proprietaire`, `__proto__` ou `constructor` n'ont aucun droit.
+2. Le test, écrit avant le code et non modifié, appelle `peut` et indexe `DROITS` avec des chaînes. Avec un paramètre typé `Droit`, `npm run typecheck` l'aurait refusé.
+
+La phrase de la section « Tests unitaires » (« le type l'interdit ») a été corrigée en conséquence. La garantie de compilation demandée par la section 8.1 (« `declarerAction({ droit: "inconnu" })` ne compile pas ») reste à la charge de `declarerAction`, qui prendra le type `Droit` (PR 2).
+
+`perimetre` d'un droit refusé vaut `"organisation"`. La chaîne ne l'appelle qu'après `peut`, il est donc sans effet.
