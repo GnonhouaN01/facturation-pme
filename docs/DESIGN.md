@@ -133,7 +133,7 @@ erDiagram
     SESSION {
         uuid id PK
         uuid utilisateur_id FK
-        uuid organisation_active_id FK
+        text organisation_active_id
         text jeton_hache
         text appareil
         timestamp expire_le
@@ -189,7 +189,8 @@ erDiagram
 
 - **UTILISATEUR, SESSION, DOUBLE_AUTH, ORGANISATION, ADHESION et INVITATION** sont créées et gérées par Better Auth. Nous n'écrivons pas leur logique, mais nous devons comprendre leur structure.
 - **ADHESION** est la table qui rend possible le compte unique pour plusieurs organisations : une ligne par couple utilisateur et organisation, avec le rôle. C'est elle que le contrôle d'accès consulte à chaque requête.
-- **SESSION** porte l'organisation active. Changer d'organisation (UC-11) modifie cette colonne, après vérification de l'adhésion.
+- **Identifiants.** Better Auth est configuré avec `generateId: "uuid"` : tous les identifiants et toutes les clés étrangères de ses tables sont de type `uuid`, et la base les fabrique par `gen_random_uuid()` (`docs/features/identifiants-uuid.md`).
+- **SESSION** porte l'organisation active. Changer d'organisation (UC-11) modifie cette colonne, après vérification de l'adhésion. **Exception acceptée :** `organisation_active_id` reste de type `text`, sans clé étrangère, car le module organisation de Better Auth la déclare ainsi et la configuration ne permet pas d'en changer le type. Elle contient un UUID écrit en texte, validé comme UUID à chaque lecture avant usage.
 - **PARAMETRES** regroupe la fiche de l'organisation, ses réglages et son logo. Les instructions de paiement y sont isolées dans une colonne dont la modification suit un chemin de code distinct, avec nouvelle authentification (S-33).
 - **TAUX_TVA** stocke le taux en centièmes de pour cent : 1800 pour 18 %. On évite ainsi tout nombre à virgule. Un taux n'est jamais supprimé, seulement désactivé, car d'anciens documents y font référence.
 - **Aucun mot de passe, jeton ou code n'est stocké en clair** : uniquement des valeurs hachées ou chiffrées.

@@ -214,13 +214,15 @@ node scripts/verifier-isolation.mjs
 
 ```
 npm install better-auth @better-auth/drizzle-adapter
-npx auth@latest generate --config src/server/auth/config.ts --output src/server/db/schema/auth.ts --yes
+npx auth@1.7.7 generate --config src/server/auth/config.ts --output src/server/db/schema/auth.ts --yes
 npm run db:generate
 npm run db:migrate
 npm run verifier:auth
 ```
 
 L'adaptateur utilisé est `@better-auth/drizzle-adapter/relations-v2`, requis par la version 1.0 de Drizzle. Extensions activées : double authentification et organisations.
+
+Depuis le 2026-10-08, Better Auth est configuré avec `generateId: "uuid"` : identifiants et clés étrangères de ses tables en `uuid`, fabriqués par la base (`docs/features/identifiants-uuid.md`). L'outil de génération s'appelle toujours avec la version exacte de `better-auth`, jamais `auth` seul ni `@latest`. La marche complète, avec le retrait temporaire de `server-only`, est dans `CLAUDE.md`, « Pièges connus ».
 
 **Résultat.** Huit tables créées. Le rôle de l'application accède à neuf tables. Better Auth lit la table `user`.
 
