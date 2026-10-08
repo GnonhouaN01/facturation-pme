@@ -91,9 +91,11 @@ Regrouper les pages publiques par lien dans un dossier à part rend visible, d'u
 src/server/
 ├── db/                      Couche d'accès aux données
 │   ├── client.ts            Connexion, transaction avec organisation active
+│   ├── outils-test/         Outillage des tests avec base (tests seulement)
 │   ├── schema/              Description des tables
 │   │   ├── auth.ts          Tables de Better Auth (fichier généré)
-│   │   ├── technique.ts     Compteurs, liens publics, journal d'audit
+│   │   ├── isolation.ts     Modèle de règle d'isolation
+│   │   ├── technique.ts     Compteurs, table témoin, liens publics, journal d'audit
 │   │   ├── organisation.ts  Paramètres, taux de TVA
 │   │   ├── clients.ts
 │   │   ├── catalogue.ts
@@ -126,8 +128,9 @@ src/server/
 
 ### 3.1 `db/` : le seul dossier qui parle à la base
 
-- **`client.ts`** crée la connexion avec le rôle restreint, et fournit la fonction qui ouvre une transaction en fixant l'organisation active. Aucune requête métier ne s'exécute hors de cette fonction.
-- **`schema/`** décrit les tables. Un fichier par domaine, pour que chaque fiche de fonctionnalité touche un fichier précis. `auth.ts` est produit par l'outil de Better Auth et ne se modifie pas à la main.
+- **`client.ts`** crée la connexion avec le rôle restreint, et fournit `executerDansOrganisation`, qui ouvre une transaction en fixant l'organisation active. **Toute requête métier passe par cette fonction**, et les fonctions de `requetes/` reçoivent sa `TransactionOrganisation`. `db`, sans organisation active, n'est importé que par `auth/config.ts` et par `db/` (règle ESLint).
+- **`schema/`** décrit les tables. Un fichier par domaine, pour que chaque fiche de fonctionnalité touche un fichier précis. `auth.ts` est produit par l'outil de Better Auth et ne se modifie pas à la main. `isolation.ts` est le modèle unique de la règle de sécurité au niveau des lignes (`colonneOrganisation()`, `regleIsolation()`) ; `technique.ts` contient la table témoin `temoin_isolation`. Aucun fichier de test dans `schema/`, que drizzle-kit charge en entier.
+- **`outils-test/`** contient l'outillage des tests avec base : création et nettoyage d'organisations, vérification générique d'isolation, garde-fou contre toute base non marquée. Il ne s'importe que depuis un fichier de test (règle ESLint).
 - **`requetes/`** contient les fonctions qui lisent et écrivent. Ce sont les seules à utiliser Drizzle.
 
 **Règle : aucun fichier hors de `src/server/db/` n'importe `drizzle-orm`.** C'est l'exigence S-86.
@@ -201,11 +204,17 @@ Les libellés de l'interface, regroupés par domaine. Aucun texte destiné à l'
 
 | Type | Emplacement | Nom |
 |---|---|---|
-| Test unitaire | À côté du fichier testé | `montants.test.ts` |
-| Test d'attaque | À côté du service ou de l'action visés | `factures.attaque.test.ts` |
+| Test unitaire, sans base | À côté du fichier testé | `montants.test.ts` |
+| Test d'intégration, avec base | À côté du service ou de la requête testés | `factures.integration.test.ts` |
+| Test d'attaque avec base | À côté du service ou de l'action visés | `factures.attaque.integration.test.ts` |
+| Test d'attaque sans base | À côté de la fonction visée | `env-schema.attaque.test.ts` |
 | Test de bout en bout | `e2e/` | `devis-acceptation.spec.ts` |
 
-Le suffixe `.attaque.test.ts` distingue les tests qui tentent de violer une exigence de sécurité. On peut ainsi les compter, les lancer seuls, et vérifier que chaque menace de priorité haute en possède au moins un (NF-06).
+Le suffixe `.integration.test.ts` marque tout test qui touche la base : `npm test` ne lance que les autres, `npm run test:integration` ne lance que ceux-là. Un test ne vit jamais dans `src/server/db/schema/`, que drizzle-kit charge en entier.
+
+Le suffixe `.attaque` distingue les tests qui tentent de violer une exigence de sécurité. On peut ainsi les compter (`*.attaque*.test.ts`), les lancer seuls, et vérifier que chaque menace de priorité haute en possède au moins un (NF-06).
+
+L'outillage des tests avec base vit dans `src/server/db/outils-test/`. Il ne s'importe que depuis un fichier de test (règle ESLint).
 
 ---
 

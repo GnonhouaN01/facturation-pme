@@ -22,7 +22,8 @@ Lis la section utile avant toute tâche. Ne les charge pas en entier.
 ## Commandes
 
 - `npm run dev`, `npm run build`, `npm run typecheck`, `npm run lint`, `npm run format`
-- `npm test` : Vitest, fichiers `src/**/*.test.ts`
+- `npm test` : Vitest, projet `unitaires`, fichiers `src/**/*.test.ts` sauf `*.integration.test.ts`. Sans base
+- `npm run test:integration` : Vitest, projet `integration`, fichiers `src/**/*.integration.test.ts`. Avec base : refuse toute base sans la marque de test
 - `npm run test:e2e` : Playwright, dossier `e2e/`
 - `npm run db:generate` puis lecture du SQL généré, puis `npm run db:migrate`
 - `node scripts/verifier-connexion.mjs`, `verifier-tables.mjs`, `verifier-isolation.mjs`
@@ -32,8 +33,8 @@ Lis la section utile avant toute tâche. Ne les charge pas en entier.
 
 1. Ne lis, n'affiche et ne modifie jamais `.env.local`. N'écris aucun secret dans le code, les tests, les journaux ou les commits.
 2. Aucun fichier de `src/` ne mentionne `DATABASE_URL_MIGRATION`. L'application n'utilise que `DATABASE_URL`, le rôle restreint `app_facturation`.
-3. Toute table métier porte `organisation_id NOT NULL` et une règle de sécurité au niveau des lignes, activée et forcée. Modèle : `scripts/verifier-isolation.mjs`.
-4. Toute requête passe par la couche d'accès aux données. `drizzle-orm` ne s'importe que dans `src/server/db/`. Aucune requête construite par concaténation.
+3. Toute table métier porte `organisation_id NOT NULL` et une règle de sécurité au niveau des lignes, activée et forcée. Modèle unique : `src/server/db/schema/isolation.ts` (`pgTable.withRLS`, `colonneOrganisation()`, `regleIsolation()`), plus un index dont `organisation_id` est la première colonne. Le forçage s'ajoute par une migration `--custom` (voir « Méthode de travail »). Chaque table appelle `verifierIsolation` dans son test d'intégration ; le test d'inventaire refuse toute table non conforme.
+4. Toute requête passe par la couche d'accès aux données. `drizzle-orm` ne s'importe que dans `src/server/db/`. Aucune requête construite par concaténation. **Toute requête métier s'exécute dans `executerDansOrganisation`** (`src/server/db/client.ts`), qui fixe l'organisation active par `set_config('app.organisation_id', $1, true)` dans la transaction. Jamais `SET`, `SET LOCAL` ni `set_config(..., false)`. `db` ne s'importe que dans `src/server/auth/config.ts` et `src/server/db/` (règle ESLint).
 5. Toute action serveur et toute route passe par la fonction commune de contrôle : origine, session, rôle, validation. La matrice des droits vit dans un seul fichier.
 6. Un accès refusé reçoit la même réponse qu'une ressource inexistante (S-02).
 7. Toute entrée externe est validée côté serveur par un schéma Zod. Le serveur recalcule les totaux et ignore ceux reçus.
@@ -48,9 +49,9 @@ Lis la section utile avant toute tâche. Ne les charge pas en entier.
 
 - Une fonctionnalité correspond à une fiche `docs/features/<nom>.md`, validée avant d'écrire le code : contexte, problème, solution retenue, sécurité et permissions, critères d'acceptation, tests, statut.
 - Les tests d'abord : écris les tests, dont les tests d'attaque des menaces citées dans la fiche, montre qu'ils échouent, puis implémente.
-- Avant de dire qu'une tâche est terminée : `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`. Montre les sorties. N'affirme rien sans preuve.
+- Avant de dire qu'une tâche est terminée : `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, et `npm run test:integration` sur `dev` si la base est concernée. Montre les sorties. N'affirme rien sans preuve.
 - Ne modifie que les fichiers du périmètre de la tâche. Si un autre changement semble nécessaire, demande.
-- Ne modifie jamais une migration déjà appliquée, ni le dossier `drizzle/` à la main.
+- Ne modifie jamais une migration déjà appliquée, ni le dossier `drizzle/` à la main. **Seule exception écrite** : une migration créée par `npx drizzle-kit generate --custom --name forcer-isolation-<table>`, dont le seul contenu est une ou plusieurs lignes `ALTER TABLE "<table>" FORCE ROW LEVEL SECURITY;`. L'assistant crée le fichier vide par la commande et indique la ligne exacte ; le développeur la colle. L'assistant n'écrit jamais dans `drizzle/`.
 - Une branche par fonctionnalité (`feat/...`, `fix/...`). Commits au format `type(portée): message`, en français.
 - Interface en français, textes regroupés dans des fichiers dédiés (NF-01).
 - En cas de doute sur une exigence, demande. N'invente pas de règle métier.
@@ -58,6 +59,9 @@ Lis la section utile avant toute tâche. Ne les charge pas en entier.
 ## Pièges connus
 
 - Drizzle 1.0 en version candidate avec Better Auth : utiliser `@better-auth/drizzle-adapter/relations-v2`. Le fichier `src/server/db/schema/auth.ts` est généré, ne l'édite pas à la main. Pour le régénérer : l'outil refuse une configuration qui mène à `import "server-only";`. Retire temporairement cette ligne de `src/server/auth/config.ts` et de tous les fichiers de `src/server/` qu'il importe, directement ou non (aujourd'hui `src/server/db/client.ts`, `src/server/env.ts`, `src/server/env-schema.ts`), lance `BETTER_AUTH_TELEMETRY=0 npx auth@<version de better-auth> generate --config src/server/auth/config.ts --output src/server/db/schema/auth.ts --yes`, rétablis les lignes, lance `npx prettier --write src/server/db/schema/auth.ts`, puis vérifie par `git diff --stat` que seuls `auth.ts` et, le cas échéant, `config.ts` ont changé. **Toujours `auth@<version exacte>`, égale à celle de `better-auth` dans `package.json`, jamais `auth` seul ni `@latest`** : le nom `auth` existe depuis 2012 et a changé de propriétaire, et l'outil tire des dépendances à versions flottantes. Constaté le 2026-10-08 avec `auth@1.7.7` : l'outil charge lui-même `.env` puis `.env.local` avant la configuration, sans écraser une variable du terminal ; aucune variable du projet n'est à définir. `config.ts` charge `env.ts` : les trois variables de `.env.local` doivent être valides. Pour passer des identifiants `text` aux `uuid` sans conversion sur place, la marche suivie est décrite dans `docs/features/identifiants-uuid.md`, section 3.2.
-- Connexion groupée de Neon : l'organisation active se fixe avec `set_config('app.organisation_id', ..., true)` à l'intérieur d'une transaction.
+- Connexion groupée de Neon : l'organisation active se fixe avec `set_config('app.organisation_id', ..., true)` à l'intérieur d'une transaction. C'est le rôle d'`executerDansOrganisation`, à ne jamais contourner.
+- Marque de la base de test : le commentaire de base exact `environnement:test`, posé par `scripts/retablir-acces-dev.mjs` (sur `dev`) et `scripts/preparer-base-test.mjs` (en CI). `ALTER DATABASE ... SET` est refusé par Neon. Une branche `dev` recréée perd la marque : les tests d'intégration refusent alors de tourner, c'est voulu. Ne jamais poser la marque sur `preview` ni `production`.
+- Outillage des tests avec base : `src/server/db/outils-test/`, importable seulement depuis un fichier de test (règle ESLint). Toujours enregistrer `nettoyer` par `onTestFinished` ou `afterAll`.
+- PostgreSQL 18 renvoie `23001` (et non `23503`) pour une suppression refusée par une clé en `ON DELETE RESTRICT`.
 - Poste sous Windows avec Git Bash. Fins de ligne au format LF.
 - Après l'arrêt d'un serveur local par Ctrl+C, vérifier que le port est libre (`netstat -ano | grep ":3000"`) avant de relancer. Un essai a montré des erreurs d'un lancement précédent, sans cause établie.

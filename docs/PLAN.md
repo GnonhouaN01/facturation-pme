@@ -176,9 +176,11 @@ Trois choix méritent une explication.
 | Niveau | Outil | Ce qu'il vérifie | Emplacement | Base de données |
 |---|---|---|---|---|
 | Unitaire | Vitest | Calculs, formatage, schémas de validation, règles pures | À côté du fichier, `*.test.ts` | Non |
-| Intégration | Vitest | Services et requêtes, avec la vraie base | À côté du service, `*.test.ts` | Oui |
-| Attaque | Vitest | Une tentative de violation d'une exigence de sécurité | À côté de la cible, `*.attaque.test.ts` | Oui |
+| Intégration | Vitest | Services et requêtes, avec la vraie base | À côté du service, `*.integration.test.ts` | Oui |
+| Attaque | Vitest | Une tentative de violation d'une exigence de sécurité | À côté de la cible, `*.attaque.integration.test.ts` avec base, `*.attaque.test.ts` sans base | Selon le test |
 | Bout en bout | Playwright | Un parcours complet dans un navigateur | `e2e/` | Oui |
+
+Le suffixe `.integration.test.ts` marque tout test qui touche la base. `npm test` lance les tests sans base (projet Vitest `unitaires`), `npm run test:integration` ceux avec base (projet `integration`). Un test sans base ne porte jamais ce suffixe, et un test avec base le porte toujours. Fiche : `docs/features/acces-donnees.md`, section 3.
 
 ### 4.2 La base utilisée par les tests
 
@@ -187,7 +189,7 @@ Trois choix méritent une explication.
 | Sur le poste | Branche `dev` de Neon | Chaque test crée ses propres organisations, avec des identifiants aléatoires, et les supprime |
 | Dans la CI | PostgreSQL temporaire | Base neuve à chaque exécution |
 
-Un garde-fou, écrit dans l'outillage de test, refuse de s'exécuter si l'adresse de la base est celle de `preview` ou de `production`.
+Un garde-fou, écrit dans l'outillage de test, refuse de s'exécuter sur toute base qui ne porte pas la marque de test (commentaire de base `environnement:test`), donc sur `preview` et `production`. Fiche : `docs/features/acces-donnees.md`, section 5.
 
 ### 4.3 Les tests d'attaque obligatoires
 

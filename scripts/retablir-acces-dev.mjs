@@ -48,6 +48,16 @@ const proprietaire = new pg.Client({ connectionString: urlProprietaire });
 try {
   await proprietaire.connect();
   await proprietaire.query(`ALTER ROLE app_facturation WITH PASSWORD '${nouveau}'`);
+  // Marque de la base de test, lue par le garde-fou des tests d'integration
+  // (docs/features/acces-donnees.md, section 5.1). Le nom de la base vient de
+  // current_database(), jamais d'une concatenation.
+  await proprietaire.query(`
+    DO $$
+    BEGIN
+      EXECUTE format('COMMENT ON DATABASE %I IS %L', current_database(), 'environnement:test');
+    END
+    $$;
+  `);
 } catch (erreur) {
   arreter(`Connexion du proprietaire refusee : ${erreur.message}`);
 } finally {

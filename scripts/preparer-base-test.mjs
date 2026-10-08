@@ -42,9 +42,16 @@ await client.query(`
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_facturation;
   ALTER DEFAULT PRIVILEGES IN SCHEMA public
     GRANT USAGE, SELECT ON SEQUENCES TO app_facturation;
+  -- Marque de la base de test, lue par le garde-fou des tests d'integration
+  -- (docs/features/acces-donnees.md, section 5.1).
+  DO $$
+  BEGIN
+    EXECUTE format('COMMENT ON DATABASE %I IS %L', current_database(), 'environnement:test');
+  END
+  $$;
 `);
 await client.end();
 
 console.log(
-  "Base de test preparee : role app_facturation cree, sans droit de contourner l'isolation.",
+  "Base de test preparee : role app_facturation cree, sans droit de contourner l'isolation, base marquee comme base de test.",
 );
