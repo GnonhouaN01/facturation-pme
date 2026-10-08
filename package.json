@@ -15,7 +15,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "format:check": "prettier --check .",
-    "verifier:auth": "tsx --conditions=react-server scripts/verifier-auth.mts"
+    "verifier:auth": "tsx --conditions=react-server scripts/verifier-auth.mts",
+    "verifier:creation-auth": "tsx --conditions=react-server scripts/verifier-creation-auth.mts"
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",

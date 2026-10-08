@@ -99,6 +99,12 @@ jobs:
       - name: Vérifier les connexions et les rôles
         run: node scripts/verifier-connexion.mjs
 
+      - name: Vérifier les identifiants UUID
+        run: node scripts/verifier-identifiants.mjs
+
+      - name: Vérifier la création par Better Auth
+        run: npm run verifier:creation-auth
+
       - name: Vérifier l'isolation entre organisations
         run: node scripts/verifier-isolation.mjs
 
