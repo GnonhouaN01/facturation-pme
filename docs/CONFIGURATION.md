@@ -208,6 +208,24 @@ node scripts/verifier-isolation.mjs
 
 **Résultat.** Six contrôles au vert : sans organisation active on ne voit rien, avec l'organisation A on ne voit que A, on ne peut ni écrire ni modifier chez B, et l'organisation active ne déborde pas sur la requête suivante.
 
+### 7f. Marque de la base de test et tests d'intégration
+
+Depuis la fonctionnalité 0.2 (`docs/features/acces-donnees.md`), les tests qui touchent la base (`*.integration.test.ts`) refusent de s'exécuter sur une base qui ne porte pas la marque de test : le commentaire de base exact `environnement:test`.
+
+- Sur `dev`, la marque est posée par `node scripts/retablir-acces-dev.mjs`, en même temps que le nouveau mot de passe. Une branche `dev` recréée depuis `production` n'a pas la marque : relancer ce script.
+- En CI, elle est posée par `scripts/preparer-base-test.mjs`.
+- Elle n'est jamais posée sur `preview` ni `production`, et n'est pas une migration.
+- Pour la poser à la main, dans l'éditeur SQL de Neon, branche `dev` choisie explicitement, rôle `neondb_owner` : `COMMENT ON DATABASE neondb IS 'environnement:test';`
+- Pour la lire : `SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = current_database();`
+
+La voie `ALTER DATABASE ... SET app.environnement = 'test'` est refusée par Neon (« permission denied to set parameter ») : le rôle propriétaire n'est pas super-utilisateur.
+
+```
+npm run test:integration
+```
+
+Sur `dev`, les requêtes traversent le réseau jusqu'à Neon et le regroupement de connexions : compter une trentaine de secondes. C'est le seul endroit où le comportement avec PgBouncer est prouvé.
+
 ## Étape 8 — Better Auth
 
 **But.** Installer la bibliothèque d'authentification et créer ses tables, sans rien exposer.
@@ -247,6 +265,8 @@ npm pkg set scripts.test:e2e="playwright test"
 ```
 
 Vitest exécute les fichiers `src/**/*.test.ts`, Playwright ceux du dossier `e2e/`.
+
+Depuis la fonctionnalité 0.2, Vitest a deux projets : `unitaires` (`npm test`, sans base, tous les `*.test.ts` sauf `*.integration.test.ts`) et `integration` (`npm run test:integration`, les `*.integration.test.ts`, avec les variables de `.env.local`, le garde-fou de l'étape 7f et un délai de 60 s par test).
 
 **Erreurs rencontrées.**
 
@@ -329,7 +349,7 @@ Deux fichiers dans `.github/workflows/`.
 | Workflow | Déclenchement | Contenu |
 |---|---|---|
 | `ci.yml`, groupe Qualité | Chaque PR, chaque envoi sur `main` | Formatage, analyse du code, types, tests unitaires, construction, audit du code livré |
-| `ci.yml`, groupe Base de données et bout en bout | Idem | PostgreSQL 18 temporaire, rôle restreint, migrations, rôles, isolation, Better Auth, construction, tests dans Chromium |
+| `ci.yml`, groupe Base de données et bout en bout | Idem | PostgreSQL 18 temporaire, rôle restreint et marque de test, migrations, rôles, isolation, tests d'intégration, Better Auth, construction, tests dans Chromium |
 | `migrations.yml` | À la demande, depuis `main` | Migrations de `preview`, ou de `production` après approbation |
 
 Les deux workflows n'ont que le droit de lire le code. Les mots de passe écrits dans `ci.yml` ne protègent qu'une base qui vit quelques minutes.
@@ -339,11 +359,14 @@ Les deux workflows n'ont que le droit de lire le code. Les mots de passe écrits
 | Besoin | Commande |
 |---|---|
 | Lancer l'application | `npm run dev` |
-| Tout vérifier avant une PR | `npm run format:check`, `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:e2e`, `npm run build` |
+| Tout vérifier avant une PR | `npm run format:check`, `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:integration`, `npm run test:e2e`, `npm run build` |
+| Tests sans base | `npm test` |
+| Tests avec base (`dev` marquée) | `npm run test:integration` |
 | Vérifier les connexions | `node scripts/verifier-connexion.mjs` |
 | Vérifier l'isolation | `node scripts/verifier-isolation.mjs` |
 | Vérifier Better Auth | `npm run verifier:auth` |
 | Renouveler le mot de passe applicatif de `dev` | `node scripts/renouveler-mot-de-passe-app.mjs` |
-| Rétablir l'accès à `dev` après recréation de la branche | `node scripts/retablir-acces-dev.mjs` |
+| Rétablir l'accès à `dev` après recréation de la branche, et reposer la marque de test | `node scripts/retablir-acces-dev.mjs` |
+| Créer la migration qui force la règle d'une nouvelle table | `npx drizzle-kit generate --custom --name forcer-isolation-<table>`, puis coller à la main `ALTER TABLE "<table>" FORCE ROW LEVEL SECURITY;` |
 | Afficher les adresses sans les mots de passe | `sed -E 's#://([^:]+):[^@]+@#://\1:****@#' .env.local \| grep DATABASE` |
 | Auditer le code livré | `npm audit --omit=dev` |

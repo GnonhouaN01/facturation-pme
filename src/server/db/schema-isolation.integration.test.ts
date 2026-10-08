@@ -100,7 +100,10 @@ describe("temoin_isolation", () => {
 
     const code = await codeDuRefus(db.delete(organization).where(eq(organization.id, a)));
 
-    expect(code).toBe("23503");
+    // 23001 (restrict_violation) : code de PostgreSQL 18 pour une clé en ON
+    // DELETE RESTRICT ; les versions antérieures renvoyaient 23503 dans les
+    // deux cas. Nos bases sont en version 18.
+    expect(code).toBe("23001");
   });
 });
 

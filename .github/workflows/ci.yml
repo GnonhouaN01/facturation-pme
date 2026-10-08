@@ -108,6 +108,11 @@ jobs:
       - name: Vérifier l'isolation entre organisations
         run: node scripts/verifier-isolation.mjs
 
+      # Base neuve, marquée par preparer-base-test.mjs. Sans regroupement de
+      # connexions : celui-ci n'est prouvé que sur dev (docs/features/acces-donnees.md).
+      - name: Lancer les tests d'intégration
+        run: npm run test:integration
+
       - name: Vérifier Better Auth
         run: npm run verifier:auth
 

@@ -8,6 +8,10 @@ import nextTs from "eslint-config-next/typescript";
 const SRC = "src/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}";
 const DB = "src/server/db/**";
 const ENV = "src/server/env.ts";
+const TESTS = "src/**/*.test.{ts,tsx}";
+const TESTS_DB = "src/server/db/**/*.test.{ts,tsx}";
+const OUTILS_TEST = "src/server/db/outils-test/**";
+const CONFIG_AUTH = "src/server/auth/config.ts";
 
 // En configuration plate, une règle déclarée par un bloc postérieur remplace
 // entièrement celle d'un bloc antérieur pour un même fichier : les options ne
@@ -60,6 +64,23 @@ const SYNTAXE_C = [
   message: "L'application n'utilise jamais le rôle propriétaire (CLAUDE.md, règle 2).",
 }));
 
+// D. L'outillage de test, qui crée et supprime des organisations, ne
+// s'importe que depuis un fichier de test ou depuis son propre dossier.
+const MESSAGE_D =
+  "src/server/db/outils-test/ ne s'importe que depuis un fichier de test (docs/features/acces-donnees.md, section 4.1).";
+const IMPORTS_D = {
+  patterns: [{ regex: "(^|/)outils-test(/|$)", message: MESSAGE_D }],
+};
+const SYNTAXE_D = chargementsDynamiques("/(^|\\u002F)outils-test(\\u002F|$)/", MESSAGE_D);
+
+// E. db n'a pas d'organisation active : hors de Better Auth et de la couche
+// d'accès aux données, tout passe par executerDansOrganisation.
+const MESSAGE_E =
+  "db ne s'importe que dans src/server/auth/config.ts et src/server/db/ : utiliser executerDansOrganisation (docs/features/acces-donnees.md, section 1.3).";
+const IMPORTS_E = {
+  patterns: [{ regex: "(^|/)db/client$", importNames: ["db"], message: MESSAGE_E }],
+};
+
 const restreindreImports = (...listes) => [
   "error",
   {
@@ -71,18 +92,34 @@ const restreindreImports = (...listes) => [
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
-  // Imports statiques (A et B).
+  // Imports statiques (A, B, D et E).
   {
     files: [SRC],
-    ignores: [DB, ENV],
-    rules: { "no-restricted-imports": restreindreImports(IMPORTS_A, IMPORTS_B) },
+    ignores: [DB, ENV, TESTS, CONFIG_AUTH],
+    rules: {
+      "no-restricted-imports": restreindreImports(IMPORTS_A, IMPORTS_B, IMPORTS_D, IMPORTS_E),
+    },
+  },
+  {
+    files: [CONFIG_AUTH],
+    rules: { "no-restricted-imports": restreindreImports(IMPORTS_A, IMPORTS_B, IMPORTS_D) },
+  },
+  {
+    files: [TESTS],
+    ignores: [DB],
+    rules: { "no-restricted-imports": restreindreImports(IMPORTS_A, IMPORTS_B, IMPORTS_E) },
   },
   {
     files: [ENV],
-    rules: { "no-restricted-imports": restreindreImports(IMPORTS_A) },
+    rules: { "no-restricted-imports": restreindreImports(IMPORTS_A, IMPORTS_D, IMPORTS_E) },
   },
   {
     files: [DB],
+    ignores: [TESTS, OUTILS_TEST],
+    rules: { "no-restricted-imports": restreindreImports(IMPORTS_B, IMPORTS_D) },
+  },
+  {
+    files: [TESTS_DB, OUTILS_TEST],
     rules: { "no-restricted-imports": restreindreImports(IMPORTS_B) },
   },
   // Lecture de process.env (B).
@@ -91,18 +128,30 @@ const eslintConfig = defineConfig([
     ignores: [ENV],
     rules: { "no-restricted-properties": ["error", ...PROPRIETES_B] },
   },
-  // Syntaxe interdite : imports dynamiques (A et B) et rôle propriétaire (C).
+  // Syntaxe interdite : imports dynamiques (A, B et D) et rôle propriétaire (C).
   {
     files: [SRC],
-    ignores: [DB, ENV],
+    ignores: [DB, ENV, TESTS],
+    rules: {
+      "no-restricted-syntax": ["error", ...SYNTAXE_A, ...SYNTAXE_B, ...SYNTAXE_C, ...SYNTAXE_D],
+    },
+  },
+  {
+    files: [TESTS],
+    ignores: [DB],
     rules: { "no-restricted-syntax": ["error", ...SYNTAXE_A, ...SYNTAXE_B, ...SYNTAXE_C] },
   },
   {
     files: [ENV],
-    rules: { "no-restricted-syntax": ["error", ...SYNTAXE_A, ...SYNTAXE_C] },
+    rules: { "no-restricted-syntax": ["error", ...SYNTAXE_A, ...SYNTAXE_C, ...SYNTAXE_D] },
   },
   {
     files: [DB],
+    ignores: [TESTS, OUTILS_TEST],
+    rules: { "no-restricted-syntax": ["error", ...SYNTAXE_B, ...SYNTAXE_C, ...SYNTAXE_D] },
+  },
+  {
+    files: [TESTS_DB, OUTILS_TEST],
     rules: { "no-restricted-syntax": ["error", ...SYNTAXE_B, ...SYNTAXE_C] },
   },
   // Override default ignores of eslint-config-next.

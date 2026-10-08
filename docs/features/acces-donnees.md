@@ -1,6 +1,6 @@
 # Fonctionnalité : accès aux données
 
-Statut : validée
+Statut : en cours
 
 Jalon 0, fonctionnalité 0.2 de `docs/PLAN.md`. Taille M.
 
@@ -163,7 +163,9 @@ Deux projets Vitest (`test.projects`, présent dans Vitest 5) dans `vitest.confi
 | Projet | Fichiers | Particularités |
 |---|---|---|
 | `unitaires` | `src/**/*.test.ts`, sauf `src/**/*.integration.test.ts` | Ne reçoit aucune variable de `.env.local` |
-| `integration` | `src/**/*.integration.test.ts` | `setupFiles` : le garde-fou (section 5). `test.env` : les variables de `.env.local` (section 4.1) |
+| `integration` | `src/**/*.integration.test.ts` | `setupFiles` : le garde-fou (section 5). `test.env` : les variables de `.env.local` (section 4.1). `testTimeout` et `hookTimeout` : 60 s |
+
+Le délai de 60 s, au lieu des 5 s par défaut de Vitest, ne vaut que pour le projet `integration`. Raison constatée à l'implémentation : sur `dev`, chaque requête traverse le réseau jusqu'à Neon, et les tests qui en enchaînent plusieurs dizaines (`verifierIsolation`, les quarante transactions alternées) dépassaient 5 s. Le projet `unitaires` garde le délai par défaut.
 
 Scripts de `package.json` :
 
@@ -350,7 +352,7 @@ Aucune (règle 10). Sont utilisés des paquets déjà déclarés : `drizzle-orm`
 
 Deux migrations, dans cet ordre, relues avant `npm run db:migrate` :
 
-1. Générée par `npm run db:generate` : création de `temoin_isolation`, de sa clé étrangère en `ON DELETE RESTRICT`, de `ENABLE ROW LEVEL SECURITY` et de la règle `isolation_organisation`. Lecture du SQL : vérifier l'expression exacte de la règle, l'absence de clause `TO`, `NOT NULL` sur `organisation_id` et `ON DELETE restrict`.
+1. Générée par `npm run db:generate` : création de `temoin_isolation`, de sa clé étrangère en `ON DELETE RESTRICT`, de `ENABLE ROW LEVEL SECURITY` et de la règle `isolation_organisation`. Lecture du SQL : vérifier l'expression exacte de la règle, la clause `TO public` (drizzle-kit l'écrit toujours ; elle équivaut à l'absence de clause, `public` étant la valeur par défaut de PostgreSQL), `NOT NULL` sur `organisation_id` et `ON DELETE RESTRICT`. Fait : `drizzle/20261008143530_shallow_kronos`, puis `drizzle/20261008143938_forcer-isolation-temoin` (créée vide par la commande, ligne collée par le développeur). Appliquées sur `dev` le 2026-10-08.
 2. Créée par `npx drizzle-kit generate --custom --name forcer-isolation-temoin`, qui produit un fichier SQL vide. L'assistant indique la ligne exacte, le développeur la colle : `ALTER TABLE "temoin_isolation" FORCE ROW LEVEL SECURITY;`, seule instruction du fichier (décision 2).
 
 Ordre de déploiement : la CI les applique sur sa base neuve ; puis `dev` en local ; puis `production` et `preview` par le workflow `migrations.yml`. Une table vide en production, sans effet sur l'application.
@@ -397,27 +399,27 @@ Inchangé. Il appliquera les deux migrations en production puis sur `preview`.
 
 ## Critères d'acceptation
 
-- [ ] `executerDansOrganisation` fixe l'organisation par `set_config('app.organisation_id', $1, true)` en première instruction de la transaction, l'identifiant en paramètre lié.
-- [ ] `grep -rnE "SET( LOCAL)? app\.|set_config\([^)]*false" src/` ne trouve rien.
-- [ ] Un identifiant invalide lève `OrganisationActiveInvalide`, au message fixe, sans `cause`, sans la valeur, et sans qu'aucune connexion soit prise.
-- [ ] Sans organisation fixée, une lecture de `temoin_isolation` par `db` renvoie zéro ligne sans erreur, sur une connexion neuve (réglage `NULL`) comme après une transaction (réglage `''`) ; une insertion est refusée par `42501` ; aucune erreur `22P02`.
-- [ ] Après une transaction, réussie ou annulée, la connexion rendue au `Pool` n'a plus d'organisation active.
-- [ ] Deux transactions simultanées sur deux organisations ne voient chacune que leurs lignes.
-- [ ] `temoin_isolation` est déclarée uniquement avec `colonneOrganisation()` et `regleIsolation()`, et sa règle est activée et forcée en base.
-- [ ] La clé étrangère du modèle est en `ON DELETE RESTRICT` : supprimer une organisation qui a une ligne dans `temoin_isolation` est refusé.
-- [ ] `verifierIsolation` passe sur `temoin_isolation` (huit contrôles).
-- [ ] Le test d'inventaire passe, et échoue si l'on retire temporairement le forçage d'une table (vérification manuelle, annulée ensuite).
-- [ ] `creerDeuxOrganisations` produit des identifiants différents à chaque appel, des `slug` préfixés par `test-`, et `nettoyer` ne laisse aucune ligne, y compris quand le test échoue.
-- [ ] Les tests d'intégration refusent de s'exécuter sur une base sans la marque exacte `environnement:test`, avec un rôle autre que `app_facturation`, ou avec un rôle qui contourne l'isolation. Le message ne contient ni hôte, ni nom de base, ni adresse, ni valeur lue.
-- [ ] `preparer-base-test.mjs` et `retablir-acces-dev.mjs` posent la marque.
-- [ ] `npm test` ne lance aucun fichier `*.integration.test.ts` et réussit sans base.
-- [ ] `npm run test:integration` réussit en CI et en local sur `dev`.
-- [ ] `scripts/verifier-isolation.mjs` reste une étape de la CI.
-- [ ] ESLint refuse l'import de `src/server/db/outils-test/` depuis un fichier qui n'est pas un test, et l'import de `db` hors de `src/server/auth/config.ts` et de `src/server/db/`.
-- [ ] `grep -rn "process.env" src/` ne trouve toujours que `src/server/env.ts` ; `grep -rn "DATABASE_URL_MIGRATION" src/` ne trouve rien.
-- [ ] Tout nouveau fichier de `src/server/`, hors de `schema/`, commence par `import "server-only";`.
-- [ ] Aucune dépendance ajoutée : `package-lock.json` inchangé.
-- [ ] `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:integration` passent.
+- [x] `executerDansOrganisation` fixe l'organisation par `set_config('app.organisation_id', $1, true)` en première instruction de la transaction, l'identifiant en paramètre lié.
+- [x] `grep -rnE "SET( LOCAL)? app\.|set_config\([^)]*false" src/` ne trouve rien.
+- [x] Un identifiant invalide lève `OrganisationActiveInvalide`, au message fixe, sans `cause`, sans la valeur, et sans qu'aucune connexion soit prise.
+- [x] Sans organisation fixée, une lecture de `temoin_isolation` par `db` renvoie zéro ligne sans erreur, sur une connexion neuve (réglage `NULL`) comme après une transaction (réglage `''`) ; une insertion est refusée par `42501` ; aucune erreur `22P02`.
+- [x] Après une transaction, réussie ou annulée, la connexion rendue au `Pool` n'a plus d'organisation active.
+- [x] Deux transactions simultanées sur deux organisations ne voient chacune que leurs lignes.
+- [x] `temoin_isolation` est déclarée uniquement avec `colonneOrganisation()` et `regleIsolation()`, et sa règle est activée et forcée en base.
+- [x] La clé étrangère du modèle est en `ON DELETE RESTRICT` : supprimer une organisation qui a une ligne dans `temoin_isolation` est refusé.
+- [x] `verifierIsolation` passe sur `temoin_isolation` (huit contrôles).
+- [x] Le test d'inventaire passe, et échoue si l'on retire temporairement le forçage d'une table (vérification manuelle, annulée ensuite). Vérifié par le développeur sur `dev` : avec `NO FORCE` sur `temoin_isolation` (`relforcerowsecurity = false`), les tests d'intégration donnent 1 failed, 31 passed ; après rétablissement de `FORCE`, tout repasse, et `relrowsecurity` et `relforcerowsecurity` valent `true`.
+- [x] `creerDeuxOrganisations` produit des identifiants différents à chaque appel, des `slug` préfixés par `test-`, et `nettoyer` ne laisse aucune ligne, y compris quand le test échoue.
+- [x] Les tests d'intégration refusent de s'exécuter sur une base sans la marque exacte `environnement:test`, avec un rôle autre que `app_facturation`, ou avec un rôle qui contourne l'isolation. Le message ne contient ni hôte, ni nom de base, ni adresse, ni valeur lue.
+- [ ] `preparer-base-test.mjs` et `retablir-acces-dev.mjs` posent la marque. Code ajouté, syntaxe vérifiée (`node --check`) ; aucun des deux n'a été exécuté. `preparer-base-test.mjs` sera prouvé par la CI ; `retablir-acces-dev.mjs` à la prochaine recréation de `dev`.
+- [x] `npm test` ne lance aucun fichier `*.integration.test.ts` et réussit sans base.
+- [ ] `npm run test:integration` réussit en CI et en local sur `dev`. `dev` : prouvé le 2026-10-08 (5 fichiers, 32 tests réussis et 1 échec volontaire attendu). CI : à constater sur la PR.
+- [x] `scripts/verifier-isolation.mjs` reste une étape de la CI.
+- [x] ESLint refuse l'import de `src/server/db/outils-test/` depuis un fichier qui n'est pas un test, et l'import de `db` hors de `src/server/auth/config.ts` et de `src/server/db/`.
+- [x] `grep -rn "process.env" src/` ne trouve toujours que `src/server/env.ts` ; `grep -rn "DATABASE_URL_MIGRATION" src/` ne trouve rien.
+- [x] Tout nouveau fichier de `src/server/`, hors de `schema/`, commence par `import "server-only";`.
+- [x] Aucune dépendance ajoutée : `package-lock.json` inchangé.
+- [x] `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:integration` passent.
 
 ## Tests à écrire
 
@@ -427,58 +429,58 @@ Toutes les valeurs sont factices ou aléatoires. Aucun test n'utilise d'identifi
 
 Fichier : `src/server/db/client.test.ts` (sans base : la validation a lieu avant toute connexion ; `env` est remplacé par une valeur factice).
 
-- [ ] Chaîne vide, texte quelconque, nombre, `undefined`, `null`, UUID entouré d'espaces, UUID en majuscules entouré d'espaces, `11111111-1111-1111-1111-111111111111` : `OrganisationActiveInvalide`, et `travail` n'est jamais appelé.
-- [ ] Le message de l'erreur est exactement le message fixe ; ni le message, ni `String(erreur)`, ni `JSON.stringify(erreur)` ne contiennent la valeur reçue ; aucune propriété `cause`.
-- [ ] Aucune connexion n'est demandée au `Pool` (`Pool` factice passé à `creerAcces`).
+- [x] Chaîne vide, texte quelconque, nombre, `undefined`, `null`, UUID entouré d'espaces, UUID en majuscules entouré d'espaces, `11111111-1111-1111-1111-111111111111` : `OrganisationActiveInvalide`, et `travail` n'est jamais appelé.
+- [x] Le message de l'erreur est exactement le message fixe ; ni le message, ni `String(erreur)`, ni `JSON.stringify(erreur)` ne contiennent la valeur reçue ; aucune propriété `cause`.
+- [x] Aucune connexion n'est demandée au `Pool` (`Pool` factice passé à `creerAcces`).
 
 Fichier : `src/server/db/outils-test/garde-base.attaque.test.ts` (fonction pure `deciderBaseDeTest`).
 
-- [ ] Marque `environnement:test`, rôle `app_facturation`, `contourne = false` : accepté.
-- [ ] Marque absente, vide, `environnement:Test`, `environnement:test ` (espace), ` environnement:test`, `environnement:production`, `environnement:preview`, `test` : refus, raison « marque ».
-- [ ] Rôle `neondb_owner` ou `postgres` : refus, raison « rôle ».
-- [ ] `contourne = true` ou `null` : refus, raison « contourne ».
-- [ ] Le message commence par « Tests refusés : » et ne contient ni la marque lue, ni le rôle lu.
+- [x] Marque `environnement:test`, rôle `app_facturation`, `contourne = false` : accepté.
+- [x] Marque absente, vide, `environnement:Test`, `environnement:test ` (espace), ` environnement:test`, `environnement:production`, `environnement:preview`, `test` : refus, raison « marque ».
+- [x] Rôle `neondb_owner` ou `postgres` : refus, raison « rôle ».
+- [x] `contourne = true` ou `null` : refus, raison « contourne ».
+- [x] Le message commence par « Tests refusés : » et ne contient ni la marque lue, ni le rôle lu.
 
 Fichier : `src/server/db/regles-import.test.ts` (ESLint par son API, sur du code fourni en texte, sans écrire de fichier).
 
-- [ ] Import statique ou dynamique de `outils-test/` depuis un fichier de l'application (`src/app/`, `src/server/db/requetes/`) : erreur `no-restricted-imports` ou `no-restricted-syntax`.
-- [ ] Le même import depuis un fichier `*.test.ts`, `*.integration.test.ts`, ou depuis un fichier de `outils-test/` : aucune erreur.
-- [ ] `import { db }`, `import * as client`, `export { db } from` de `client.ts` depuis `src/server/services/` ou `src/app/` : erreur.
-- [ ] `import { executerDansOrganisation }` depuis `src/server/services/` : aucune erreur.
-- [ ] `import { db }` depuis `src/server/auth/config.ts` et depuis `src/server/db/requetes/` : aucune erreur.
+- [x] Import statique ou dynamique de `outils-test/` depuis un fichier de l'application (`src/app/`, `src/server/db/requetes/`) : erreur `no-restricted-imports` ou `no-restricted-syntax`.
+- [x] Le même import depuis un fichier `*.test.ts`, `*.integration.test.ts`, ou depuis un fichier de `outils-test/` : aucune erreur.
+- [x] `import { db }`, `import * as client`, `export { db } from` de `client.ts` depuis `src/server/services/` ou `src/app/` : erreur.
+- [x] `import { executerDansOrganisation }` depuis `src/server/services/` : aucune erreur.
+- [x] `import { db }` depuis `src/server/auth/config.ts` et depuis `src/server/db/requetes/` : aucune erreur.
 
 ### Tests d'intégration
 
 Fichier : `src/server/db/client.integration.test.ts`.
 
-- [ ] Dans la transaction, `current_setting('app.organisation_id')` vaut l'identifiant fourni.
-- [ ] La valeur renvoyée par `travail` est renvoyée par la fonction.
-- [ ] Une exception dans `travail` annule les écritures de la transaction et remonte telle quelle.
-- [ ] Après la transaction, réussie ou annulée, sur la même connexion (`Pool` d'une connexion), `current_setting('app.organisation_id', true)` vaut `''` ou `NULL`.
-- [ ] Sans organisation fixée, sur une connexion neuve (`NULL`) et après une transaction (`''`) : lecture de `temoin_isolation` = 0 ligne sans erreur ; insertion refusée par `42501`, jamais `22P02`.
+- [x] Dans la transaction, `current_setting('app.organisation_id')` vaut l'identifiant fourni.
+- [x] La valeur renvoyée par `travail` est renvoyée par la fonction.
+- [x] Une exception dans `travail` annule les écritures de la transaction et remonte telle quelle.
+- [x] Après la transaction, réussie ou annulée, sur la même connexion (`Pool` d'une connexion), `current_setting('app.organisation_id', true)` vaut `''` ou `NULL`.
+- [x] Sans organisation fixée, sur une connexion neuve (`NULL`), après une transaction, et avec le réglage fixé explicitement à `''` dans une transaction (le regroupement de Neon ne garantit pas que la requête suivant une transaction tombe sur la même connexion du serveur) : lecture de `temoin_isolation` = 0 ligne sans erreur ; insertion refusée par `42501`, jamais `22P02`.
 
 Fichier : `src/server/db/schema-isolation.integration.test.ts`.
 
-- [ ] `verifierIsolation(temoinIsolation, ...)` : les huit contrôles passent.
-- [ ] Test d'inventaire (section 4.4).
-- [ ] Supprimer une organisation qui a une ligne dans `temoin_isolation` : refus `23503` (`ON DELETE RESTRICT`).
+- [x] `verifierIsolation(temoinIsolation, ...)` : les huit contrôles passent.
+- [x] Test d'inventaire (section 4.4).
+- [x] Supprimer une organisation qui a une ligne dans `temoin_isolation` : refus `23001` (`restrict_violation`, `ON DELETE RESTRICT`). Ce code dépend de la version : PostgreSQL 18 renvoie `23001` pour une clé en `ON DELETE RESTRICT` ; les versions antérieures renvoyaient `23503` (`foreign_key_violation`) dans les deux cas, `RESTRICT` comme `NO ACTION`. Les quatre bases (`dev`, `preview`, `production`, CI) sont en version 18. Le test, qui attend `23001`, prouve donc que la clé est en `RESTRICT` et pas seulement qu'elle existe.
 
 Fichier : `src/server/db/outils-test/outils-test.integration.test.ts`.
 
-- [ ] Deux appels à `creerDeuxOrganisations` donnent quatre identifiants distincts, et des `slug` préfixés par `test-`.
-- [ ] Après `nettoyer`, les organisations et leurs lignes de `temoin_isolation` ont disparu.
-- [ ] `nettoyer` appelé deux fois ne lève pas d'erreur.
-- [ ] Un test qui échoue volontairement (`test.fails`) après avoir créé des organisations et des lignes, `nettoyer` enregistré par `onTestFinished` : le test suivant constate qu'elles ont disparu.
-- [ ] Le garde-fou accepte la base marquée de la CI et de `dev`.
+- [x] Deux appels à `creerDeuxOrganisations` donnent quatre identifiants distincts, et des `slug` préfixés par `test-`.
+- [x] Après `nettoyer`, les organisations et leurs lignes de `temoin_isolation` ont disparu.
+- [x] `nettoyer` appelé deux fois ne lève pas d'erreur.
+- [x] Un test qui échoue volontairement (`test.fails`) après avoir créé des organisations et des lignes, `nettoyer` enregistré par `onTestFinished` : le test suivant constate qu'elles ont disparu.
+- [ ] Le garde-fou accepte la base marquée de la CI et de `dev`. `dev` : prouvé. CI : à constater sur la PR.
 
 ### Tests de concurrence
 
 Fichier : `src/server/db/client.concurrence.integration.test.ts`.
 
-- [ ] **Deux transactions simultanées, deux organisations.** A et B ouvrent chacune une transaction ; une barrière en JavaScript attend que les deux aient fixé leur organisation avant que l'une ou l'autre lise ; chacune lit, écrit, relit, puis valide. Chacune ne voit que ses lignes, et le chevauchement est prouvé par la barrière (pas par une attente fixe).
-- [ ] **Réutilisation de la connexion.** `Pool` d'une seule connexion : transaction de A validée, puis requête sans organisation : 0 ligne. Même chose après une transaction de A annulée par une exception.
-- [ ] **Alternance sur un petit `Pool`.** Quarante transactions lancées ensemble, alternant A et B, sur un `Pool` de trois connexions : chacune ne voit que les lignes de son organisation, et une requête sans organisation après coup n'en voit aucune.
-- [ ] Ces tests, lancés en local sur `dev`, traversent le regroupement de Neon. En CI, ils ne prouvent que le comportement de PostgreSQL et du `Pool` (décision 5).
+- [x] **Deux transactions simultanées, deux organisations.** A et B ouvrent chacune une transaction ; une barrière en JavaScript attend que les deux aient fixé leur organisation avant que l'une ou l'autre lise ; chacune lit, écrit, relit, puis valide. Chacune ne voit que ses lignes, et le chevauchement est prouvé par la barrière (pas par une attente fixe).
+- [x] **Réutilisation de la connexion.** `Pool` d'une seule connexion : transaction de A validée, puis requête sans organisation : 0 ligne. Même chose après une transaction de A annulée par une exception.
+- [x] **Alternance sur un petit `Pool`.** Quarante transactions lancées ensemble, alternant A et B, sur un `Pool` de trois connexions : chacune ne voit que les lignes de son organisation, et une requête sans organisation après coup n'en voit aucune.
+- [x] Ces tests, lancés en local sur `dev`, traversent le regroupement de Neon. En CI, ils ne prouvent que le comportement de PostgreSQL et du `Pool` (décision 5).
 
 ### Tests d'attaque
 
@@ -486,13 +488,13 @@ Les quatre tests d'attaque obligatoires du modèle (sans session, autre organisa
 
 Fichier : `src/server/db/client.attaque.integration.test.ts`.
 
-- [ ] T-30 : organisation A active, lecture filtrée sur l'identifiant d'une ligne de B : aucune ligne.
-- [ ] T-30 : organisation A active, insertion d'une ligne pour B : refus `42501`.
-- [ ] T-30 : organisation A active, modification et suppression des lignes de B : 0 ligne, et la ligne de B est intacte.
-- [ ] T-30 : organisation A active, déplacement de sa propre ligne vers B par `UPDATE` : refus `42501`.
-- [ ] T-53 : requête par `db`, sans organisation active : 0 ligne ; insertion refusée.
-- [ ] T-53 : le rôle de la connexion est `app_facturation`, sans `BYPASSRLS`.
-- [ ] Valeur qui tenterait une injection si elle était concaténée (`00000000-0000-4000-8000-000000000000' OR '1'='1`) : refusée par la validation. Puis, la validation contournée par un appel direct à `set_config` avec cette valeur en paramètre lié : la conversion `::uuid` échoue (`22P02`) et aucune ligne n'est renvoyée.
+- [x] T-30 : organisation A active, lecture filtrée sur l'identifiant d'une ligne de B : aucune ligne.
+- [x] T-30 : organisation A active, insertion d'une ligne pour B : refus `42501`.
+- [x] T-30 : organisation A active, modification et suppression des lignes de B : 0 ligne, et la ligne de B est intacte.
+- [x] T-30 : organisation A active, déplacement de sa propre ligne vers B par `UPDATE` : refus `42501`.
+- [x] T-53 : requête par `db`, sans organisation active : 0 ligne ; insertion refusée.
+- [x] T-53 : le rôle de la connexion est `app_facturation`, sans `BYPASSRLS`.
+- [x] Valeur qui tenterait une injection si elle était concaténée (`00000000-0000-4000-8000-000000000000' OR '1'='1`) : refusée par la validation. Puis, la validation contournée par un appel direct à `set_config` avec cette valeur en paramètre lié : la conversion `::uuid` échoue (`22P02`) et aucune ligne n'est renvoyée.
 
 Le risque qu'un code disposant de `tx` exécute lui-même `set_config` vers une autre organisation n'a pas de test ici : Drizzle laisse `execute` disponible sur toute transaction. Il est reporté à la 0.4 (voir « Reporté »).
 
@@ -500,7 +502,7 @@ Les tests d'attaque du garde-fou sont des tests unitaires (`garde-base.attaque.t
 
 ### Tests de bout en bout
 
-- [ ] Aucun. Aucune page, aucune route.
+- [x] Aucun. Aucune page, aucune route.
 
 ## Fichiers concernés
 

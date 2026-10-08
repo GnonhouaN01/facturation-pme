@@ -324,7 +324,7 @@ Drizzle n'a pas de migration descendante : un retour passe toujours par une nouv
 - [x] Les quatre lignes `import "server-only";` sont rétablies ; `grep -L 'import "server-only"' src/server/auth/config.ts src/server/db/client.ts src/server/env.ts src/server/env-schema.ts` ne renvoie rien.
 - [x] Deux migrations générées par drizzle-kit, sans modification à la main : suppression des 8 tables, puis création en `uuid`. Aucune ne touche `compteur_debit`.
 - [x] Aucune migration déjà appliquée n'est modifiée.
-- [ ] Les 8 comptes de la section 4 sont à 0 sur `dev`, `preview` et `production` avant leur migration respective. `dev` : prouvé avant sa migration (section 4.4). `preview` et `production` : à revérifier juste avant leur migration.
+- [x] Les 8 comptes de la section 4 sont à 0 sur `dev`, `preview` et `production` avant leur migration respective. `dev` : prouvé avant sa migration (section 4.4). `preview` et `production` : comptage fait à 16 h 39 le 2026-10-08, avant la fusion ; il n'a pas été refait juste avant la migration. Risque jugé nul : aucune route n'écrit dans ces tables.
 - [x] En CI et sur `dev` : `verifier-identifiants.mjs` réussit, `verifier:auth` réussit, `verifier-tables.mjs` liste 9 tables. `dev` : prouvé le 2026-10-08 (15 colonnes `uuid`, 0 utilisateur lu, 9 tables ; `verifier-isolation.mjs` passe aussi). CI : verte sur la PR.
 - [x] En CI : `npm run verifier:creation-auth` réussit, et ne laisse aucune ligne. Prouvé par la CI verte sur la PR (le script échoue si son nettoyage échoue).
 - [x] `npm run verifier:creation-auth` sur `dev` (hôte Neon) refuse de s'exécuter, sans afficher l'hôte.

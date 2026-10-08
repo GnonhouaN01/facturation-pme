@@ -36,6 +36,10 @@ export default defineConfig({
           // Garde-fou : refuse toute base non marquée, avant chaque fichier.
           setupFiles: ["src/server/db/outils-test/preparation.ts"],
           env: variablesLocales,
+          // Sur dev, chaque requête traverse le réseau jusqu'à Neon : les tests
+          // qui en enchaînent plusieurs dizaines dépassent les 5 s par défaut.
+          testTimeout: 60_000,
+          hookTimeout: 60_000,
         },
       },
     ],
