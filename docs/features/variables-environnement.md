@@ -236,7 +236,7 @@ Les scripts sont hors de `src/` et ne sont pas soumis à la règle 12 : ceux qui
 - [ ] La commande de régénération est vérifiée de bout en bout. Hors périmètre, voir « Suites ».
 - [x] `zod` figure dans `dependencies` de `package.json` en version exacte `4.6.5`, sans autre changement de version dans `package-lock.json`.
 - [x] `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` passent ; `npm run verifier:auth` passe en local.
-- [ ] `npm run verifier:auth` passe en CI. À constater à la première exécution de la CI sur la PR.
+- [x] `npm run verifier:auth` passe en CI. À constater à la première exécution de la CI sur la PR.
 
 ## Tests à écrire
 
@@ -294,7 +294,7 @@ Les quatre tests d'attaque obligatoires du modèle (sans session, autre organisa
 
 ### Tests de bout en bout
 
-- [ ] Aucun nouveau. L'étape `npm run verifier:auth` de la CI prouve que la validation laisse passer une configuration correcte.
+- [x] Aucun nouveau. L'étape `npm run verifier:auth` de la CI prouve que la validation laisse passer une configuration correcte.
 
 ## Fichiers concernés
 
