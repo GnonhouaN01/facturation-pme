@@ -18,8 +18,6 @@ Lis la section utile avant toute tâche. Ne les charge pas en entier.
 - `docs/CONTRIBUTING.md` : conventions de branches, de commits et de PR. Modèle de fiche : `docs/features/_modele.md`
 - `docs/PLAN.md` : jalons, ordre des fonctionnalités, stratégie de tests, définition de « terminé »
 - `docs/CONFIGURATION.md` : installation et réglages, commandes de référence
-- `docs/PLAN.md` : jalons, ordre des fonctionnalités, stratégie de tests, définition de « terminé »
-- `docs/CONFIGURATION.md` : installation et réglages, commandes de référence
 
 ## Commandes
 
@@ -43,7 +41,7 @@ Lis la section utile avant toute tâche. Ne les charge pas en entier.
 9. Un document émis, un paiement et le journal d'audit ne sont jamais modifiés ni supprimés.
 10. Aucune nouvelle dépendance sans accord explicite : propose le nom exact, la raison et une alternative. Jamais `npm audit fix`. Composants shadcn par leur nom uniquement, jamais par une adresse.
 11. Aucune route exposée, dont `/api/auth`, hors d'une fiche de fonctionnalité validée.
-12. `process.env` ne se lit que dans `src/server/env.ts`. Ce fichier sera créé avec la première fonctionnalité ; d'ici là, `src/server/db/client.ts` lit encore `process.env`.
+12. `process.env` ne se lit que dans `src/server/env.ts`. Les règles de validation vivent dans `src/server/env-schema.ts`, une fonction pure qui ne lit pas `process.env`.
 13. Tout fichier de `src/server/` commence par `import "server-only";`, sauf ceux de `src/server/db/schema/` : drizzle-kit les charge hors de Next.js, et `auth.ts` est généré. Sous Vitest, un alias remplace `server-only` par `tests/stubs/server-only.ts`.
 
 ## Méthode de travail
@@ -59,6 +57,7 @@ Lis la section utile avant toute tâche. Ne les charge pas en entier.
 
 ## Pièges connus
 
-- Drizzle 1.0 en version candidate avec Better Auth : utiliser `@better-auth/drizzle-adapter/relations-v2`. Le fichier `src/server/db/schema/auth.ts` est généré, ne l'édite pas à la main. Pour le régénérer : `NODE_OPTIONS=--conditions=react-server npx auth@latest generate --config src/server/auth/config.ts --output src/server/db/schema/auth.ts --yes`. La condition est requise depuis l'ajout de `server-only` dans `config.ts` ; cette commande reste à vérifier à la prochaine régénération.
+- Drizzle 1.0 en version candidate avec Better Auth : utiliser `@better-auth/drizzle-adapter/relations-v2`. Le fichier `src/server/db/schema/auth.ts` est généré, ne l'édite pas à la main. Pour le régénérer : l'outil refuse une configuration qui mène à `import "server-only";`. Retire temporairement cette ligne de `src/server/auth/config.ts` et des fichiers qu'il importe (`src/server/db/client.ts`, `src/server/env.ts`, `src/server/env-schema.ts`), lance `npx auth@latest generate --config src/server/auth/config.ts --output src/server/db/schema/auth.ts --yes`, puis rétablis les lignes et vérifie par `git diff` que seuls les fichiers du schéma ont changé. `config.ts` charge `env.ts` : les trois variables doivent être valides. Le chargement de `.env.local` par l'outil reste non vérifié.
 - Connexion groupée de Neon : l'organisation active se fixe avec `set_config('app.organisation_id', ..., true)` à l'intérieur d'une transaction.
 - Poste sous Windows avec Git Bash. Fins de ligne au format LF.
+- Après l'arrêt d'un serveur local par Ctrl+C, vérifier que le port est libre (`netstat -ano | grep ":3000"`) avant de relancer. Un essai a montré des erreurs d'un lancement précédent, sans cause établie.

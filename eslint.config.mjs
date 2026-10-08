@@ -8,10 +8,6 @@ import nextTs from "eslint-config-next/typescript";
 const SRC = "src/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}";
 const DB = "src/server/db/**";
 const ENV = "src/server/env.ts";
-// Exception temporaire : client.ts lit encore process.env tant que
-// src/server/env.ts n'existe pas (CLAUDE.md, règle 12). À retirer avec
-// la première fonctionnalité, qui crée env.ts.
-const CLIENT = "src/server/db/client.ts";
 
 // En configuration plate, une règle déclarée par un bloc postérieur remplace
 // entièrement celle d'un bloc antérieur pour un même fichier : les options ne
@@ -87,13 +83,12 @@ const eslintConfig = defineConfig([
   },
   {
     files: [DB],
-    ignores: [CLIENT],
     rules: { "no-restricted-imports": restreindreImports(IMPORTS_B) },
   },
   // Lecture de process.env (B).
   {
     files: [SRC],
-    ignores: [ENV, CLIENT],
+    ignores: [ENV],
     rules: { "no-restricted-properties": ["error", ...PROPRIETES_B] },
   },
   // Syntaxe interdite : imports dynamiques (A et B) et rôle propriétaire (C).
@@ -108,12 +103,7 @@ const eslintConfig = defineConfig([
   },
   {
     files: [DB],
-    ignores: [CLIENT],
     rules: { "no-restricted-syntax": ["error", ...SYNTAXE_B, ...SYNTAXE_C] },
-  },
-  {
-    files: [CLIENT],
-    rules: { "no-restricted-syntax": ["error", ...SYNTAXE_C] },
   },
   // Override default ignores of eslint-config-next.
   globalIgnores([
