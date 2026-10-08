@@ -152,6 +152,7 @@ Le navigateur n'est **jamais** une zone de confiance : tout ce qui s'y trouve pe
 | T-52 | Agir avec d'anciens droits après un retrait ou une rétrogradation | P4 | 3 | 2 | Haute | S-17 | Un membre retiré est refusé dès la requête suivante |
 | T-53 | Contourner le filtre par organisation au niveau de la base | P2 | 3 | 1 | Moyenne | S-04 | Une requête sans contexte d'organisation ne renvoie aucune ligne |
 | T-54 | Rendre l'organisation ingérable en retirant le dernier Propriétaire | P4 | 2 | 1 | Faible | R-12 | Le retrait du dernier Propriétaire est refusé |
+| T-55 | Contourner la chaîne de contrôles par les points d'entrée natifs du module organisation de Better Auth (`/organization/*` : changer un rôle, retirer un membre, inviter), qui appliquent leurs propres rôles, sans la matrice, sans journal ni nouvelle authentification | P3, P6 | 3 | 2 | Haute | S-03, S-14, S-70, matrice | Avant toute exposition de `/api/auth`, les points d'entrée natifs du module organisation sont fermés : chacun répond comme une adresse inexistante. Toute opération sur l'organisation et ses membres passe par la chaîne de contrôles |
 
 ### 5.7 Fichiers et documents générés
 
@@ -191,6 +192,7 @@ Le Visiteur et le Client final n'ont accès à rien de ce tableau, en dehors des
 | Modifier un rôle, retirer un membre | ✔ | ✖ | ✖ | ✖ |
 | Régler la visibilité des Commerciaux | ✔ | ✖ | ✖ | ✖ |
 | Supprimer l'organisation | ✔ | ✖ | ✖ | ✖ |
+| Quitter l'organisation | ✔ | ✔ | ✔ | ✔ |
 | **Clients** | | | | |
 | Voir les clients | ✔ | ✔ | P\* | ✔ |
 | Créer, modifier, archiver un client | ✔ | ✔ | P\* | ✖ |
@@ -226,7 +228,7 @@ Le Visiteur et le Client final n'ont accès à rien de ce tableau, en dehors des
 | Consulter un devis et y répondre | Client final détenteur du lien | | | |
 | Consulter une facture | Client final détenteur du lien | | | |
 
-Chaque utilisateur gère en outre son propre compte : mot de passe, double authentification, sessions, départ d'une organisation, suppression du compte.
+Chaque utilisateur gère en outre son propre compte : mot de passe, double authentification, sessions, suppression du compte. Le départ d'une organisation figure dans le tableau (« Quitter l'organisation ») ; la règle du dernier Propriétaire (R-12) s'y applique.
 
 **Règle de construction.** Cette matrice est écrite une seule fois dans le code, à un seul endroit. Les contrôles d'accès et les tests la lisent tous deux. Un test parcourt chaque case et vérifie que la réponse du serveur lui correspond.
 
