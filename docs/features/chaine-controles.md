@@ -140,13 +140,33 @@ Trois couches, pour que la chaîne se teste sans Next.js :
    export const modifierRole = exposer(modifierRoleMembre);
    ```
 
-   `exposer` (`src/server/actions/exposer.ts`) renvoie une fonction `async` qui lit `await headers()`, appelle la chaîne et relance les erreurs de contrôle de Next.js. Elle marque la fonction renvoyée (symbole privé) pour l'inventaire (section 7).
+   `exposer` (`src/server/actions/exposer.ts`) renvoie une fonction `async` qui lit `await headers()`, appelle la chaîne et relance les erreurs de contrôle de Next.js. Elle marque la fonction renvoyée (symbole privé) pour l'inventaire (section 7). `declarationExposee(valeur)` renvoie la déclaration portée par la marque, ou `undefined` pour toute autre valeur ; c'est la seule lecture de la marque.
+
+**Schéma d'entrée strict, refusé à la déclaration.** Un schéma non strict (`z.object`, `z.looseObject`, `.catchall()`) est refusé par `declarerAction`, qui lève une exception au chargement du module. Il ne peut pas l'être à la compilation : Zod 4.6 donne exactement la même forme de type à `$strict` et à `$strip`, donc le type `ZodObject<..., $strict>` accepte un `z.object` (constaté pendant la phase rouge : un `@ts-expect-error` sur ce cas n'a relevé aucune erreur).
 
 **Vérifié avant la phase rouge** (essai jetable du 2026-10-09, supprimé ensuite) : un fichier `"use server"` contenant `export const essaiAction = exposer("essai.action")`, où `exposer` renvoie une fonction `async` marquée par un symbole et lit `await headers()`, est accepté par `npm run build` (Next.js 16.3.8, Turbopack). Dans le code compilé, Next.js appelle `ensureServerEntryExports([essaiAction])`, puis `registerServerReference(essaiAction, "<identifiant>")`. Le manifeste `server-reference-manifest.json` liste `essaiAction` sous son nom exporté. La page qui l'utilise a été préconstruite, donc le module a été chargé sans erreur. La vérification de Next.js à l'exécution n'exige que `typeof === "function"` (`next/dist/server/app-render/action-validate.js`). Non vérifié : un appel HTTP réel de l'action (`curl` vers le serveur local refusé pendant l'essai). Il sera fait par le premier test de bout en bout qui utilise une action.
 
 **Gestionnaire de route.** Aucune route de membre n'est prévue avant la 7.2 (exports en téléchargement). Retenu : la chaîne ne dépend que de `{ entetes }`, donc un adaptateur `exposerRoute` se branche sans la modifier ; il est livré par la 7.2, avec sa fiche (règle 11). La 0.4 interdit dès maintenant tout `route.ts` qui n'en passe pas par là (section 7), sauf `api/auth` et `api/taches`, qui ont leur propre contrôle et leur propre fiche.
 
 **Lectures des pages.** Une page (composant serveur) lit des données sans passer par une action serveur. Elle a besoin du même contexte (session, adhésion, rôle, droit de lecture). Retenu (décision 9) : la 0.4 livre le noyau `etablirContexte` (étapes 2 à 6 de la section 5, sans contrôle d'origine, pour une lecture) ; l'adaptateur des pages et des gabarits est livré par la 0.6 (socle d'interface), qui crée `(app)/layout.tsx`.
+
+Signature, dans `src/server/actions/action.ts`, exposée aussi par `creerChaine` à côté d'`executerChaine` :
+
+```ts
+type ContexteLecture = Omit<Contexte<null>, "journaliser">;
+type ResultatLecture<T> = Exclude<Resultat<T>, { raison: "invalide" }>;
+
+etablirContexte<T>(
+  requete: { entetes: Headers },
+  droit: Droit,                                  // clé de la matrice : vérifié par le type
+  lire: (ctx: ContexteLecture) => Promise<T>,    // s'exécute dans la transaction
+): Promise<ResultatLecture<T>>;
+```
+
+- Étapes 2, 3, 5 et 6 de la section 5, puis `lire(ctx)` dans la transaction. Les points d'accroche 4 (débit) et 7 (double authentification, qui vise aussi les lectures, section 11) s'y appliqueront.
+- **Pas de contrôle d'origine** : une page s'ouvre par une navigation de premier niveau, éventuellement depuis un lien d'un autre site (sans `Origin`, ou avec `Sec-Fetch-Site: cross-site`). Une lecture ne modifie rien.
+- Ni entrée, ni validation, ni trace : `ctx` n'a pas de `journaliser` (type et exécution), et le résultat n'est jamais `invalide`.
+- Mêmes traductions d'erreurs que la chaîne (section 6.3), `ctx.introuvable()` compris. Le journal technique porte le droit à la place du nom de l'action. `redirect()` et `notFound()` levés par `lire` sont relancés tels quels.
 
 #### 3.3 L'origine de la requête (S-81, T-17)
 
@@ -237,7 +257,7 @@ type Resultat<T> =
 | Erreur de contrôle de Next.js (`redirect`, `notFound`) | Relancée telle quelle (`unstable_rethrow`) | Rien |
 | Toute autre erreur | `erreur` + incident | Nom de l'action, classe de l'erreur, code PostgreSQL éventuel, incident |
 
-- L'incident est un `crypto.randomUUID()`. Le journal technique est `console.error` jusqu'à la 8.1 (suivi des erreurs).
+- L'incident est un `crypto.randomUUID()`. Le journal technique par `console.error` est **provisoire**, jusqu'à la 8.1 (suivi des erreurs). Les tests unitaires l'observent par un espion sur `console.error` ; ils seront adaptés avec la 8.1.
 - **Jamais le message de l'erreur** dans le journal technique : un message PostgreSQL peut contenir des valeurs (`Key (email)=(...)` d'une violation d'unicité). S-54, T-35.
 - `42501` peut aussi venir d'une erreur de programmation (écriture interdite sur `journal_audit`). Il est alors masqué en `refuse` pour le client, mais consigné avec son code. Accepté.
 
@@ -362,6 +382,9 @@ Les déclarations de démonstration :
 - `demo.oubli_trace` : même droit, `journal` déclaré, service qui n'appelle pas `ctx.journaliser`.
 - `demo.sensible` : `nouvelleAuthentification: true`.
 - `demo.ressource` : reçoit un identifiant de ligne de `temoin_isolation` et appelle `ctx.introuvable()` si la ligne est absente.
+- `demo.reservee` : droit `catalogue.modifier` (Propriétaire et Comptable, refusé au Lecteur), `journal: null`. Son service renvoie le rôle reçu. Sert au passage d'un rôle de `comptable` à `lecteur` entre deux requêtes (T-52).
+- `demo.bloquante` : droit `organisation.membres.voir`, `journal: null`. Son service signale qu'il a commencé, puis attend que le test le libère. Elle tient l'adhésion (`FOR SHARE`) pendant que le test lance la suppression de la ligne `member` dans une autre connexion (T-52, concurrence).
+- `demo.qui_leve` (test unitaire, dépendances factices) : son service lève l'erreur fournie par le test (erreur PostgreSQL directe ou enveloppée par Drizzle, `EntreeJournalInvalide`, erreur quelconque, valeur qui n'est pas une `Error`). Sert à la traduction des erreurs et au contenu du journal technique (section 6.3).
 
 Ces tests ont besoin de `drizzle-orm` pour lire et écrire `temoin_isolation` : ils vivent dans `src/server/db/` (`chaine.integration.test.ts`, `chaine.attaque.integration.test.ts`), seul endroit où un test peut l'importer (`CLAUDE.md`, « Pièges connus »).
 
@@ -378,6 +401,8 @@ Aucun écran de connexion n'existe. Vérifié dans `node_modules/better-auth/dis
 | S3. Insérer `session` à la main et signer le cookie soi-même | Réécrit ce que `testUtils` fait, avec le risque de diverger du format de Better Auth |
 
 Pour partager les options sans les recopier, `config.ts` exporte l'objet d'options (`optionsAuth`) en plus de `auth`. Effet sur le générateur du schéma : aucun (mêmes options, même schéma) ; à vérifier par `git diff` si `auth.ts` est régénéré un jour.
+
+**Règle : `testUtils` n'existe que dans l'instance de test.** Le module crée des sessions sans mot de passe (`login({ userId })`). Il n'est ajouté qu'aux options de l'instance de `src/server/db/outils-test/`, jamais à `optionsAuth` ni à `auth`, même sous condition. Vérifié par `src/server/auth/config.test.ts` (sans base) : l'identifiant du module (`test-utils`) est absent de `optionsAuth.plugins` et de `auth.options.plugins`, le contexte de `auth` n'expose pas d'aides de test (`test`), et aucun fichier de `src/` hors des tests et de `outils-test/` ne mentionne `testUtils`. Ce dernier contrôle attrape un ajout conditionnel, qu'une configuration chargée sous Vitest ne montrerait pas.
 
 Nouvel outil, `src/server/db/outils-test/membres.ts` :
 
@@ -421,6 +446,7 @@ Nouvel outil, `src/server/db/outils-test/membres.ts` :
   - **S-50** : schéma strict obligatoire dans chaque déclaration.
   - **S-54, S-85** : codes sans texte ni valeur ; incident ; jamais le message d'une erreur dans le journal technique.
   - **S-70, S-71** : trace déclarée avec l'action, écrite dans sa transaction, auteur de la session, trace manquante = action annulée.
+  - **Sessions sans mot de passe** : le module `testUtils` de Better Auth n'existe que dans l'instance de test ; la configuration de production ne le contient jamais (section 10).
 - Menaces concernées :
   - **T-17** : tests d'origine (section « Tests d'attaque »).
   - **T-50** : matrice unique, test de conformité, test par action et par rôle, inventaire.
@@ -449,7 +475,7 @@ La fonctionnalité est de taille L. Retenu (décision 14) : une fiche, trois PR 
 | PR | Contenu | Ce qu'elle prouve | Base |
 |---|---|---|---|
 | 1. Matrice | `matrice.ts` (rôles, 33 droits, `peut`, `perimetre`), `matrice.test.ts` ; documents mis à jour à la validation (`THREATS.md`, `PLAN.md`, `STRUCTURE.md`, cette fiche, `journal-audit.md`) | La matrice du code est identique, case par case, au tableau de `THREATS.md` ; toute divergence future fait échouer la CI ; les rôles hors liste n'ont aucun droit | Non |
-| 2. Chaîne | `action.ts`, `origine.ts`, `refus.ts`, `exposer.ts`, `session.ts`, `requetes/adhesions.ts`, `outils-test/membres.ts`, `optionsAuth`, tests unitaires, d'intégration et d'attaque ; `DESIGN.md` section 3.2 | L'ordre des contrôles ; le refus uniforme (ressource d'une autre organisation et ressource inexistante indiscernables) ; l'origine (T-17) ; le membre retiré ou rétrogradé refusé (T-52) ; la trace obligatoire (T-20) ; l'auteur pris dans la session ; sur de vraies sessions et la vraie base | Oui |
+| 2. Chaîne | `action.ts` (dont `etablirContexte`), `origine.ts`, `refus.ts`, `exposer.ts`, `session.ts`, `requetes/adhesions.ts`, `outils-test/membres.ts`, `optionsAuth`, tests unitaires (dont `exposer.test.ts` et `config.test.ts`), d'intégration et d'attaque ; `DESIGN.md` section 3.2 ; correction du test d'horodatage de `schema-journal.integration.test.ts` | L'ordre des contrôles ; le refus uniforme (ressource d'une autre organisation et ressource inexistante indiscernables) ; l'origine (T-17) ; le membre retiré ou rétrogradé refusé (T-52) ; la trace obligatoire (T-20) ; l'auteur pris dans la session ; sur de vraies sessions et la vraie base | Oui |
 | 3. Garde-fous | Règles ESLint G à L, `registre.ts`, `inventaire.test.ts`, `registre.integration.test.ts`, `CLAUDE.md` règle 5 | Aucune action ne contourne la chaîne : toute action exposée est déclarée, inscrite au registre et testée pour chaque rôle (T-50, T-72) ; un service n'ouvre pas de transaction et n'écrit pas au journal lui-même | Oui |
 
 Cohérence de `main` entre les PR : `STRUCTURE.md` section 7 indique que les règles de la chaîne sont vérifiées par ESLint « à partir de sa troisième PR ». Aucune action n'existe avant la PR 3, donc aucune ne peut contourner la chaîne entre-temps.
@@ -458,6 +484,9 @@ Cohérence de `main` entre les PR : `STRUCTURE.md` section 7 indique que les rè
 
 - [x] `matrice.ts` contient les 4 rôles et les 33 droits de la section 8.2 ; le test de conformité compare les 132 cases à `THREATS.md` et échoue si l'on change une valeur dans l'un ou l'autre (vérifié en changeant temporairement une case).
 - [ ] `declarerAction` avec un droit inconnu, sans `entree`, sans `journal` ou sans `nouvelleAuthentification` ne compile pas (`@ts-expect-error`).
+- [ ] Un schéma d'entrée non strict (`z.object`, `z.looseObject`, `.catchall()`) est refusé à la déclaration : `declarerAction` lève une exception, alors que le même schéma en `z.strictObject` est accepté. Raison : Zod 4 donne la même forme de type aux deux (section 3.2), la compilation ne peut pas les distinguer.
+- [ ] `exposer` : rien n'est lu à la déclaration ; à l'appel, une lecture de `headers()`, un appel de la chaîne avec la déclaration et l'entrée reçue, résultat renvoyé tel quel, `redirect()` et `notFound()` relancés. La marque est un symbole hors du registre global, lue par `declarationExposee`, absente de toute autre valeur.
+- [ ] `etablirContexte` : ordre des étapes 2, 3, 5, 6 ; aucun contrôle d'origine ; `connexion_requise` et `refuse` comme la chaîne ; contexte sans `journaliser` ; traductions d'erreurs de la section 6.3 ; erreurs de contrôle de Next.js relancées.
 - [ ] La chaîne applique l'ordre de la section 5 ; un refus à une étape n'exécute aucune étape suivante (vérifié par dépendances espionnes).
 - [ ] Origine absente, différente, `null`, ou `Sec-Fetch-Site` différent de `same-origin` : `refuse`, sans lecture de session.
 - [ ] Sans session, session expirée, cookie falsifié : `connexion_requise`, sans transaction ouverte.
@@ -474,6 +503,7 @@ Cohérence de `main` entre les PR : `STRUCTURE.md` section 7 indique que les rè
 - [ ] `demo.sensible` : `refuse`, pour tous les rôles.
 - [ ] Une erreur inattendue du service renvoie `erreur` et un incident ; le journal technique ne contient ni le message de l'erreur ni aucune valeur de l'entrée.
 - [ ] `redirect()` levé dans un service traverse la chaîne.
+- [ ] `testUtils` est absent de la configuration de production de Better Auth (`optionsAuth`, `auth`, contexte de `auth`) et n'est mentionné dans `src/` que par les tests et `outils-test/` ; `config.test.ts` échoue si on l'y ajoute (vérifié en l'ajoutant temporairement).
 - [ ] Les règles ESLint G à L refusent chacune un exemple fautif et acceptent l'exemple correct (`regles-import.test.ts`).
 - [ ] Le test d'inventaire échoue sur un fichier `actions.ts` de démonstration dont un export n'est pas passé par `exposer`, sur une déclaration absente du registre, sur un `route.ts` hors liste ; il passe sur le dépôt.
 - [ ] Le test par action et par rôle échoue sur un registre de démonstration contenant une action sans cas.
@@ -507,6 +537,18 @@ Tous écrits avant le code et vus en échec.
 - [ ] Journal technique : ni message d'erreur, ni valeur d'entrée, ni `cause`.
 - [ ] `champs` de `invalide` : chemins seulement.
 - [ ] `@ts-expect-error` sur les déclarations incomplètes.
+- [ ] Schéma d'entrée non strict refusé à la déclaration, `z.strictObject` accepté.
+- [ ] `etablirContexte` : ordre, absence de contrôle d'origine, refus, contexte sans `journaliser` (type et exécution), traduction des erreurs, journal technique (droit, classe, incident, sans message ni cause), `redirect()` et `notFound()`.
+
+`src/server/actions/exposer.test.ts` (`next/headers` et la chaîne remplacés par des espions) :
+
+- [ ] Fonction `async`, rien lu à la déclaration ; à l'appel, `headers()` lu une fois, chaîne appelée avec la déclaration, les en-têtes et l'entrée reçue ; résultat renvoyé tel quel.
+- [ ] `redirect()` et `notFound()` levés par la chaîne : relancés tels quels.
+- [ ] Marque : `declarationExposee` renvoie la déclaration ; `undefined` pour une fonction quelconque, une fonction ou un objet portant une propriété `declaration`, `null`, une chaîne ; symbole absent du registre global (`Symbol.keyFor`).
+
+`src/server/auth/config.test.ts` :
+
+- [ ] `testUtils` absent de `optionsAuth.plugins` et de `auth.options.plugins`, aucune aide `test` dans le contexte de `auth`, aucune mention de `testUtils` dans `src/` hors des tests et de `outils-test/` (section 10). Le test vérifie aussi qu'il reconnaît le module quand il est présent.
 
 `src/server/actions/inventaire.test.ts` : section 7.
 
@@ -520,6 +562,9 @@ Tous écrits avant le code et vus en échec.
 - [ ] `demo.ecrire` par le Propriétaire : ligne témoin et trace écrites ensemble ; auteur de la session.
 - [ ] `demo.oubli_trace` : annulée.
 - [ ] Le service s'exécute dans la transaction de l'organisation active (il lit ses lignes de `temoin_isolation`, pas celles de B).
+- [ ] `etablirContexte` avec une vraie session : contexte et lignes de l'organisation active ; droit refusé ; sans cookie.
+
+`session.ts` et `requetes/adhesions.ts` n'ont pas de test propre : ils sont les vraies dépendances de la chaîne, et les tests d'intégration et d'attaque les exercent (sessions absentes, falsifiées, expirées ; adhésion de l'organisation active seulement ; `FOR SHARE`).
 
 `src/server/actions/registre.integration.test.ts` : niveau 2 de la section 8.4, sur le registre réel (vide) et sur un registre de démonstration.
 
@@ -528,7 +573,7 @@ Tous écrits avant le code et vus en échec.
 `src/server/db/chaine.attaque.integration.test.ts` :
 
 - [ ] **Sans session** : aucun cookie, cookie au jeton inconnu, cookie à la signature modifiée, session expirée : `connexion_requise`.
-- [ ] **Autre organisation** : membre de B avec l'organisation active A forcée dans sa session (écriture directe en base) : `refuse`. Membre de B qui demande par `demo.ressource` une ligne de A, puis une ligne inexistante : résultats égaux.
+- [ ] **Autre organisation** : membre de B avec l'organisation active A forcée dans sa session (écriture directe en base) : `refuse`. Membre de B qui demande par `demo.ressource` une ligne de A, puis une ligne inexistante : résultats égaux. Membre de A (Lecteur) et de B (Propriétaire), organisation active A : le rôle de A s'applique, `demo.ecrire` refusée.
 - [ ] **Rôle insuffisant** : chaque rôle non autorisé sur `demo.ecrire` : `refuse`, aucune ligne écrite.
 - [ ] **Entrée falsifiée** : `organisationId: B`, `role: "proprietaire"`, `auteurId` d'un autre utilisateur dans l'entrée : `invalide`, rien d'écrit ; une entrée non objet, `null`, très profonde : `invalide`.
 - [ ] **T-17** : requête complète avec une session valide et une `Origin` d'un autre site : `refuse`, rien d'écrit.
@@ -549,8 +594,8 @@ Créés :
 
 - `src/server/autorisation/matrice.ts`, `matrice.test.ts`
 - `src/server/actions/action.ts`, `refus.ts`, `origine.ts`, `exposer.ts`, `registre.ts`
-- `src/server/actions/action.test.ts`, `origine.attaque.test.ts`, `inventaire.test.ts`, `registre.integration.test.ts`
-- `src/server/auth/session.ts`
+- `src/server/actions/action.test.ts`, `origine.attaque.test.ts`, `exposer.test.ts`, `inventaire.test.ts`, `registre.integration.test.ts`
+- `src/server/auth/session.ts`, `src/server/auth/config.test.ts`
 - `src/server/db/requetes/adhesions.ts`
 - `src/server/db/outils-test/membres.ts`
 - `src/server/db/chaine.integration.test.ts`, `src/server/db/chaine.attaque.integration.test.ts`
@@ -558,6 +603,7 @@ Créés :
 Modifiés :
 
 - `src/server/auth/config.ts` : export de `optionsAuth` (section 10)
+- `src/server/db/schema-journal.integration.test.ts` : test d'horodatage corrigé (`journal-audit.md`, « Notes de l'implémentation »)
 - `src/server/db/outils-test/organisations.ts` : nettoyage des utilisateurs avant les organisations, si `membres.ts` ne le porte pas seul
 - `eslint.config.mjs` : règles G à L ; `src/server/db/regles-import.test.ts`
 - `docs/DESIGN.md` section 3.2 : adhésion lue dans la transaction, modèle de refus
@@ -593,11 +639,12 @@ Inchangés : `drizzle/`, `scripts/`, `.github/workflows/` (la CI fournit déjà 
 ### Au jalon 7
 
 - 7.2 : adaptateur `exposerRoute` pour les téléchargements.
+- 7.2 : réexaminer le refus de `Sec-Fetch-Site: none` (section 3.3) pour un téléchargement ouvert par un lien direct (adresse saisie, favori, lien d'un courriel), que le navigateur envoie avec cette valeur.
 - 7.4 : filtrage par `ctx.perimetre`.
 
 ### Au jalon 8
 
-- 8.1 : le journal technique passe de `console.error` au service de suivi des erreurs.
+- 8.1 : le journal technique passe de `console.error`, provisoire, au service de suivi des erreurs (section 6.3) ; les tests qui l'observent par un espion sur `console.error` sont adaptés.
 - 8.1 : le signalement d'un rôle inconnu rencontré en base (`owner`, `admin`, `member`, valeur multiple), sans l'identifiant de l'utilisateur (décision 1). Jusque-là, ce rôle vaut « aucun droit » sans signalement.
 
 ## Décisions
@@ -634,3 +681,14 @@ Vérifié avant la phase rouge, par un essai jetable supprimé ensuite : la form
 La phrase de la section « Tests unitaires » (« le type l'interdit ») a été corrigée en conséquence. La garantie de compilation demandée par la section 8.1 (« `declarerAction({ droit: "inconnu" })` ne compile pas ») reste à la charge de `declarerAction`, qui prendra le type `Droit` (PR 2).
 
 `perimetre` d'un droit refusé vaut `"organisation"`. La chaîne ne l'appelle qu'après `peut`, il est donc sans effet.
+
+### PR 2 : contrats fixés par les tests, confirmés le 2026-10-10
+
+1. **Dépendances de la chaîne** (`DependancesChaine`) : `origineAttendue`, `lireSession(entetes)` qui renvoie `{ utilisateurId, organisationActiveId }` ou `null`, `executerDansOrganisation`, `lireAdhesion(tx, utilisateurId)` qui renvoie `{ membreId, role }` ou `null`, `journaliser(tx, entree)`.
+2. **Journal technique** observé par un espion sur `console.error`, dont tout le contenu est inspecté (`util.inspect`, qui montre le message et la cause d'une `Error`, contrairement à `JSON.stringify`). Provisoire jusqu'à la 8.1.
+3. **`verifierOrigine`** compare l'en-tête `Origin` à l'origine de `BETTER_AUTH_URL` : une barre finale ou un chemin dans la variable sont sans effet.
+4. **`Sec-Fetch-Site: none`** est refusé, comme toute valeur autre que `same-origin`. À réexaminer à la 7.2 (« Reporté »).
+5. **Clé inconnue dans l'entrée** : le résultat est `invalide`, sans valeur reçue ; le contenu exact de `champs` pour une clé inconnue n'est pas fixé.
+
+Outil `membres.ts` : `creerMembre(options)` et `nettoyerMembres()`. Les tests appellent `nettoyerMembres` après le `nettoyer` des organisations, pour qu'un échec ne laisse pas d'organisation sur `dev`.
+
