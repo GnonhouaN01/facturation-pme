@@ -44,6 +44,7 @@ Lis la section utile avant toute tâche. Ne les charge pas en entier.
 11. Aucune route exposée, dont `/api/auth`, hors d'une fiche de fonctionnalité validée.
 12. `process.env` ne se lit que dans `src/server/env.ts`. Les règles de validation vivent dans `src/server/env-schema.ts`, une fonction pure qui ne lit pas `process.env`.
 13. Tout fichier de `src/server/` commence par `import "server-only";`, sauf ceux de `src/server/db/schema/` : drizzle-kit les charge hors de Next.js, et `auth.ts` est généré. Sous Vitest, un alias remplace `server-only` par `tests/stubs/server-only.ts`.
+14. Le module `testUtils` de Better Auth (sessions sans mot de passe) n'existe que dans l'instance de test de `src/server/db/outils-test/membres.ts`. Jamais dans `optionsAuth` ni `auth` (`src/server/auth/config.ts`), même sous condition. Le mot `testUtils` n'apparaît dans `src/` que dans les tests et `outils-test/`, y compris dans les commentaires : `config.test.ts` le vérifie.
 
 ## Méthode de travail
 
@@ -67,6 +68,8 @@ Lis la section utile avant toute tâche. Ne les charge pas en entier.
 - Connexion groupée de Neon : l'organisation active se fixe avec `set_config('app.organisation_id', ..., true)` à l'intérieur d'une transaction. C'est le rôle d'`executerDansOrganisation`, à ne jamais contourner.
 - Marque de la base de test : le commentaire de base exact `environnement:test`, posé par `scripts/retablir-acces-dev.mjs` (sur `dev`) et `scripts/preparer-base-test.mjs` (en CI). `ALTER DATABASE ... SET` est refusé par Neon. Une branche `dev` recréée perd la marque : les tests d'intégration refusent alors de tourner, c'est voulu. Ne jamais poser la marque sur `preview` ni `production`.
 - Outillage des tests avec base : `src/server/db/outils-test/`, importable seulement depuis un fichier de test (règle ESLint). Toujours enregistrer `nettoyer` par `onTestFinished` ou `afterAll`. Une table en ajout seul se passe à `creerDeuxOrganisations` par `tablesAjoutSeul`, jamais par `tables` : le rôle de l'application ne peut pas en supprimer les lignes, et `nettoyer` laisse alors sur `dev` les organisations qui y ont écrit (environ 4 par exécution, accepté). Seuls `src/server/db/**/*.test.ts` peuvent importer `db` et `drizzle-orm` : un test d'intégration qui en a besoin vit dans `src/server/db/`.
+- Membres et sessions réelles en test : `creerMembre` et `nettoyerMembres` (`outils-test/membres.ts`). Dans `afterAll`, appeler le `nettoyer` des organisations d'abord, puis `nettoyerMembres` dans un `finally` : un échec ne laisse alors aucune organisation sur `dev`.
 - PostgreSQL 18 renvoie `23001` (et non `23503`) pour une suppression refusée par une clé en `ON DELETE RESTRICT`.
+- Zod 4 donne le même type à `z.object` et à `z.strictObject` (`$strip` et `$strict` ont la même forme) : un type ne peut pas exiger un schéma strict. `declarerAction` le vérifie à l'exécution (`docs/features/chaine-controles.md`, section 3.2).
 - Poste sous Windows avec Git Bash. Fins de ligne au format LF.
 - Après l'arrêt d'un serveur local par Ctrl+C, vérifier que le port est libre (`netstat -ano | grep ":3000"`) avant de relancer. Un essai a montré des erreurs d'un lancement précédent, sans cause établie.

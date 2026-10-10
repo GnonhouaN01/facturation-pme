@@ -294,6 +294,7 @@ Ce sont les situations que les parades ne couvrent pas, et qu'on choisit d'assum
 | RR-5 | Une attaque massive visant à saturer le service | Hors de portée d'une offre gratuite | Limitation de débit, protections de l'hébergeur |
 | RR-6 | Les documents produits en mode simulateur n'ont pas de valeur fiscale | L'accès réel à la plateforme dépend de démarches externes | Mention visible sur chaque document |
 | RR-7 | Un Comptable enregistre un faux paiement | Il faut bien faire confiance à celui qui saisit | Auteur tracé, aucune suppression possible |
+| RR-8 | Les tables de Better Auth (`member`, `user`, `session`, `organization`, `invitation`) n'ont pas de règle d'isolation : une requête écrite avec la transaction d'une organisation peut lire les lignes d'une autre | Un utilisateur n'appartient pas à une seule organisation, et Better Auth lit et écrit ces tables hors de toute organisation active, à la connexion par exemple (`DESIGN.md` section 2.5) | Traité au jalon 2 : toute requête de l'application sur ces tables filtre explicitement sur l'organisation du contexte, et reçoit un test d'attaque qui tente de lire l'autre organisation. Aujourd'hui, une seule requête : `lireAdhesion`, filtrée sur l'organisation de la transaction et l'utilisateur de la session |
 
 ---
 

@@ -68,11 +68,13 @@ La 1.6 livre le mécanisme qu'attend la chaîne de contrôles : jusque-là, tout
 
 | # | Fonctionnalité | Cas d'utilisation | Exigences et menaces | Taille |
 |---|---|---|---|---|
-| 2.1 | Création et changement d'organisation | UC-06, UC-11 | F-010, F-014, S-01 | M |
-| 2.2 | Paramètres de l'organisation | UC-07 | F-011, F-057, S-14, S-33, S-53, T-12, T-60 | L |
-| 2.3 | Invitations | UC-08, UC-09 | F-012, S-15, S-16, T-05 | M |
-| 2.4 | Rôles et retrait d'un membre | UC-10 | F-013, F-017, R-12, S-05, S-17, T-51, T-52, T-54 | M |
-| 2.5 | Suppression différée | UC-13 | F-018, R-15, T-44 | S |
+| 2.1 | Création et changement d'organisation | UC-06, UC-11 | F-010, F-014, S-01, RR-8 | M |
+| 2.2 | Paramètres de l'organisation | UC-07 | F-011, F-057, S-14, S-33, S-53, T-12, T-60, RR-8 | L |
+| 2.3 | Invitations | UC-08, UC-09 | F-012, S-15, S-16, T-05, RR-8 | M |
+| 2.4 | Rôles et retrait d'un membre | UC-10 | F-013, F-017, R-12, S-05, S-17, T-51, T-52, T-54, RR-8 | M |
+| 2.5 | Suppression différée | UC-13 | F-018, R-15, T-44, RR-8 | S |
+
+**Tables de Better Auth (RR-8, `THREATS.md` section 8).** `member`, `user`, `session`, `organization` et `invitation` n'ont pas de règle d'isolation. Dans chaque fonctionnalité du jalon 2, toute requête de l'application sur l'une d'elles filtre explicitement sur l'organisation du contexte, et reçoit un test d'attaque qui tente de lire les lignes de l'autre organisation.
 
 **Démontrable à la fin :** un gérant crée son entreprise, invite un comptable et un vendeur, et un comptable externe bascule entre deux entreprises sans jamais voir les données de l'une dans l'autre.
 
@@ -302,3 +304,4 @@ Cette estimation est une fourchette, pas un engagement. Elle repose sur le rythm
 | Tests sur la branche `dev` | Des tests interrompus peuvent y laisser des données | Identifiants aléatoires, nettoyage systématique, branche recréable à tout moment |
 | Durée | Six à onze mois est long pour un projet personnel | Jalons déployés un par un. Arrêt possible après le jalon 5 avec un produit présentable |
 | Limites des offres gratuites | 100 heures de calcul par mois chez Neon, 100 emails par jour | À surveiller à partir du jalon 4 |
+| Visibilité des Commerciaux | Jusqu'à la 7.4, un Commercial voit toute l'organisation sur les droits limités au portefeuille (P\* et L\* de la matrice) : la chaîne transmet `ctx.perimetre`, mais aucun service ne filtre encore (`chaine-controles.md`, section 4) | L'application ne reçoit pas de vrais utilisateurs avant la livraison de la 7.4 |

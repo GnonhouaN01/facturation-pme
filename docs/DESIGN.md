@@ -444,7 +444,7 @@ Conséquence : si une requête du code oublie son filtre, la base ne renvoie rie
 
 Trois cas particuliers :
 
-- **Les tables de Better Auth** (utilisateurs, sessions) ne sont pas filtrées par organisation, car un utilisateur n'appartient pas à une seule organisation. Seule la bibliothèque y accède.
+- **Les tables de Better Auth** (utilisateurs, sessions) ne sont pas filtrées par organisation, car un utilisateur n'appartient pas à une seule organisation. Elles sont gérées par Better Auth, mais l'application y accède aussi : la chaîne de contrôles lit `member` par `lireAdhesion`, et les fonctionnalités du jalon 2 y accéderont. Règle à suivre : risque résiduel RR-8 de `THREATS.md` (section 8).
 - **Les liens publics** sont recherchés par l'empreinte du jeton, avant que l'organisation soit connue. Une fonction dédiée effectue cette seule recherche, puis fixe l'organisation à partir du lien trouvé.
 - **La tâche quotidienne** parcourt les organisations une par une, en fixant l'organisation à chaque passage.
 
@@ -493,44 +493,52 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant N as Navigateur
-    participant E as Point d'entree
-    participant Z as Autorisation
+    participant E as Point d'entree (exposer)
+    participant C as Chaine (executerChaine)
     participant M as Service metier
-    participant D as Acces aux donnees
     participant B as Base
 
     N->>E: Action et donnees
-    E->>E: 1. Verifie l'origine de la requete
-    E->>Z: 2. Qui est-ce ? Session valide ?
-    Z->>B: Lit la session et l'adhesion
-    Z-->>E: Utilisateur, organisation active, role
-    E->>Z: 3. Ce role peut-il faire cette action ?
-    alt Refuse
-        E-->>N: Introuvable
+    E->>C: Declaration, en-tetes, entree brute
+    C->>C: 1. Verifie l'origine de la requete
+    C->>B: 2. Lit la session (Better Auth)
+    C->>C: 3. Organisation active presente, format UUID
+    C->>B: 5. Ouvre la transaction, fixe l'organisation active
+    C->>B: 6. Lit l'adhesion FOR SHARE, role, matrice
+    alt Refuse (etapes 1, 3, 6, 8)
+        C-->>N: refuse (introuvable)
     else Autorise
-        E->>E: 4. Valide les donnees par schema
-        E->>M: Contexte et donnees validees
-        M->>D: Ouvre une transaction
-        D->>B: 5. Fixe l'organisation active
-        D->>B: 6. Requetes, filtrees par le code et par la base
-        M->>D: 7. Ecrit au journal d'audit
-        D->>B: Valide la transaction
-        M-->>E: Resultat
-        E-->>N: Reponse
+        C->>C: 8. Nouvelle authentification si declaree
+        C->>C: 9. Valide l'entree par le schema strict
+        C->>M: 10. Contexte et entree validee
+        M->>B: Requetes, filtrees par le code et par la base
+        M->>B: Ecrit au journal (ctx.journaliser)
+        C->>C: 11. Trace declaree ecrite ?
+        C->>B: 12. Valide la transaction
+        C-->>N: Resultat
     end
 ```
 
-**Explication.** C'est le diagramme le plus important du document, car toutes les actions des membres suivent cette chaîne. Les sept étapes numérotées sont les sept contrôles.
+**Explication.** C'est le diagramme le plus important du document, car toutes les actions des membres suivent cette chaîne. Une action se déclare par `declarerAction` (nom, droit, schéma, trace, nouvelle authentification, service), s'expose par `exposer` dans un fichier `"use server"`, et ne joint le service que par `executerChaine` (`src/server/actions/`). Fiche : `docs/features/chaine-controles.md`, sections 3 à 6.
 
-1. **Origine.** Une requête venue d'un autre site est refusée (S-81, T-17).
-2. **Identité.** La session est relue en base à chaque requête : un membre retiré ou une session révoquée est refusé immédiatement (S-17, T-52).
-3. **Autorisation.** Le rôle est comparé à la matrice, qui n'existe qu'à un seul endroit du code (T-50). Un refus répond « introuvable », comme si la ressource n'existait pas (S-02).
-4. **Validation.** Les données sont vérifiées par un schéma Zod (S-50).
-5. **Contexte.** L'organisation active est transmise à la base.
-6. **Double filtre.** Le code filtre par organisation, et la base aussi (S-04).
-7. **Trace.** L'écriture au journal fait partie de la même transaction : soit l'action et sa trace réussissent ensemble, soit aucune des deux (S-70).
+1. **Origine.** `Origin` obligatoire, égale à l'origine de `BETTER_AUTH_URL` ; `Sec-Fetch-Site`, s'il est présent, vaut `same-origin` (S-81, T-17).
+2. **Identité.** La session est relue en base à chaque requête. Sans session valide : `connexion_requise`.
+3. **Organisation active.** Lue dans la session, jamais dans l'entrée ; absente ou mal formée : refus, avant toute requête.
+4. Réservée à la limitation de débit (0.5).
+5. **Contexte.** Toutes les étapes suivantes se déroulent dans `executerDansOrganisation` : l'organisation active est fixée dans la transaction.
+6. **Adhésion et autorisation.** L'adhésion est relue **dans la transaction**, verrouillée `FOR SHARE` : un membre retiré ou rétrogradé est refusé dès la requête suivante, et un retrait attend la fin des actions en cours (S-17, T-52). Le rôle doit être l'un des quatre, et la matrice, qui n'existe qu'à un seul endroit du code, doit l'autoriser (T-50, T-51).
+7. Réservée à la double authentification par rôle (1.4).
+8. **Nouvelle authentification** (S-14) : une action qui la déclare est refusée tant que la 1.6 n'est pas livrée.
+9. **Validation.** L'entrée est vérifiée par le schéma strict de la déclaration (S-50), seulement pour un membre autorisé : un membre non autorisé ne peut pas sonder le schéma.
+10. **Service.** Il reçoit le contexte (utilisateur, organisation, rôle, périmètre, transaction) et ne refuse une ressource que par `ctx.introuvable()`. Le code filtre par organisation, et la base aussi (S-04).
+11. **Trace.** L'écriture au journal fait partie de la même transaction. Une trace déclarée et non écrite annule l'action (S-70, T-20).
+12. La transaction est validée.
 
-La règle de construction qui en découle : **aucune action ne peut atteindre le service métier sans passer par les étapes 1 à 4**. Une fonction commune les enchaîne, et chaque action est déclarée à travers elle.
+**Refus.** Le client reçoit des codes, jamais de texte : `refuse` (origine, organisation active, adhésion, rôle, droit, ressource inexistante ou d'une autre organisation, sans distinction, S-02), `connexion_requise`, `invalide` (chemins des champs seulement), `erreur` (identifiant d'incident, S-85). Le journal technique ne contient jamais le message d'une erreur.
+
+Écart avec la première version de ce diagramme : l'adhésion n'est plus lue avant la transaction, mais dans celle-ci (étape 6), et la validation de l'entrée vient après l'autorisation.
+
+La règle de construction qui en découle : **aucune action ne peut atteindre le service métier sans passer par les étapes 1 à 9**. Une fonction commune les enchaîne, et chaque action est déclarée à travers elle. Les lectures des pages passent par `etablirContexte` : étapes 2 à 6, sans contrôle d'origine, sans entrée ni trace.
 
 ### 3.3 Émission d'une facture
 
