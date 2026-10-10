@@ -398,7 +398,7 @@ Fichier : `src/server/db/schema-journal.integration.test.ts`.
 
 - [x] `verifierIsolation(journalAudit, fabriquer, { ajoutSeul: true })` : contrôles 0 à 9.
 - [x] Le rôle de l'application a `SELECT` et `INSERT`, pas `UPDATE`, `DELETE` ni `TRUNCATE` (`has_table_privilege`).
-- [x] Une entrée écrite a `cree_le` non nul, compris entre le début et la fin du test.
+- [x] Une entrée écrite a `cree_le` non nul, compris entre deux lectures de l'horloge de la base (`clock_timestamp()`), l'une avant la transaction, l'autre après l'insertion (voir « Notes de l'implémentation »).
 
 Fichier : `src/server/db/schema-isolation.integration.test.ts` (inventaire, section 8.2).
 
@@ -571,3 +571,9 @@ Constat : `npm run typecheck` refusait `src/server/journal/audit.test.ts`. Le te
 ### Code de refus sans organisation active
 
 Constaté sur `dev` : `42501`. C'est la règle d'isolation (`WITH CHECK`) qui refuse l'insertion, avant la contrainte `NOT NULL`. Les deux tests d'attaque « sans organisation active » passent sans ajustement.
+
+### Correction du test d'horodatage, le 2026-10-10
+
+Constat, pendant la phase rouge de la 0.4 (`chaine-controles.md`) : le test « une entrée reçoit son horodatage de la base » (`schema-journal.integration.test.ts`) échouait à chaque exécution. Il comparait `cree_le`, donné par l'horloge de la base, à deux lectures de l'horloge du poste (`new Date()`), avec une marge d'une seconde. L'écart constaté entre les deux horloges était d'environ 2,2 s.
+
+C'est un défaut du test : il dépendait de deux horloges, alors que la propriété vérifiée ne concerne que la base. Correction : le test ne consulte plus que l'horloge de la base. Il lit `clock_timestamp()` (l'heure courante) une fois avant d'ouvrir la transaction et une fois après l'insertion, et exige `cree_le` entre les deux, sans marge. La lecture « avant » se fait hors de la transaction : `cree_le` vaut `now()`, l'heure de **début** de la transaction, qui précède toute lecture faite à l'intérieur. Aucune autre assertion n'a changé.

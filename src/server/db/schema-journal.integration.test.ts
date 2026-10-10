@@ -30,6 +30,17 @@ async function puisAnnuler<T>(
   return resultat as T;
 }
 
+// Heure courante de la base (clock_timestamp(), et non now() qui reste fixée
+// au début de la transaction).
+async function heureDeLaBase(x: typeof db | TransactionOrganisation): Promise<Date> {
+  const { rows } = await x.execute<{ heure: string | Date }>(
+    sql`SELECT clock_timestamp() AS heure`,
+  );
+  const heure = rows[0]?.heure;
+  if (heure === undefined) throw new Error("heure de la base non lue");
+  return new Date(heure);
+}
+
 describe("journal_audit", () => {
   test("journalAudit est déclarée dans schema/technique.ts", () => {
     expect(journalAudit).toBeDefined();
@@ -74,9 +85,12 @@ describe("journal_audit", () => {
       tablesAjoutSeul: [journalAudit],
     });
     onTestFinished(nettoyer);
-    const avant = new Date();
+    // Seule l'horloge de la base est consultée, jamais celle du poste. cree_le
+    // vaut now(), l'heure de début de la transaction : la lecture « avant » se
+    // fait donc avant de l'ouvrir. clock_timestamp() est l'heure courante.
+    const avant = await heureDeLaBase(db);
 
-    const [entree] = await puisAnnuler(a, async (tx) => {
+    const { entree, apres } = await puisAnnuler(a, async (tx) => {
       const ressourceId = randomUUID();
       await tx.insert(journalAudit).values({
         organisationId: a,
@@ -85,16 +99,15 @@ describe("journal_audit", () => {
         typeRessource: "membre",
         ressourceId,
       });
-      return tx
+      const [lue] = await tx
         .select({ creeLe: journalAudit.creeLe })
         .from(journalAudit)
         .where(eq(journalAudit.ressourceId, ressourceId));
+      return { entree: lue, apres: await heureDeLaBase(tx) };
     });
 
-    const apres = new Date();
     expect(entree?.creeLe).toBeInstanceOf(Date);
-    // Marge d'une seconde : horloges du poste et de la base.
-    expect(entree!.creeLe.getTime()).toBeGreaterThanOrEqual(avant.getTime() - 1_000);
-    expect(entree!.creeLe.getTime()).toBeLessThanOrEqual(apres.getTime() + 1_000);
+    expect(entree!.creeLe.getTime()).toBeGreaterThanOrEqual(avant.getTime());
+    expect(entree!.creeLe.getTime()).toBeLessThanOrEqual(apres.getTime());
   });
 });
