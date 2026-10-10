@@ -138,6 +138,17 @@ export function declarerAction<E extends SchemaEntree, J extends ActionJournal |
   return Object.freeze({ ...declaration });
 }
 
+export type DeclarationQuelconque = DeclarationAction<SchemaEntree, ActionJournal | null, unknown>;
+
+// Vrai pour une déclaration renvoyée par declarerAction (marque posée par
+// lui seul), faux pour toute autre valeur, dont un objet écrit à la main ou
+// une copie. Fiche : section 7, « Déclarations marquées ». Phase rouge : non
+// implémenté.
+export function estDeclaration(valeur: unknown): valeur is DeclarationQuelconque {
+  void valeur;
+  throw new Error("non implémenté");
+}
+
 const identifiantOrganisation = z.uuid();
 
 function estRole(role: string): role is Role {

@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 
-import { executerChaine, type DeclarationAction } from "./action";
+import { declarerAction, executerChaine, type DeclarationAction } from "./action";
 import { declarationExposee, exposer } from "./exposer";
 import type { Resultat } from "./refus";
 
@@ -12,15 +12,38 @@ import type { Resultat } from "./refus";
 // docs/features/chaine-controles.md, sections 3.2 et 7.
 
 vi.mock("next/headers", () => ({ headers: vi.fn() }));
-vi.mock("./action", () => ({ executerChaine: vi.fn() }));
+// declarerAction est le vrai : il marque les déclarations (PR 3). Seule la
+// chaîne est remplacée.
+vi.mock("./action", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./action")>()),
+  executerChaine: vi.fn(),
+}));
+// action.ts charge env.ts et client.ts : valeurs factices, aucune connexion
+// n'est ouverte.
+vi.mock("../env", () => ({
+  env: {
+    DATABASE_URL: "postgresql://app_facturation:factice@localhost:5432/factice",
+    BETTER_AUTH_SECRET: "secret-factice-de-trente-deux-caracteres",
+    BETTER_AUTH_URL: "https://facturation.exemple.ci",
+  },
+}));
 
 const lireEntetes = vi.mocked(headers);
 const chaine = vi.mocked(executerChaine);
 
 const ORIGINE = "https://facturation.exemple.ci";
 
-// Déclaration écrite à la main : declarerAction n'est pas en jeu ici.
+// Déclaration marquée, par declarerAction.
 function declaration(): DeclarationAction<ReturnType<typeof schema>, null, string> {
+  return declarerAction(champsDeclaration());
+}
+
+// Mêmes champs, écrits à la main : aucune marque.
+function declarationEcriteALaMain(): DeclarationAction<ReturnType<typeof schema>, null, string> {
+  return champsDeclaration();
+}
+
+function champsDeclaration(): DeclarationAction<ReturnType<typeof schema>, null, string> {
   return {
     nom: "demo.exposee",
     droit: "organisation.membres.voir",
@@ -135,5 +158,25 @@ describe("la marque lue par l'inventaire (section 7)", () => {
     for (const symbole of symboles) {
       expect(Symbol.keyFor(symbole)).toBeUndefined();
     }
+  });
+});
+
+// PR 3 : déclarations marquées. Fiche : section 7, « Déclarations marquées ».
+describe("exposer : déclaration non marquée refusée", () => {
+  test("une déclaration écrite à la main est refusée, la même par declarerAction est acceptée", () => {
+    expect(() => exposer(declaration())).not.toThrow();
+    expect(() => exposer(declarationEcriteALaMain())).toThrow();
+  });
+
+  test("une copie d'une déclaration marquée est refusée", () => {
+    const copie = { ...declaration() };
+
+    expect(() => exposer(copie)).toThrow();
+  });
+
+  test("le refus a lieu à l'exposition, sans lecture des en-têtes ni appel de la chaîne", () => {
+    expect(() => exposer(declarationEcriteALaMain())).toThrow();
+    expect(lireEntetes).not.toHaveBeenCalled();
+    expect(chaine).not.toHaveBeenCalled();
   });
 });
