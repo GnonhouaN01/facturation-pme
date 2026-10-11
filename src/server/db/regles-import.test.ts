@@ -690,3 +690,219 @@ describe(
     });
   },
 );
+
+// B, exception de la 0.6 : src/proxy.ts lit process.env.NODE_ENV, et cette
+// seule propriété, pour choisir la politique de développement (décision 11,
+// option M2). process.env entier, toute autre variable, et NODE_ENV dans tout
+// autre fichier restent refusés. Les messages de no-restricted-properties
+// comptent ici, en plus de ceux que retient refus.
+// Fiche : docs/features/socle-interface.md, section 5.5.
+const REGLES_B = new Set([...REGLES, "no-restricted-properties"]);
+
+async function refusB(code: string, fichier: string): Promise<string[]> {
+  const [resultat] = await eslint.lintText(code, { filePath: fichier });
+  if (!resultat) throw new Error("ESLint n'a renvoyé aucun résultat.");
+  const fatales = resultat.messages.filter((message) => message.fatal);
+  expect(fatales, "code de test illisible par ESLint").toEqual([]);
+  return resultat.messages
+    .filter((message) => message.ruleId !== null && REGLES_B.has(message.ruleId))
+    .map((message) => message.message);
+}
+
+// Un refus de la règle B cite la règle 12 de CLAUDE.md : un refus venu d'une
+// autre règle ne prouve rien sur l'exception.
+const REFUS_B = expect.arrayContaining([expect.stringContaining("règle 12")]);
+
+const NODE_ENV_LU = `export const developpement = process.env.NODE_ENV === "development";
+`;
+const NODE_ENV_DANS_FONCTION = `export function developpement() {
+  return process.env.NODE_ENV === "development";
+}
+`;
+const AUTRE_VARIABLE = `export const url = process.env.DATABASE_URL;
+`;
+const SECRET = `export const secret = process.env.BETTER_AUTH_SECRET;
+`;
+const ENV_ENTIER = `const variables = process.env;
+export const developpement = variables.NODE_ENV === "development";
+`;
+const ENV_DECOMPOSE = `const { NODE_ENV } = process.env;
+export const developpement = NODE_ENV === "development";
+`;
+const ENV_DECOMPOSE_AUTRE = `const { NODE_ENV, DATABASE_URL } = process.env;
+export const valeurs = [NODE_ENV, DATABASE_URL];
+`;
+const ENV_CROCHETS = `export const developpement = process.env["NODE_ENV"] === "development";
+`;
+const ENV_CLE_CALCULEE = `const cle = "DATABASE" + "_URL";
+export const url = process.env[cle];
+`;
+const ENV_PASSE = `function lire(source: NodeJS.ProcessEnv) {
+  return source.DATABASE_URL;
+}
+export const url = lire(process.env);
+`;
+const ENV_COPIE = `export const variables = { ...process.env };
+`;
+const ENV_IMPORT = `import { env } from "node:process";
+export const developpement = env.NODE_ENV === "development";
+`;
+const ENV_IMPORT_DYNAMIQUE = `export const variables = () => import("node:process");
+`;
+const ENV_MODULE = `import { env } from "@/server/env";
+export const url = env.DATABASE_URL;
+`;
+const NODE_ENV_ET_AUTRE = `export const developpement = process.env.NODE_ENV === "development";
+export const url = process.env.DATABASE_URL;
+`;
+
+describe("B. process.env.NODE_ENV dans src/proxy.ts seulement", { timeout: 60_000 }, () => {
+  test.each([
+    ["NODE_ENV, au niveau du module", NODE_ENV_LU],
+    ["NODE_ENV, dans une fonction", NODE_ENV_DANS_FONCTION],
+  ])("src/proxy.ts, %s : autorisé", async (_nom, code) => {
+    expect(await refusB(code, "src/proxy.ts")).toEqual([]);
+  });
+
+  test.each([
+    ["DATABASE_URL", AUTRE_VARIABLE],
+    ["BETTER_AUTH_SECRET", SECRET],
+    ["process.env entier", ENV_ENTIER],
+    ["NODE_ENV par décomposition", ENV_DECOMPOSE],
+    ["décomposition de plusieurs variables", ENV_DECOMPOSE_AUTRE],
+    ["NODE_ENV entre crochets", ENV_CROCHETS],
+    ["clé calculée", ENV_CLE_CALCULEE],
+    ["process.env passé à une fonction", ENV_PASSE],
+    ["copie de process.env", ENV_COPIE],
+    ["env importé de node:process", ENV_IMPORT],
+    ["import dynamique de node:process", ENV_IMPORT_DYNAMIQUE],
+  ])("src/proxy.ts, %s : refusé", async (_nom, code) => {
+    expect(await refusB(code, "src/proxy.ts")).toEqual(REFUS_B);
+  });
+
+  test("src/proxy.ts, NODE_ENV puis DATABASE_URL : refusé une fois, pour DATABASE_URL", async () => {
+    expect(await refusB(NODE_ENV_ET_AUTRE, "src/proxy.ts")).toHaveLength(1);
+  });
+
+  test.each([
+    ["middleware.ts à la racine de src/", "src/middleware.ts"],
+    ["un proxy.ts ailleurs dans src/", "src/app/proxy.ts"],
+    ["le test du proxy", "src/proxy.test.ts"],
+    ["une page", "src/app/page.tsx"],
+    ["un gabarit", "src/app/layout.tsx"],
+    ["les en-têtes de sécurité", "src/lib/securite/entetes.ts"],
+    ["un composant", "src/components/essai.tsx"],
+    ["la chaîne de contrôles", "src/server/actions/action.ts"],
+    ["un service", "src/server/services/essai.ts"],
+    ["instrumentation.ts", "src/instrumentation.ts"],
+  ])("NODE_ENV dans %s : refusé", async (_nom, fichier) => {
+    expect(await refusB(NODE_ENV_LU, fichier)).toEqual(REFUS_B);
+  });
+
+  test("témoin : process.env reste lisible dans src/server/env.ts", async () => {
+    expect(await refusB(AUTRE_VARIABLE, "src/server/env.ts")).toEqual([]);
+  });
+});
+
+// S. src/proxy.ts n'importe pas server/env.ts : une variable invalide ferait
+// échouer chaque requête, page « introuvable » comprise.
+// Fiche : docs/features/socle-interface.md, sections 5.5 et 7.
+//
+// Piège : dans eslint.config.mjs, un second bloc qui règle
+// no-restricted-imports (ou no-restricted-syntax) pour src/proxy.ts remplace
+// le premier au lieu de s'y ajouter. Les cas « interdictions déjà en
+// vigueur » échouent si la règle S, ou l'exception de la règle B, efface
+// celles des règles A à O.
+const ENV_RELATIF = `import { env } from "./server/env";
+export const url = env.DATABASE_URL;
+`;
+const ENV_RELATIF_TS = `import { env } from "./server/env.ts";
+export const url = env.DATABASE_URL;
+`;
+const ENV_DYNAMIQUE = `export const charger = () => import("@/server/env");
+`;
+const ENV_REEXPORTE = `export { env } from "@/server/env";
+`;
+
+const DEJA_EN_VIGUEUR = [
+  ["drizzle-orm (règle A)", `import { sql } from "drizzle-orm";\nexport const s = sql;\n`],
+  [
+    "un sous-module de drizzle-orm (règle A)",
+    `import { pgTable } from "drizzle-orm/pg-core";\nexport const t = pgTable;\n`,
+  ],
+  ["pg (règle A)", `import { Pool } from "pg";\nexport const p = Pool;\n`],
+  [
+    "drizzle-orm par chargement dynamique (règle A)",
+    `export const charger = () => import("drizzle-orm");\n`,
+  ],
+  ["le module process (règle B)", `import process from "process";\nexport const p = process;\n`],
+  ["db (règle D)", `import { db } from "@/server/db/client";\nexport const d = db;\n`],
+  [
+    "l'outillage de test",
+    `import { nettoyer } from "@/server/db/outils-test/organisations";\nexport const n = nettoyer;\n`,
+  ],
+  [
+    "requetes/journal",
+    `import * as journal from "@/server/db/requetes/journal";\nexport const j = journal;\n`,
+  ],
+  [
+    "executerDansOrganisation (règle I)",
+    `import { executerDansOrganisation } from "@/server/db/client";\nexport const e = executerDansOrganisation;\n`,
+  ],
+  [
+    "journaliser (règle J)",
+    `import { journaliser } from "@/server/journal/audit";\nexport const j = journaliser;\n`,
+  ],
+  [
+    "executerChaine (règle M)",
+    `import { executerChaine } from "@/server/actions/action";\nexport const e = executerChaine;\n`,
+  ],
+  [
+    "creerChaine (règle M)",
+    `import { creerChaine } from "@/server/actions/action";\nexport const c = creerChaine;\n`,
+  ],
+  [
+    "compteurDebit (règle N)",
+    `import { compteurDebit } from "@/server/db/schema/technique";\nexport const c = compteurDebit;\n`,
+  ],
+  ["db/debit (règle N)", `import * as debit from "@/server/db/debit";\nexport const d = debit;\n`],
+  ["next/script (règle O)", `import Script from "next/script";\nexport const s = Script;\n`],
+  [
+    "next/script par chargement dynamique (règle O)",
+    `export const charger = () => import("next/script");\n`,
+  ],
+] as const;
+
+const TEMOIN_PROXY = `import { NextResponse, type NextRequest } from "next/server";
+import { politiqueSecurite } from "@/lib/securite/entetes";
+export function proxy(requete: NextRequest) {
+  return NextResponse.next({ request: requete, headers: { x: politiqueSecurite.name } });
+}
+`;
+
+describe("S. src/proxy.ts n'importe pas server/env.ts", { timeout: 60_000 }, () => {
+  test.each([
+    ["import de @/server/env", ENV_MODULE],
+    ["import relatif de ./server/env", ENV_RELATIF],
+    ["import relatif de ./server/env.ts", ENV_RELATIF_TS],
+    ["chargement dynamique de @/server/env", ENV_DYNAMIQUE],
+    ["réexportation de @/server/env", ENV_REEXPORTE],
+  ])("src/proxy.ts, %s : refusé", async (_nom, code) => {
+    expect(await refusB(code, "src/proxy.ts")).not.toEqual([]);
+  });
+
+  test.each(DEJA_EN_VIGUEUR)(
+    "src/proxy.ts, interdiction déjà en vigueur, %s : toujours refusé",
+    async (_nom, code) => {
+      expect(await refusB(code, "src/proxy.ts")).not.toEqual([]);
+    },
+  );
+
+  test("témoin : src/proxy.ts importe next/server et les en-têtes de sécurité", async () => {
+    expect(await refusB(TEMOIN_PROXY, "src/proxy.ts")).toEqual([]);
+  });
+
+  test("témoin : server/env.ts reste importable ailleurs dans src/server/", async () => {
+    expect(await refusB(ENV_MODULE, "src/server/services/essai.ts")).toEqual([]);
+  });
+});

@@ -24,7 +24,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: "unitaires",
-          include: ["src/**/*.test.ts"],
+          include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
           exclude: [...configDefaults.exclude, INTEGRATION],
         },
       },

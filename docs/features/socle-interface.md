@@ -30,8 +30,8 @@ Cas d'utilisation concernés : aucun en propre. Les messages d'erreur de `USECAS
 | PR | Contenu | Prouve |
 |---|---|---|
 | 1. Textes, formatage, règles | `src/textes/` (commun, navigation, erreurs, résultats, simulation) ; `src/lib/format/` (montants, dates) ; règles ESLint O, P, Q, R et leurs cas ; l'accueil et les métadonnées du gabarit racine lisent leurs textes dans `src/textes/` (règle R) | NF-01, NF-02 ; aucun point d'injection de HTML ni de script possible dans le code à venir ; accessibilité vérifiée à l'analyse |
-| 2. En-têtes et pages d'erreur | `src/proxy.ts`, `src/lib/securite/entetes.ts`, `next.config.ts`, rendu dynamique (`connection()`), `not-found.tsx`, `error.tsx`, `global-error.tsx`, `onRequestError`, exception de la règle B pour `NODE_ENV` dans `src/proxy.ts` ; Playwright sur le site construit en local, second serveur en panne | S-80, S-85, T-34 (politique), T-35, T-37 |
-| 3. Zones et navigation | Gabarits des trois zones, barre latérale, bandeau de simulation, accueil déplacé, `lirePourPage`, navigation, page vide du tableau de bord, inventaire des pages, projets 390 et 1280 | S-02 à l'affichage, NF-03, NF-04 ; la réponse au visiteur non connecté |
+| 2. En-têtes et pages d'erreur | `src/proxy.ts`, `src/lib/securite/entetes.ts`, `next.config.ts`, rendu dynamique (`connection()`), `not-found.tsx`, `error.tsx`, `global-error.tsx`, `onRequestError`, exception de la règle B pour `NODE_ENV` dans `src/proxy.ts`, règle S ; Playwright sur le site construit en local | S-80, S-85, T-34 (politique), T-35 (rendu des pages d'erreur), T-37 |
+| 3. Zones et navigation | Gabarits des trois zones, barre latérale, bandeau de simulation, accueil déplacé, `lirePourPage`, navigation, page vide du tableau de bord, inventaire des pages, projets 390 et 1280 ; second serveur Playwright, base injoignable | S-02 à l'affichage, NF-03, NF-04, T-35 de bout en bout ; la réponse au visiteur non connecté |
 
 Après chacune, `main` reste cohérent et la CI verte (décision 12).
 
@@ -52,6 +52,11 @@ Constaté en plus, sur le site construit :
 4. **Sans rendu dynamique, la politique casse la page.** La page d'accueil préconstruite (`○`) ne porte aucun nonce : 9 violations (`script-src-elem`), page non hydratée. Avec `await connection()` dans le gabarit racine, les routes deviennent dynamiques (`ƒ`), les 9 scripts portent le nonce de la réponse, aucune violation, page hydratée. Confirme la section 5.2.
 5. Une 404 reçoit la politique, l'en-tête de `next.config.ts`, et `Cache-Control: private, no-cache, no-store, max-age=0, must-revalidate`. `X-Powered-By: Next.js` est envoyé tant que `poweredByHeader` n'est pas à `false`.
 6. Aucune requête hors de l'origine (polices comprises), en développement comme sur le site construit.
+
+Constaté le 2026-10-12, pendant la phase rouge de la PR 2 :
+
+7. **Une configuration refusée dans `register` fait échouer chaque requête.** Section 4.3, niveau 3.
+8. **Le test du cadre doit servir l'autre origine par un vrai serveur.** Une page fournie par `route.fulfill` de Playwright est vue par Chromium comme publique : il refuse qu'elle charge `localhost` (`ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`), même avec la permission `local-network-access` et l'attribut `allow` du cadre. Le test passait alors sans aucun en-tête. Il sert la page parente par `node:http` sur `127.0.0.1`, port éphémère, fermé à la fin du test.
 
 ### 1. Les trois zones et leurs gabarits
 
@@ -177,7 +182,9 @@ Trois niveaux :
 
 1. **Rendu des composants, sans navigateur.** `error.tsx` et `global-error.tsx` sont rendus en chaîne par `react-dom/server` (déjà installé) dans Vitest, avec une erreur dont le message, le nom, la pile et la cause contiennent des marqueurs (`SELECT`, `postgresql://`, `/home/`, `DATABASE_URL`, une adresse email) : aucun marqueur dans la sortie. Ces tests sont des `.test.tsx` : l'inclusion de Vitest (`src/**/*.test.ts`) est étendue en PR 2.
 2. **Traduction.** `traduireLecture` sur `erreur` lève une `ErreurPage` dont le message est fixe, sans `cause`, et dont le `digest` est l'incident.
-3. **Bout en bout, sur le site construit, avec une vraie panne.** Un second serveur Playwright (`next start`, port 3101) est lancé avec une `DATABASE_URL` invalide pour le schéma de `env-schema.ts`. Le serveur démarre (`STRUCTURE.md`, section 3.6) ; toute page de la zone application échoue au chargement d'`env.ts`, dont le message nomme la variable fautive. Le proxy ne dépend pas d'`env.ts` (section 5.5) : il répond normalement. Le test ouvre `/tableau-de-bord` et vérifie : la page « Une erreur est survenue. » avec un identifiant ; ni dans le HTML ni dans la charge utile RSC les chaînes `DATABASE_URL`, `Variables d'environnement`, `postgres`, `node_modules`, `.next`, `at ` suivi d'un chemin, ni le nom d'une classe d'erreur. Aucun code de test n'existe dans l'application : la panne vient de la configuration du serveur de test.
+3. **Bout en bout, sur le site construit, avec une vraie panne (PR 3, décision 17).** Un second serveur Playwright (`next start`, port 3101) est lancé avec une configuration **valide** pour `env-schema.ts` (rôle `app_facturation`) et une base injoignable : `DATABASE_URL` vise un port fermé sur `127.0.0.1`. `register` passe ; le proxy, qui ne dépend pas d'`env.ts` (section 5.5), répond normalement ; la panne est observée sur `/tableau-de-bord`, dont la lecture échoue à la connexion. Le test ouvre `/tableau-de-bord` et vérifie : la page « Une erreur est survenue. » avec un identifiant ; ni dans le HTML ni dans la charge utile RSC les chaînes `DATABASE_URL`, `Variables d'environnement`, `postgres`, `node_modules`, `.next`, `at ` suivi d'un chemin, ni le nom d'une classe d'erreur. Aucun code de test n'existe dans l'application : la panne vient de la configuration du serveur de test.
+
+   **Une configuration refusée ne convient pas** (constaté le 2026-10-12, Next.js 16.3.8, `next start` sur le port 3101, site construit sans la PR 2, `DATABASE_URL` au rôle factice sur `localhost`). Le serveur annonce « Ready », puis `register` (`src/instrumentation.ts`) lève : `Failed to prepare server Error: An error occurred while loading instrumentation hook`, suivi du message d'`env-schema.ts` et de la pile, puis un `unhandledRejection`. Ensuite **chaque requête** échoue, `/` comprise, et non seulement les modules qui importent `env.ts` : statut 500, corps `Internal Server Error` (21 caractères), en-têtes `connection`, `date`, `keep-alive` et `transfer-encoding` seuls. Ni le corps ni les en-têtes ne contiennent le message, la pile, le nom de la variable, une adresse ou un chemin de fichier ; tout cela n'apparaît que dans le journal du serveur. Playwright attend un statut accepté (2xx, 3xx, 400 à 403), ne l'obtient jamais, et arrête toute la suite au bout de 120 s, avant le premier test. `register` n'attrape pas cette erreur : une configuration refusée doit empêcher le service (décision 17).
 
 Le scénario « base injoignable avec une session valide » demande une vraie session dans le navigateur : reporté à la 1.2.
 
@@ -249,7 +256,7 @@ Retenu : aucun attribut `style` permis ; la règle P l'interdit dans `src/` ; le
 
 - `src/lib/securite/entetes.ts` : fonctions pures, sans dépendance, `politiqueSecurite({ nonce, developpement })` et `ENTETES_SECURITE` (section 6). Dans `lib/` et non dans `server/`, parce que `next.config.ts` les importe (constaté possible, section 0, point 2) : il est chargé hors de Next.js, et `import "server-only"` y échouerait.
 - `src/proxy.ts` : tire le nonce, pose la politique sur la requête et la réponse. Sélecteur : toutes les adresses sauf `_next/static`, `_next/image` et `favicon.ico`. Contrairement au guide, les requêtes de préchargement **ne sont pas exclues** : une réponse sans politique ne doit pas exister pour une page, et un en-tête `next-router-prefetch` envoyé par un client ne doit pas faire sauter le proxy (test d'attaque).
-- **Mode développement** (décision 11, option M2) : `src/proxy.ts` lit `process.env.NODE_ENV`, et seulement cette propriété. La règle B d'`eslint.config.mjs` reçoit cette exception étroite en PR 2, et la règle 12 de `CLAUDE.md` la mentionne. Un test de règle prouve que toute autre variable lue dans `src/proxy.ts` est refusée, que `process.env` entier y est refusé, et que `process.env.NODE_ENV` reste refusé dans tout autre fichier de `src/`. Le proxy n'importe pas `env.ts` : une variable invalide ne le fait pas échouer.
+- **Mode développement** (décision 11, option M2) : `src/proxy.ts` lit `process.env.NODE_ENV`, et seulement cette propriété. La règle B d'`eslint.config.mjs` reçoit cette exception étroite en PR 2, et la règle 12 de `CLAUDE.md` la mentionne. Un test de règle prouve que toute autre variable lue dans `src/proxy.ts` est refusée, que `process.env` entier y est refusé, et que `process.env.NODE_ENV` reste refusé dans tout autre fichier de `src/`. Le proxy n'importe pas `env.ts` (règle S, section 7) : une variable invalide ne le fait pas échouer.
 
 ### 6. Les autres en-têtes
 
@@ -281,6 +288,8 @@ Nouvelles règles, à la suite des règles A à N. Leurs cas vivent dans un nouv
 - **P. Attribut `style` interdit dans `src/`** (section 5.3). Un composant shadcn qui en porte un sera signalé dès son ajout.
 - **Q. Accessibilité.** Les 31 règles en erreur du jeu recommandé d'`eslint-plugin-jsx-a11y` 6.10.2, activées par leur nom avec les options du jeu recommandé, sans importer le module (constaté possible, section 0, point 1). Les trois règles que le jeu désactive restent désactivées. Portée : les `.tsx` de `src/`.
 - **R. Textes dans `src/textes/` (NF-01, décision 10).** Dans `src/app/` et `src/components/` hors `ui/` : `react/jsx-no-literals` refuse toute chaîne écrite en dur entre les balises JSX, sauf une liste fermée de signes (`:`, `·`) ; et une chaîne écrite en dur dans les attributs qui portent un texte lu (`alt`, `title`, `placeholder`, `aria-label`, `aria-description`) est refusée par sélecteur. Les autres attributs (`className`, `href`, `variant`) restent permis. **Si la liste des cas permis s'allonge au-delà de ces signes, le travail s'arrête et la question revient au développeur** (décision 10). Les composants de `src/components/ui/`, générés par shadcn, sont hors de la règle : ils ne portent pas de texte affiché.
+
+- **S. `src/proxy.ts` n'importe pas `server/env.ts`** (PR 2, décision 18). Refusés dans `src/proxy.ts` : l'import de `@/server/env`, par chemin relatif (`./server/env`, `./server/env.ts`), par chargement dynamique et par réexportation. Permis : `next/server`, `@/lib/securite/entetes`. `server/env.ts` reste importable ailleurs dans `src/server/`. **Piège** : un second bloc qui règle `no-restricted-imports` (ou `no-restricted-syntax`) pour `src/proxy.ts` remplace le premier au lieu de s'y ajouter. La règle S, comme l'exception de la règle B, reprend donc les interdictions des règles A à O déjà en vigueur sur ce fichier ; un test prouve qu'elles tiennent toujours (`drizzle-orm`, `pg`, `process`, `db`, outillage de test, `requetes/journal`, `executerDansOrganisation`, `journaliser`, `executerChaine`, `creerChaine`, `compteurDebit`, `db/debit`, `next/script`, chargements dynamiques compris).
 
 Conséquence en PR 1 : `src/app/page.tsx` (« Facturation PME » écrit en dur) et les métadonnées de `src/app/layout.tsx` lisent leurs textes dans `src/textes/commun.ts`.
 
@@ -417,6 +426,7 @@ Un test vérifie : les messages de sécurité sont identiques, au caractère pr�
   - **P** : un attribut `style` passé par décomposition (`<div {...p} />`) ou par `createElement` ; l'élément `<style>`, que la politique bloque de toute façon faute de nonce ; un style posé par JavaScript (`element.style`), que la politique ne bloque pas.
   - **Q** : l'analyse ne voit que le JSX écrit. Un composant (`<Button />` sans nom accessible) n'est pas reconnu comme l'élément natif qu'il rend ; contrastes, ordre du focus et rôles posés à l'exécution ne sont pas vérifiés (décision 7 : `@axe-core/playwright` revu en 1.1).
   - **R** : une chaîne passée par une constante (`const t = "Bonjour"`) ; une chaîne dans un ternaire (`{a ? "Oui" : "Non"}`) ; un texte dans un attribut hors de la liste (`aria-roledescription`) ou dans la propriété d'un composant (`<B libelle="Bonjour" />`, `ignoreProps`). Une concaténation (`{"Total " + a}`) est, elle, refusée.
+- **S** : un import indirect (`src/proxy.ts` importe un module qui importe `server/env.ts`) n'est pas vu ; la revue reste nécessaire.
 - Erreur d'un composant client : aucun identifiant, aucune consignation avant la 8.1 (décision 6).
 - La navigation par rôle n'est éprouvée dans un navigateur qu'à la 1.2.
 - Le gabarit et la page appellent chacun `etablirContexte` : deux lectures de session et d'adhésion par affichage. Dédoublonnage par requête (`cache` de React) à étudier quand une page lira des données.
@@ -448,10 +458,10 @@ Aucune.
 - [ ] Une requête portant un en-tête `Content-Security-Policy` ou `next-router-prefetch` forgé reçoit la politique du serveur, avec un nonce qui n'est pas celui fourni.
 - [ ] Les en-têtes de la section 6 sont présents avec leurs valeurs exactes, y compris sur un fichier de `/_next/static` et sur une 404 ; `X-Powered-By` est absent ; `X-Robots-Tag` est présent sous `/lien/`.
 - [ ] Aucune requête vers `fonts.googleapis.com` ni `fonts.gstatic.com`.
-- [ ] Une erreur serveur provoquée sur le site construit affiche « Une erreur est survenue. » et un identifiant, sans aucun des marqueurs de la section 4.3, ni dans le HTML ni dans la charge utile RSC.
 - [ ] `error.tsx` et `global-error.tsx`, rendus avec une erreur chargée de marqueurs, n'en affichent aucun.
 - [ ] `consignerErreurRequete` ne consigne que `digest`, `classe`, `code`, `routePath`, `routeType`.
 - [ ] La règle B accepte `process.env.NODE_ENV` dans `src/proxy.ts` seulement ; toute autre variable y est refusée ; `NODE_ENV` reste refusé ailleurs.
+- [ ] La règle S refuse tout import de `server/env.ts` dans `src/proxy.ts` ; les interdictions des règles A à O y tiennent toujours.
 - [ ] Un seul fichier de proxy existe (inventaire).
 
 ### PR 3
@@ -464,6 +474,7 @@ Aucune.
 - [ ] Avec une vraie session de chacun des quatre rôles, la lecture du gabarit renvoie les entrées et le rôle attendus ; un membre dont l'organisation active n'est pas la sienne reçoit `refuse`.
 - [ ] Disposition de la section 10 à 1280 px et sous 768 px ; bandeau de simulation présent.
 - [ ] À 360, 390 et 1280 px : aucun défilement horizontal ; cibles de 44 px ; lien d'évitement ; focus visible. Captures jointes à la PR.
+- [ ] Sur le second serveur (configuration valide, base injoignable), `/tableau-de-bord` affiche « Une erreur est survenue. » et un identifiant, sans aucun des marqueurs de la section 4.3, ni dans le HTML ni dans la charge utile RSC.
 
 ### Toutes
 
@@ -485,10 +496,10 @@ PR 2 :
 
 - [ ] `src/lib/securite/entetes.test.ts` : politique de production, directive par directive ; nonce inséré dans `script-src` et `style-src` ; politique de développement ; aucun `unsafe-` en production ; liste `ENTETES_SECURITE` exacte.
 - [ ] `src/lib/securite/entetes.attaque.test.ts` : un nonce contenant `'`, `;` ou un espace est refusé par `politiqueSecurite`.
-- [ ] `src/proxy.test.ts` : sélecteur, par `unstable_doesProxyMatch` (`next/experimental/testing/server`, fourni par `next`) ; nonce de 16 octets, différent à chaque appel ; politique posée sur la requête et la réponse ; un en-tête de politique reçu est remplacé.
+- [ ] `src/proxy.test.ts` : sélecteur, par `unstable_doesMiddlewareMatch` (`next/experimental/testing/server`, fourni par `next` ; Next.js 16.3.8 n'exporte pas `unstable_doesProxyMatch`) ; nonce de 16 octets, différent à chaque appel ; politique posée sur la requête et la réponse ; un en-tête de politique reçu est remplacé.
 - [ ] `src/server/erreurs/consigner.test.ts` : espion sur `console.error`, contenu inspecté par `util.inspect` : champs permis seuls ; erreur dont le message contient une adresse email et une URL PostgreSQL ; chemin réel `/lien/devis/<jeton>` absent.
 - [ ] `src/app/erreurs.test.tsx` : rendu en chaîne de `error.tsx` et `global-error.tsx`, avec et sans `digest`, erreur chargée de marqueurs.
-- [ ] `src/server/db/regles-import.test.ts` (complété, modification signalée) : exception de la règle B pour `NODE_ENV` dans `src/proxy.ts`.
+- [ ] `src/server/db/regles-import.test.ts` (complété, modification signalée) : exception de la règle B pour `NODE_ENV` dans `src/proxy.ts` ; règle S ; interdictions des règles A à O toujours en vigueur sur `src/proxy.ts`.
 - [ ] `src/server/actions/inventaire.test.ts` (complété, modification signalée) : second fichier de proxy refusé.
 
 PR 3 :
@@ -516,8 +527,15 @@ Propres à cette fiche, PR 2, `e2e/entetes.attaque.spec.ts` et `e2e/erreurs.atta
 - [ ] Affichage dans un cadre depuis une autre origine : bloqué.
 - [ ] En-têtes `Content-Security-Policy`, `x-nonce` et `next-router-prefetch` forgés par le client : sans effet sur la politique reçue.
 - [ ] Nonce différent sur deux requêtes successives de la même page (rendu dynamique).
-- [ ] Erreur provoquée sur le second serveur (section 4.3) : aucun détail dans le HTML ni dans la charge utile RSC.
 - [ ] `/lien/devis/<jeton aléatoire>` : 404 « introuvable », `X-Robots-Tag`, `Referrer-Policy: same-origin`, aucun en-tête `Set-Cookie`.
+
+Propres à cette fiche, PR 3, `e2e/erreurs.attaque.spec.ts`, second serveur (section 4.3, niveau 3). Retirés de la PR 2 (décision 17). En PR 3, le second serveur a une configuration **valide** (rôle `app_facturation`) et une base injoignable (port fermé sur `127.0.0.1`) ; la panne est observée sur `/tableau-de-bord` :
+
+- [ ] « le proxy ne dépend pas d'env.ts : l'accueil répond, avec la politique »
+- [ ] « la page affiche le texte fixe, un identifiant et les deux actions »
+- [ ] « aucun détail dans le HTML »
+- [ ] « aucun détail dans la charge utile RSC »
+- [ ] « aucun détail dans la page affichée, après hydratation »
 
 ### Tests de bout en bout
 
@@ -534,12 +552,12 @@ PR 1 :
 PR 2 :
 
 - Créés : `src/proxy.ts`, `src/proxy.test.ts` ; `src/lib/securite/entetes.ts`, `entetes.test.ts`, `entetes.attaque.test.ts` ; `src/app/not-found.tsx`, `error.tsx`, `global-error.tsx`, `erreurs.test.tsx` ; `src/components/erreurs/incident.tsx` ; `src/server/erreurs/consigner.ts`, `consigner.test.ts` ; `e2e/entetes.attaque.spec.ts`, `e2e/erreurs.attaque.spec.ts`.
-- Modifiés : `src/app/layout.tsx` (`connection()`) ; `src/instrumentation.ts` (`onRequestError`) ; `next.config.ts` (`headers`, `poweredByHeader`) ; `eslint.config.mjs` (exception de la règle B) ; `src/server/db/regles-import.test.ts`, `src/server/actions/inventaire.test.ts` ; `vitest.config.ts` (inclusion des `.test.tsx`) ; `playwright.config.ts` (site construit en local, second serveur en panne) ; `e2e/accueil.spec.ts` ; `CLAUDE.md` (règle 12 et son exception ; pièges du rendu dynamique, de `cacheComponents` et de `Referrer-Policy` ; règle O).
+- Modifiés : `src/app/layout.tsx` (`connection()`) ; `src/instrumentation.ts` (`onRequestError`) ; `next.config.ts` (`headers`, `poweredByHeader`) ; `eslint.config.mjs` (exception de la règle B) ; `src/server/db/regles-import.test.ts`, `src/server/actions/inventaire.test.ts` ; `vitest.config.mts` (inclusion des `.test.tsx`) ; `playwright.config.ts` (site construit en local) ; `e2e/accueil.spec.ts` ; `CLAUDE.md` (règle 12 et son exception ; pièges du rendu dynamique, de `cacheComponents` et de `Referrer-Policy` ; règle O).
 
 PR 3 :
 
 - Créés : `src/app/(public)/layout.tsx`, `(public)/page.tsx` (déplacé de `src/app/page.tsx`) ; `src/app/(app)/layout.tsx`, `(app)/tableau-de-bord/page.tsx` ; `src/app/lien/layout.tsx` ; `src/components/gabarits/` (barre latérale, navigation, bandeau, en-tête de page, lien d'évitement) ; `src/server/autorisation/navigation.ts`, `navigation.test.ts` ; `src/server/db/gabarit.integration.test.ts` ; `e2e/zones.attaque.spec.ts`, `e2e/affichage.spec.ts`.
-- Modifiés : `src/server/actions/exposer.ts` (`lirePourPage`, `traduireLecture`, `ErreurPage`), `exposer.test.ts` ; `src/server/actions/inventaire.test.ts` ; `playwright.config.ts` (projets 390 et 1280) ; `CLAUDE.md` (règle : chaque page de `(app)/` passe par `lirePourPage`) ; `docs/STRUCTURE.md` (sections 2 et 4) ; `docs/features/chaine-controles.md` et `docs/features/limitation-debit.md` (« Reporté » à la 0.6, soldé).
+- Modifiés : `src/server/actions/exposer.ts` (`lirePourPage`, `traduireLecture`, `ErreurPage`), `exposer.test.ts` ; `src/server/actions/inventaire.test.ts` ; `playwright.config.ts` (projets 390 et 1280 ; second serveur, configuration valide et base injoignable) ; `e2e/erreurs.attaque.spec.ts` (tests du second serveur) ; `CLAUDE.md` (règle : chaque page de `(app)/` passe par `lirePourPage`) ; `docs/STRUCTURE.md` (sections 2 et 4) ; `docs/features/chaine-controles.md` et `docs/features/limitation-debit.md` (« Reporté » à la 0.6, soldé).
 
 Faits à la validation : `docs/DESIGN-SYSTEM.md` (ligne « Action refusée dans un formulaire »), `docs/PLAN.md` (taille L, estimations), `CLAUDE.md` (« Commandes » : tests de bout en bout sur le site construit), `docs/STRUCTURE.md` (section 7 : `server/autorisation/navigation.ts`).
 
@@ -594,3 +612,9 @@ Prises pendant la PR 1, le 2026-10-11 :
 
 15. **Bandeau de simulation.** Deux textes, deux emplacements (section 10) : sur un document, le texte inchangé de `DESIGN-SYSTEM.md` ; en haut de l'application, « Simulation : les documents ne sont pas certifiés par la DGI et n'ont pas de valeur fiscale. », ajouté à `DESIGN-SYSTEM.md`.
 16. **Choix de la phase rouge validés** : cas des règles O à R dans un fichier nouveau ; messages des sélecteurs citant leur lettre ; `vi.stubEnv("TZ", ...)` pour simuler un poste hors UTC.
+
+Prises pendant la PR 2, le 2026-10-12 :
+
+17. **Second serveur.** Reporté à la PR 3, avec une configuration valide et une base injoignable (section 4.3). `register` n'attrape jamais l'erreur de configuration : `src/instrumentation.ts` n'est pas modifié pour les tests.
+18. **Règle S.** Retenue (section 7), écrite à l'implémentation de la PR 2.
+19. **Corrections.** `unstable_doesMiddlewareMatch` au lieu d'`unstable_doesProxyMatch` ; `vitest.config.mts`.

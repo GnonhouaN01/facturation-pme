@@ -173,7 +173,7 @@ Le seul fichier qui lit `process.env`. Aucun autre fichier ne lit directement un
 
 - `env-schema.ts`, à côté, contient le schéma Zod et la fonction pure `validerEnvironnement`. Elle reçoit les variables en paramètre, ce qui permet de la tester sans toucher à `process.env`. En cas d'erreur, son message nomme chaque variable fautive et la raison, jamais la valeur.
 - `env.ts` appelle cette fonction sur `process.env` à son chargement et exporte l'objet `env`, seule source des variables pour le reste de `src/server/`.
-- `src/instrumentation.ts` importe `env.ts` dans sa fonction `register`, que Next.js appelle au lancement du serveur : une variable invalide est consignée dès le démarrage. Le serveur ne s'arrête pas pour autant : tout module qui importe `env.ts` échoue au chargement, mais les pages statiques, qui ne lisent aucune variable, restent servies.
+- `src/instrumentation.ts` importe `env.ts` dans sa fonction `register`, que Next.js appelle au lancement du serveur : une variable invalide est consignée dès le démarrage. Constaté le 2026-10-12 avec Next.js 16.3.8 (`next start`) : le processus continue de tourner et annonce « Ready », mais `register` lève et **chaque requête échoue ensuite**, `/` et les pages statiques comprises : statut 500, corps `Internal Server Error`, sans message ni pile dans la réponse. Le message, qui nomme la variable fautive, et la pile ne figurent que dans le journal du serveur. Une configuration refusée empêche donc tout service ; `register` n'attrape pas cette erreur, volontairement (`docs/features/socle-interface.md`, section 4.3, décision 17).
 
 ### 3.7 `journal/` : l'écriture au journal d'audit
 
