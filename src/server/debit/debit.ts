@@ -1,8 +1,10 @@
 import "server-only";
 
-import type { Compteur } from "../db/debit";
+import { compteur, type Compteur } from "../db/debit";
+import { env } from "../env";
 
-import type { Limite, NomLimite } from "./limites";
+import { cleCompteur, deriverSecret } from "./cle";
+import { fenetreMaxSecondes, LIMITES, type Limite, type NomLimite } from "./limites";
 
 // La fonction réutilisable : compte une tentative pour une limite et une
 // valeur, et dit si la limite est atteinte. Ne s'appelle jamais pendant une
@@ -21,25 +23,43 @@ export function creerVerificateur(options: {
   compteur: Compteur;
   secret: Uint8Array;
 }): Verificateur {
-  void options;
-  return {
-    verifierDebit: async () => {
-      throw new Error("non implémenté");
-    },
-    cle: () => {
-      throw new Error("non implémenté");
-    },
-  };
+  const { limites, secret } = options;
+
+  // Seules les clés propres comptent : un nom hérité (constructor) n'est pas
+  // une limite.
+  function limiteDe(nom: NomLimite): Limite {
+    if (!Object.hasOwn(limites, nom)) throw new Error("Limite de débit inconnue.");
+    return limites[nom];
+  }
+
+  function cle(nom: NomLimite, valeur: string): string {
+    limiteDe(nom);
+    return cleCompteur(nom, valeur, secret);
+  }
+
+  async function verifierDebit(nom: NomLimite, valeur: string): Promise<boolean> {
+    const { maximum, fenetreSecondes } = limiteDe(nom);
+    const compte = await options.compteur.consommer(cleCompteur(nom, valeur, secret), {
+      maximum,
+      fenetreSecondes,
+    });
+    return compte <= maximum;
+  }
+
+  return { verifierDebit, cle };
 }
+
+const verificateur = creerVerificateur({
+  limites: LIMITES,
+  compteur,
+  secret: deriverSecret(env.BETTER_AUTH_SECRET),
+});
 
 // Vérificateur lié aux vraies limites, au vrai compteur et à la clé dérivée.
-export async function verifierDebit(nom: NomLimite, valeur: string): Promise<boolean> {
-  void nom;
-  void valeur;
-  throw new Error("non implémenté");
-}
+export const verifierDebit: Verificateur["verifierDebit"] = verificateur.verifierDebit;
 
-// Purge des compteurs expirés, appelée par la tâche quotidienne (jalon 1).
-export async function purgerCompteurs(): Promise<number> {
-  throw new Error("non implémenté");
+// Purge des compteurs expirés, appelée par la tâche quotidienne (jalon 1) :
+// au-delà de la plus longue fenêtre, une ligne ne peut plus servir.
+export function purgerCompteurs(): Promise<number> {
+  return compteur.purger(fenetreMaxSecondes(LIMITES));
 }

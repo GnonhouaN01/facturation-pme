@@ -7,7 +7,7 @@ import { DROITS, perimetre, peut, ROLES, type Droit, type Role } from "../autori
 import { executerDansOrganisation, type TransactionOrganisation } from "../db/client";
 import { lireAdhesion } from "../db/requetes/adhesions";
 import { verifierDebit } from "../debit/debit";
-import type { NomLimite } from "../debit/limites";
+import { LIMITES, type NomLimite } from "../debit/limites";
 import { env } from "../env";
 import { ACTIONS_JOURNAL, type ActionJournal } from "../journal/actions";
 import { journaliser, type EntreeJournal } from "../journal/audit";
@@ -18,6 +18,7 @@ import {
   refus,
   RefusUniforme,
   traduireErreur,
+  tropDeRequetes,
   type Refus,
   type Resultat,
 } from "./refus";
@@ -148,6 +149,11 @@ export function declarerAction<E extends SchemaEntree, J extends ActionJournal |
   if (typeof nouvelleAuthentification !== "boolean") {
     throw new DeclarationInvalide(`nouvelleAuthentification absent (${nom})`);
   }
+  // debit : un nom de LIMITES ou null, jamais absent (décision 3).
+  const { debit } = declaration;
+  if (debit !== null && (typeof debit !== "string" || !Object.hasOwn(LIMITES, debit))) {
+    throw new DeclarationInvalide(`limite de débit inconnue ou absente (${nom})`);
+  }
   if (typeof executer !== "function") throw new DeclarationInvalide(`executer absent (${nom})`);
   const marquee = { ...declaration };
   Object.defineProperty(marquee, MARQUE, { value: true });
@@ -185,10 +191,12 @@ type ContexteBase = Omit<Contexte<null>, "journaliser"> & { session: SessionLue 
 
 export function creerChaine(dependances: DependancesChaine): Chaine {
   // Étapes 2 à 6 de la section 5, puis travail dans la transaction. Un refus
-  // à l'étape 6 lève RefusUniforme : la transaction est annulée.
+  // à l'étape 6 lève RefusUniforme : la transaction est annulée. debit : la
+  // limite de l'étape 4, null pour une lecture (décision 5).
   async function dansContexte<R>(
     requete: RequeteChaine,
     droit: Droit,
+    debit: NomLimite | null,
     travail: (base: ContexteBase) => Promise<R>,
   ): Promise<R | Refus> {
     // 2. Session, relue en base.
@@ -201,7 +209,14 @@ export function creerChaine(dependances: DependancesChaine): Chaine {
       return refus();
     }
 
-    // 4. Point d'accroche 0.5 : limitation de débit.
+    // 4. Limitation de débit, avant la transaction : la tentative est comptée
+    // par une instruction propre, acquise même si l'action est annulée ensuite.
+    // La valeur comptée est l'utilisateur de la session, jamais l'entrée. Une
+    // erreur du compteur remonte : refus par erreur (fermé par défaut).
+    // Fiche : docs/features/limitation-debit.md, sections 2.1, 6 et 10.
+    if (debit !== null && !(await dependances.verifierDebit(debit, session.utilisateurId))) {
+      return tropDeRequetes();
+    }
 
     // 5. Transaction de l'organisation active ; tout ce qui suit s'y déroule.
     return dependances.executerDansOrganisation(organisationId, async (tx) => {
@@ -234,7 +249,7 @@ export function creerChaine(dependances: DependancesChaine): Chaine {
       // 1. Origine.
       if (!verifierOrigine(requete.entetes, dependances.origineAttendue)) return refus();
 
-      return await dansContexte(requete, declaration.droit, async (base) => {
+      return await dansContexte(requete, declaration.droit, declaration.debit, async (base) => {
         // 8. Nouvelle authentification : fermée tant que la 1.6 n'est pas
         // livrée (décision 10).
         if (declaration.nouvelleAuthentification) throw new RefusUniforme();
@@ -287,7 +302,7 @@ export function creerChaine(dependances: DependancesChaine): Chaine {
     lire: (ctx: ContexteLecture) => Promise<T>,
   ): Promise<ResultatLecture<T>> {
     try {
-      return await dansContexte(requete, droit, async ({ session, ...contexte }) => {
+      return await dansContexte(requete, droit, null, async ({ session, ...contexte }) => {
         void session;
         const donnees = await lire(Object.freeze(contexte));
         return { ok: true, donnees } as const;

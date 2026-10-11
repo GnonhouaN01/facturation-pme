@@ -1,6 +1,6 @@
 # Fonctionnalité : limitation de débit
 
-Statut : validée
+Statut : en cours (implémentation faite sur `dev` ; CI à constater sur la PR)
 
 Jalon 0, fonctionnalité 0.5 de `docs/PLAN.md`. Taille S, à sa limite haute ; une seule PR (décision 9).
 
@@ -285,22 +285,22 @@ export const modifierRoleMembre = declarerAction({
 
 ## Critères d'acceptation
 
-- [ ] `LIMITES` est la seule source des limites ; `verifierDebit` ne prend qu'un `NomLimite` ; aucun maximum ni fenêtre n'est écrit ailleurs dans `src/` hors des tests.
-- [ ] La clé d'une tentative est `<nom>:<64 caractères hexadécimaux>` ; elle ne contient jamais la valeur comptée ; deux limites donnent deux clés différentes pour une même valeur ; deux secrets différents donnent deux clés différentes.
-- [ ] Cent appels réellement simultanés sur une clé neuve, maximum 1 000 : compte final 100. Maximum 10 : exactement 10 appels autorisés.
-- [ ] Une fenêtre expirée repart à 1, avec un nouveau début de fenêtre ; une fenêtre en cours garde son début.
-- [ ] Le compte ne dépasse jamais `maximum + 1`.
-- [ ] Une action dont le service lève une erreur, ou refusée à l'étape 6 ou 9, a bien incrémenté le compteur.
-- [ ] Au-delà de la limite : `trop_de_requetes`, aucune transaction ouverte, aucun service exécuté, aucune trace écrite. La réponse ne contient ni délai, ni compte, ni nom de limite.
-- [ ] Une erreur du compteur donne `erreur` avec incident, jamais une action exécutée.
-- [ ] `declarerAction` sans `debit` ne compile pas ; avec un nom inconnu, ne compile pas et lève une exception à l'exécution.
-- [ ] `purgerCompteurs` supprime les lignes plus vieilles que `FENETRE_MAX_SECONDES` et seulement elles.
-- [ ] La règle ESLint N refuse un import de `compteurDebit` hors de `src/server/db/debit.ts`, et de `src/server/db/debit.ts` hors de `src/server/debit/` ; elle accepte les cas permis (`regles-import.test.ts`).
-- [ ] Le test d'inventaire échoue sur une table sans `organisation_id` hors de `TABLES_SANS_ORGANISATION`.
-- [ ] Le rôle `app_facturation` a `SELECT`, `INSERT`, `UPDATE`, `DELETE` et pas `TRUNCATE` sur `compteur_debit`, sur `dev`, `preview` et `production`.
-- [ ] Tout nouveau fichier de `src/server/` commence par `import "server-only";`.
-- [ ] Aucune dépendance ajoutée : `package-lock.json` inchangé.
-- [ ] `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:integration` (sur `dev` et en CI) passent.
+- [x] `LIMITES` est la seule source des limites ; `verifierDebit` ne prend qu'un `NomLimite` ; aucun maximum ni fenêtre n'est écrit ailleurs dans `src/` hors des tests.
+- [x] La clé d'une tentative est `<nom>:<64 caractères hexadécimaux>` ; elle ne contient jamais la valeur comptée ; deux limites donnent deux clés différentes pour une même valeur ; deux secrets différents donnent deux clés différentes.
+- [x] Cent appels réellement simultanés sur une clé neuve, maximum 1 000 : compte final 100. Maximum 10 : exactement 10 appels autorisés.
+- [x] Une fenêtre expirée repart à 1, avec un nouveau début de fenêtre ; une fenêtre en cours garde son début.
+- [x] Le compte ne dépasse jamais `maximum + 1`.
+- [x] Une action dont le service lève une erreur, ou refusée à l'étape 6 ou 9, a bien incrémenté le compteur.
+- [x] Au-delà de la limite : `trop_de_requetes`, aucune transaction ouverte, aucun service exécuté, aucune trace écrite. La réponse ne contient ni délai, ni compte, ni nom de limite.
+- [x] Une erreur du compteur donne `erreur` avec incident, jamais une action exécutée.
+- [x] `declarerAction` sans `debit` ne compile pas ; avec un nom inconnu, ne compile pas et lève une exception à l'exécution.
+- [x] `purgerCompteurs` supprime les lignes plus vieilles que la plus longue fenêtre de `LIMITES` (`fenetreMaxSecondes`) et seulement elles.
+- [x] La règle ESLint N refuse un import de `compteurDebit` hors de `src/server/db/debit.ts`, et de `src/server/db/debit.ts` hors de `src/server/debit/` ; elle accepte les cas permis (`regles-import.test.ts`).
+- [x] Le test d'inventaire échoue sur une table sans `organisation_id` hors de `TABLES_SANS_ORGANISATION` (prouvé en retirant temporairement `compteur_debit` de la liste, « Notes de l'implémentation »).
+- [x] Le rôle `app_facturation` a `SELECT`, `INSERT`, `UPDATE`, `DELETE` et pas `TRUNCATE` sur `compteur_debit`, sur `dev`, `preview` et `production`. Sur `dev` : prouvé par le test d'inventaire. Sur `preview` et `production` : vérifié par le développeur, `SELECT` à `DELETE` à vrai (décision 10) et `TRUNCATE` à faux (2026-10-11).
+- [x] Tout nouveau fichier de `src/server/` commence par `import "server-only";`.
+- [x] Aucune dépendance ajoutée : `package-lock.json` inchangé.
+- [ ] `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:integration` (sur `dev` et en CI) passent. Sur `dev`, constaté le 2026-10-11 ; en CI, à constater sur la PR.
 
 ## Tests à écrire
 
@@ -310,20 +310,20 @@ Tous écrits avant le code et vus en échec.
 
 `src/server/debit/limites.test.ts` :
 
-- [ ] Chaque limite : maximum et fenêtre entiers et positifs, nom au format `[a-z_.]+`, `par` dans la liste admise ; `FENETRE_MAX_SECONDES` égal à la plus longue fenêtre, au plus 24 heures.
+- [x] Chaque limite : maximum et fenêtre entiers et positifs, nom au format `[a-z_.]+`, `par` dans la liste admise ; `fenetreMaxSecondes(LIMITES)` égal à la plus longue fenêtre, au plus 24 heures.
 
 `src/server/debit/cle.test.ts` :
 
-- [ ] Forme `<nom>:<64 hexadécimaux>` ; valeur absente de la clé ; même entrée, même clé ; autre nom, autre clé ; autre secret, autre clé ; aucune collision par séparateur (`("a", "b:c")` et `("a:b", "c")`) ; valeur très longue : clé de longueur fixe.
+- [x] Forme `<nom>:<64 hexadécimaux>` ; valeur absente de la clé ; même entrée, même clé ; autre nom, autre clé ; autre secret, autre clé ; aucune collision par séparateur (`("a", "b:c")` et `("a:b", "c")`) ; valeur très longue : clé de longueur fixe.
 
 `src/server/actions/action.test.ts` (dépendances factices, ajouts) :
 
-- [ ] Étape 4 après les étapes 2 et 3, avant l'étape 5 ; refus à l'étape 2 ou 3 : `verifierDebit` non appelée.
-- [ ] `verifierDebit` appelée avec le nom de la déclaration et l'utilisateur de la session ; jamais avec une valeur de l'entrée.
-- [ ] Limite atteinte : `trop_de_requetes`, `executerDansOrganisation` non appelée, résultat strictement égal à `{ ok: false, raison: "trop_de_requetes" }`.
-- [ ] `debit: null` : `verifierDebit` non appelée.
-- [ ] `verifierDebit` qui lève une erreur : `erreur` avec incident, aucune étape suivante.
-- [ ] `@ts-expect-error` : déclaration sans `debit`, avec un nom inconnu ; exception à l'exécution pour un nom inconnu passé par transtypage.
+- [x] Étape 4 après les étapes 2 et 3, avant l'étape 5 ; refus à l'étape 2 ou 3 : `verifierDebit` non appelée.
+- [x] `verifierDebit` appelée avec le nom de la déclaration et l'utilisateur de la session ; jamais avec une valeur de l'entrée.
+- [x] Limite atteinte : `trop_de_requetes`, `executerDansOrganisation` non appelée, résultat strictement égal à `{ ok: false, raison: "trop_de_requetes" }`.
+- [x] `debit: null` : `verifierDebit` non appelée.
+- [x] `verifierDebit` qui lève une erreur : `erreur` avec incident, aucune étape suivante.
+- [x] `@ts-expect-error` : déclaration sans `debit`, avec un nom inconnu ; exception à l'exécution pour un nom inconnu passé par transtypage.
 
 `src/server/db/regles-import.test.ts` : règle N.
 
@@ -331,33 +331,33 @@ Tous écrits avant le code et vus en échec.
 
 `src/server/db/debit.integration.test.ts` (vraie base, `creerCompteur` sur un `Pool` de 50 connexions) :
 
-- [ ] **Concurrence** : 100 appels `Promise.all` sur une clé neuve, maximum 1 000 : compte 100. Maximum 10 : exactement 10 réponses autorisées, compte 11.
-- [ ] Preuve que le test attrape la faute : une version lire-puis-écrire de `consommer`, mise en place temporairement, fait échouer le test (constat noté dans « Notes de l'implémentation », modification annulée).
-- [ ] Fenêtre expirée (début reculé en base par `UPDATE` dans le test) : compte 1, nouveau début ; fenêtre en cours : début inchangé.
-- [ ] Plafond : compte jamais au-delà de `maximum + 1` après 50 appels avec un maximum de 3.
-- [ ] Purge : une ligne expirée et une ligne en cours ; seule l'expirée disparaît.
+- [x] **Concurrence** : 100 appels `Promise.all` sur une clé neuve, maximum 1 000 : compte 100. Maximum 10 : exactement 10 réponses autorisées, compte 11.
+- [x] Preuve que le test attrape la faute : une version lire-puis-écrire de `consommer`, mise en place temporairement, fait échouer le test (constat noté dans « Notes de l'implémentation », modification annulée).
+- [x] Fenêtre expirée (début reculé en base par `UPDATE` dans le test) : compte 1, nouveau début ; fenêtre en cours : début inchangé.
+- [x] Plafond : compte jamais au-delà de `maximum + 1` après 50 appels avec un maximum de 3.
+- [x] Purge : une ligne expirée et une ligne en cours ; seule l'expirée disparaît.
 
 `src/server/db/chaine.integration.test.ts` (ajouts, sessions réelles, limites de test passées à `creerChaine`) :
 
-- [ ] Sous la limite, une action réussit et le compte vaut 1 ; au-delà, `trop_de_requetes`.
-- [ ] Une action dont le service lève une erreur : transaction annulée (aucune ligne témoin), compteur incrémenté.
+- [x] Sous la limite, une action réussit et le compte vaut 1 ; au-delà, `trop_de_requetes`.
+- [x] Une action dont le service lève une erreur : transaction annulée (aucune ligne témoin), compteur incrémenté.
 
 ### Tests d'attaque
 
 `src/server/db/chaine.attaque.integration.test.ts` (ajouts) :
 
-- [ ] **Sans session** : aucune ligne de compteur créée, `connexion_requise`.
-- [ ] **Autre organisation** : membre de B avec l'organisation active A forcée : `refuse`, et seul le compteur de ce membre est incrémenté ; le compteur d'aucun membre de A ne bouge.
-- [ ] **Rôle insuffisant** : chaque refus d'étape 6 est compté ; au-delà de la limite, `trop_de_requetes` aussi pour un rôle non autorisé.
-- [ ] **Entrée falsifiée** : une entrée qui contient `debit`, `cle`, `utilisateurId` ou `compte` : `invalide`, et la clé incrémentée est celle de l'utilisateur de la session.
-- [ ] **T-41, échecs répétés** : 2 × maximum appels d'une action qui échoue toujours : les appels au-delà du maximum reçoivent `trop_de_requetes`, sans exécuter le service.
-- [ ] **T-41, contournement par une autre organisation** : un membre de A et de B, organisation active changée entre deux séries : un seul compteur, la limite tient.
-- [ ] **Isolation des compteurs** : un utilisateur au-delà de sa limite n'affecte pas un autre membre de la même organisation.
-- [ ] **Données personnelles** : après les appels, aucune ligne de `compteur_debit` ne contient l'identifiant de l'utilisateur.
+- [x] **Sans session** : aucune ligne de compteur créée, `connexion_requise`.
+- [x] **Autre organisation** : membre de B avec l'organisation active A forcée : `refuse`, et seul le compteur de ce membre est incrémenté ; le compteur d'aucun membre de A ne bouge.
+- [x] **Rôle insuffisant** : chaque refus d'étape 6 est compté ; au-delà de la limite, `trop_de_requetes` aussi pour un rôle non autorisé.
+- [x] **Entrée falsifiée** : une entrée qui contient `debit`, `cle`, `utilisateurId` ou `compte` : `invalide`, et la clé incrémentée est celle de l'utilisateur de la session.
+- [x] **T-41, échecs répétés** : 2 × maximum appels d'une action qui échoue toujours : les appels au-delà du maximum reçoivent `trop_de_requetes`, sans exécuter le service.
+- [x] **T-41, contournement par une autre organisation** : un membre de A et de B, organisation active changée entre deux séries : un seul compteur, la limite tient.
+- [x] **Isolation des compteurs** : un utilisateur au-delà de sa limite n'affecte pas un autre membre de la même organisation.
+- [x] **Données personnelles** : après les appels, aucune ligne de `compteur_debit` ne contient l'identifiant de l'utilisateur.
 
 `src/server/db/schema-isolation.integration.test.ts` (ajout) :
 
-- [ ] Les tables sans `organisation_id` sont exactement `TABLES_SANS_ORGANISATION` ; `compteur_debit` a `SELECT`, `INSERT`, `UPDATE`, `DELETE`, et pas `TRUNCATE`.
+- [x] Les tables sans `organisation_id` sont exactement `TABLES_SANS_ORGANISATION` ; `compteur_debit` a `SELECT`, `INSERT`, `UPDATE`, `DELETE`, et pas `TRUNCATE`.
 
 ### Tests de bout en bout
 
@@ -368,6 +368,29 @@ Tous écrits avant le code et vus en échec.
 - Les tests de `debit.integration.test.ts` utilisent des noms de limite propres à l'exécution (`essai_<uuid sans tirets>`, hors de `LIMITES`) et suppriment leurs clés exactes dans `onTestFinished`. Le rôle de l'application a `DELETE` sur la table.
 - Les tests de la chaîne suppriment la clé de chaque membre créé, avant `nettoyerMembres`, dans le `finally` existant.
 - Un test interrompu laisse quelques lignes : des empreintes d'identifiants aléatoires, sans donnée personnelle, qui expirent avec leur fenêtre et disparaissent à la première purge (tâche quotidienne, jalon 1). Accepté. En CI, la base est neuve à chaque exécution.
+
+## Limites connues
+
+État à l'implémentation sur `dev`, le 2026-10-11. Ce qui permet encore de contourner ou de saturer la limitation.
+
+**Contourner la limite**
+
+- **Plusieurs comptes.** La limite est par utilisateur : un attaquant qui dispose de N comptes membres a N fois la limite. La création de comptes en masse n'est limitée qu'au jalon 1 (S-11).
+- **Aucune limite par organisation.** Une organisation de N membres peut faire N × 60 actions par minute. Reporté à la 0.7 (S-55, section 10).
+- **Bord de fenêtre.** En fenêtre fixe, jusqu'à 2 × 60 tentatives en un peu plus d'une minute (section 5).
+- **`debit: null`.** Une action déclarée sans limite n'est pas limitée. Le choix est visible en revue, mais rien ne vérifie qu'il est le bon (comme `journal: null`).
+- **Lectures des pages.** `etablirContexte` n'a pas d'étape 4 (décision 5, à revoir en 0.6).
+- **Points d'entrée de Better Auth.** Hors de la chaîne. Sa propre limitation, en mémoire par défaut, est sans effet réel sur Vercel ; le branchement sur notre compteur est la 1.1. Aujourd'hui `/api/auth` n'est pas exposée.
+- **Renouvellement de `BETTER_AUTH_SECRET`.** Toutes les clés changent : chaque compteur repart de zéro une fois (section 3).
+- **Remise à zéro par du code.** Le rôle de l'application a `DELETE` et `UPDATE` sur `compteur_debit`. La règle N empêche d'importer la table hors de `db/debit.ts`, mais pas une requête SQL brute écrite dans un autre fichier de `db/` (`sql` avec le nom de la table) : seule la revue l'attrape. Même limite pour un chargement dynamique dont le chemin est construit par concaténation.
+
+**Saturer**
+
+- **Une tentative refusée coûte encore.** Chaque requête qui passe l'étape 3 fait une lecture de session et une écriture au compteur, même au-delà de la limite : la limite protège le service et la base métier, pas la base elle-même. Un déluge consomme des heures de calcul de Neon (`PLAN.md` section 7).
+- **Requêtes sans session.** Jamais comptées : chacune coûte une lecture de session. Rien ne les limite dans l'application ; elles relèvent des protections de l'hébergeur (RR-5).
+- **Une clé très demandée.** Les requêtes d'un même utilisateur se sérialisent sur le verrou de sa ligne ; chacune tient une connexion du `Pool` (10) pendant l'attente. Un utilisateur qui envoie beaucoup de requêtes simultanées peut occuper le `Pool` et ralentir les autres.
+- **Compteur indisponible.** Fermé par défaut : si l'instruction du compteur échoue, toutes les actions limitées échouent (`erreur`). Disponibilité échangée contre sécurité (section 6).
+- **Lignes non purgées.** `purgerCompteurs` n'est appelée par rien avant la tâche quotidienne du jalon 1. D'ici là, une ligne par utilisateur et par limite reste en base ; volume borné par le nombre de comptes.
 
 ## Fichiers concernés
 
@@ -455,6 +478,7 @@ CREATE TABLE "compteur_debit" (
 ### Au jalon 8
 
 - 8.1 : signalement des limites atteintes au service de suivi des erreurs, sans la clé.
+- 8.4 (test d'intrusion) : éprouver la saturation du `Pool` de connexions par un même utilisateur qui envoie de nombreuses requêtes simultanées (« Limites connues », « Une clé très demandée ») ; étudier un délai d'attente sur le verrou du compteur (par exemple `lock_timeout` local à l'instruction), et son effet sur le refus fermé par défaut (section 6).
 
 ## Décisions
 
@@ -484,4 +508,21 @@ Interfaces fixées par les tests, en fonctions vides qui lèvent « non impléme
 - `db/debit.ts` : `creerCompteur(base)` renvoie `{ consommer(cle, regle), purger(fenetreSecondes) }` ; l'instance liée à `db` est `compteur`. `db/` n'importe rien de `server/debit/` : la fenêtre de purge est un paramètre.
 - `debit/debit.ts` : `creerVerificateur({ limites, compteur, secret })` renvoie `{ verifierDebit, cle }`. `cle` sert aux tests pour supprimer leurs lignes. Les tests de la chaîne passent un vérificateur dont la limite `membre.action` vaut 3 : aucune limite de démonstration dans `LIMITES`. `verifierDebit` et `purgerCompteurs` sont liés aux vraies limites.
 - Types seulement, sans comportement : champ `debit` de `DeclarationAction`, dépendance `verifierDebit` de `DependancesChaine`, variante `trop_de_requetes` de `Resultat`.
+
+### Implémentation, le 2026-10-11
+
+- `consommer` est écrite avec le constructeur de Drizzle (`insert ... onConflictDoUpdate ... returning`). Paramètres typés dans la requête (`::double precision` pour `make_interval`, `::integer` pour le maximum), pour que PostgreSQL ne devine pas leur type. `consommer` et `purger` refusent un maximum ou une fenêtre qui n'est pas un entier positif.
+- `fenetreMaxSecondes` lève une erreur sur un ensemble vide : `Math.max()` renverrait `-Infinity`, et la purge supprimerait toutes les lignes.
+- `creerVerificateur` ne lit que les clés propres de `limites` (`Object.hasOwn`) ; `declarerAction` refuse un `debit` absent, inconnu ou hérité (`constructor`).
+- L'étape 4 est dans `dansContexte`, qui reçoit la limite ; `etablirContexte` passe `null`.
+- Règle N, écrite par un script Python (barres inverses construites par `chr(92)`), puis vérifiée : chaque ligne qui contient `u002F` a ses barres inverses doublées. Les deux lignes à une seule barre inverse sont les guillemets échappés des messages G et H, inchangés. Constaté pendant ce contrôle : un premier script de comptage contenait lui-même une expression régulière à barre inverse, réduite par l'outil, et ne trouvait rien. Le comptage fiable s'écrit aussi avec `chr(92)`. Nouveaux ensembles de fichiers : `src/server/debit/**` (tout sauf N sur le compteur) et `src/server/db/debit.ts` (tout sauf N).
+
+### Preuves par modification temporaire, annulées ensuite
+
+Chaque fichier a été rétabli depuis une copie, puis comparé à cette copie (`cmp`, aucune différence).
+
+1. **Concurrence.** `consommer` remplacée par une lecture suivie d'une écriture : les deux tests de concurrence échouent (`expected [ 1, 1, 1, 1, ... ]` : les 100 appels lisent le compte 1 ; avec un maximum de 10, 100 appels autorisés au lieu de 10).
+2. **« Sans session »**, qui passait à vide en phase rouge. Comptage placé avant la lecture de la session : le test échoue (`expected "vi.fn()" to not be called at all, but actually been called 1 times`).
+3. **« Un membre au-delà de sa limite ne gêne pas un autre »**, qui passait à vide. Clé sans l'utilisateur (valeur fixe) : le test échoue (le voisin reçoit `trop_de_requetes`). Cet essai a laissé sur `dev` une ligne de compteur pour la valeur fixe, sans donnée personnelle, qui expire avec sa fenêtre d'une heure.
+4. **Liste fermée des tables.** `compteur_debit` retiré de `TABLES_SANS_ORGANISATION` : le test échoue. Fichier de test rétabli, `git diff` vide pour lui.
 

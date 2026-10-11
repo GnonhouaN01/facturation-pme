@@ -38,6 +38,12 @@ export function refus(): Refus {
   return { ok: false, raison: "refuse" };
 }
 
+// Limite de débit atteinte (étape 4) : ni délai, ni compte, ni nom de la
+// limite. Fiche : docs/features/limitation-debit.md, section 10.
+export function tropDeRequetes(): Refus {
+  return { ok: false, raison: "trop_de_requetes" };
+}
+
 export function connexionRequise(): Refus {
   return { ok: false, raison: "connexion_requise" };
 }

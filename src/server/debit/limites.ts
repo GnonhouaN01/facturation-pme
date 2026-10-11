@@ -22,6 +22,8 @@ export type NomLimite = keyof typeof LIMITES;
 // La plus longue fenêtre d'un ensemble de limites : au-delà, une ligne du
 // compteur ne peut plus servir (purge, section 7).
 export function fenetreMaxSecondes(limites: Readonly<Record<string, Limite>>): number {
-  void limites;
-  throw new Error("non implémenté");
+  const fenetres = Object.values(limites).map((limite) => limite.fenetreSecondes);
+  // Sans limite, Math.max renverrait -Infinity : la purge viderait tout.
+  if (fenetres.length === 0) throw new Error("Aucune limite de débit déclarée.");
+  return Math.max(...fenetres);
 }

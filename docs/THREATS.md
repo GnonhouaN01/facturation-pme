@@ -257,6 +257,7 @@ L'application traite deux catégories de personnes : ses **utilisateurs**, qui o
 | Réponse à un devis : nom saisi, date, heure | Clients | Preuve de l'accord | Durée de vie du devis | Avec le devis |
 | Journal d'audit : auteur, action, date | Utilisateurs | Traçabilité | Durée de vie de l'organisation | Avec l'organisation |
 | Journaux techniques | Utilisateurs | Diagnostic | 30 jours | Automatique. Sans donnée personnelle ni secret |
+| Compteurs de débit : nom de la limite, empreinte HMAC de l'utilisateur (plus tard de l'adresse IP ou de l'email), nombre, date | Utilisateurs, visiteurs | Limiter les tentatives (S-11, S-22, S-55, S-84) | La plus longue fenêtre de limite, au plus 24 heures | Purge quotidienne des lignes expirées. Jamais la valeur en clair |
 
 ### 7.3 Ce que l'application ne collecte pas
 

@@ -19,6 +19,8 @@ const ACTIONS = "src/server/actions/**";
 const ACTION = "src/server/actions/action.ts";
 const EXPOSER = "src/server/actions/exposer.ts";
 const APP_ACTIONS = "src/app/**/actions.ts";
+const DEBIT = "src/server/debit/**";
+const DB_DEBIT = "src/server/db/debit.ts";
 
 // En configuration plate, une règle déclarée par un bloc postérieur remplace
 // entièrement celle d'un bloc antérieur pour un même fichier : les options ne
@@ -193,6 +195,33 @@ const IMPORTS_M = {
 };
 const SYNTAXE_M = chargementsDynamiques("/((^|\\u002F)actions|^\\.)\\u002Faction$/", MESSAGE_M);
 
+// N. Le compteur de débit : compteurDebit ne s'importe que dans db/debit.ts,
+// seul fichier qui touche compteur_debit, et db/debit.ts ne s'importe que dans
+// server/debit/, qui calcule les clés en empreinte. Le chargement dynamique de
+// db/debit et de schema/technique est refusé en entier.
+const MESSAGE_N =
+  "compteurDebit ne s'importe que dans src/server/db/debit.ts, et src/server/db/debit.ts que dans src/server/debit/ et les tests : compter par verifierDebit (docs/features/limitation-debit.md, section 7, règle N).";
+const IMPORTS_N_TABLE = {
+  patterns: [
+    { regex: "(^|/)schema/technique$", importNames: ["compteurDebit"], message: MESSAGE_N },
+  ],
+};
+const IMPORTS_N_COMPTEUR = {
+  patterns: [{ regex: "(^|/)db/debit$", message: MESSAGE_N }],
+};
+// Depuis db/, « ./debit » et « ../debit » désignent db/debit.ts.
+const IMPORTS_N_COMPTEUR_DB = {
+  patterns: [{ regex: "^\\.\\.?/debit$", message: MESSAGE_N }],
+};
+const SYNTAXE_N = chargementsDynamiques(
+  "/(^|\\u002F)(db\\u002Fdebit|schema\\u002Ftechnique)$/",
+  MESSAGE_N,
+);
+const SYNTAXE_N_DB = chargementsDynamiques(
+  "/((^|\\u002F)(db\\u002Fdebit|schema\\u002Ftechnique)|^\\.\\.?\\u002Fdebit)$/",
+  MESSAGE_N,
+);
+
 const restreindreImports = (...listes) => [
   "error",
   {
@@ -216,7 +245,7 @@ const eslintConfig = defineConfig([
   // Imports statiques.
   {
     files: [SRC],
-    ignores: [DB, ENV, TESTS, CONFIG_AUTH, JOURNAL_AUDIT, ACTIONS],
+    ignores: [DB, ENV, TESTS, CONFIG_AUTH, JOURNAL_AUDIT, ACTIONS, DEBIT],
     rules: {
       "no-restricted-imports": restreindreImports(
         IMPORTS_A,
@@ -227,6 +256,25 @@ const eslintConfig = defineConfig([
         IMPORTS_I,
         IMPORTS_J,
         IMPORTS_M,
+        IMPORTS_N_TABLE,
+        IMPORTS_N_COMPTEUR,
+      ),
+    },
+  },
+  {
+    files: [DEBIT],
+    ignores: [TESTS],
+    rules: {
+      "no-restricted-imports": restreindreImports(
+        IMPORTS_A,
+        IMPORTS_B,
+        IMPORTS_D,
+        IMPORTS_E,
+        IMPORTS_F,
+        IMPORTS_I,
+        IMPORTS_J,
+        IMPORTS_M,
+        IMPORTS_N_TABLE,
       ),
     },
   },
@@ -244,6 +292,8 @@ const eslintConfig = defineConfig([
         IMPORTS_J,
         IMPORTS_L,
         IMPORTS_M,
+        IMPORTS_N_TABLE,
+        IMPORTS_N_COMPTEUR,
       ),
     },
   },
@@ -257,6 +307,8 @@ const eslintConfig = defineConfig([
         IMPORTS_E,
         IMPORTS_F,
         IMPORTS_L,
+        IMPORTS_N_TABLE,
+        IMPORTS_N_COMPTEUR,
       ),
     },
   },
@@ -272,6 +324,8 @@ const eslintConfig = defineConfig([
         IMPORTS_I,
         IMPORTS_J,
         IMPORTS_M_FABRIQUE,
+        IMPORTS_N_TABLE,
+        IMPORTS_N_COMPTEUR,
       ),
     },
   },
@@ -286,6 +340,8 @@ const eslintConfig = defineConfig([
         IMPORTS_I,
         IMPORTS_J,
         IMPORTS_M,
+        IMPORTS_N_TABLE,
+        IMPORTS_N_COMPTEUR,
       ),
     },
   },
@@ -300,6 +356,8 @@ const eslintConfig = defineConfig([
         IMPORTS_I,
         IMPORTS_J,
         IMPORTS_M,
+        IMPORTS_N_TABLE,
+        IMPORTS_N_COMPTEUR,
       ),
     },
   },
@@ -319,12 +377,30 @@ const eslintConfig = defineConfig([
         IMPORTS_I,
         IMPORTS_J,
         IMPORTS_M,
+        IMPORTS_N_TABLE,
+        IMPORTS_N_COMPTEUR,
       ),
     },
   },
   {
     files: [DB],
-    ignores: [TESTS, OUTILS_TEST],
+    ignores: [TESTS, OUTILS_TEST, DB_DEBIT],
+    rules: {
+      "no-restricted-imports": restreindreImports(
+        IMPORTS_B,
+        IMPORTS_D,
+        IMPORTS_F,
+        IMPORTS_F_REQUETES,
+        IMPORTS_J,
+        IMPORTS_M,
+        IMPORTS_N_TABLE,
+        IMPORTS_N_COMPTEUR,
+        IMPORTS_N_COMPTEUR_DB,
+      ),
+    },
+  },
+  {
+    files: [DB_DEBIT],
     rules: {
       "no-restricted-imports": restreindreImports(
         IMPORTS_B,
@@ -363,6 +439,7 @@ const eslintConfig = defineConfig([
         SYNTAXE_J,
         SYNTAXE_K,
         SYNTAXE_M,
+        SYNTAXE_N,
       ),
     },
   },
@@ -381,6 +458,7 @@ const eslintConfig = defineConfig([
         SYNTAXE_J,
         SYNTAXE_K,
         SYNTAXE_M,
+        SYNTAXE_N,
       ),
     },
   },
@@ -401,6 +479,7 @@ const eslintConfig = defineConfig([
         SYNTAXE_K,
         SYNTAXE_L,
         SYNTAXE_M,
+        SYNTAXE_N,
       ),
     },
   },
@@ -417,6 +496,7 @@ const eslintConfig = defineConfig([
         SYNTAXE_H,
         SYNTAXE_K,
         SYNTAXE_L,
+        SYNTAXE_N,
       ),
     },
   },
@@ -434,6 +514,7 @@ const eslintConfig = defineConfig([
         SYNTAXE_I,
         SYNTAXE_J,
         SYNTAXE_K,
+        SYNTAXE_N,
       ),
     },
   },
@@ -463,6 +544,7 @@ const eslintConfig = defineConfig([
         SYNTAXE_J,
         SYNTAXE_K,
         SYNTAXE_M,
+        SYNTAXE_N,
       ),
     },
   },
@@ -480,6 +562,7 @@ const eslintConfig = defineConfig([
         SYNTAXE_J,
         SYNTAXE_K,
         SYNTAXE_M,
+        SYNTAXE_N_DB,
       ),
     },
   },
@@ -495,6 +578,7 @@ const eslintConfig = defineConfig([
         SYNTAXE_H,
         SYNTAXE_J,
         SYNTAXE_M,
+        SYNTAXE_N_DB,
       ),
     },
   },
