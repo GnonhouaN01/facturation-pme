@@ -53,7 +53,7 @@ test.describe("politique de sécurité du contenu", () => {
     test(`${nom} : chaque script du HTML porte le nonce de la réponse`, async ({ request }) => {
       const reponse = await request.get(chemin);
       const nonce = nonceDe(reponse.headers()["content-security-policy"]);
-      const balises = (await reponse.text()).match(/<script\b[^>]*>/g) ?? [];
+      const balises = (await reponse.text()).match(/<script\b[^>]*>/gi) ?? [];
 
       expect(balises.length).toBeGreaterThan(0);
       for (const balise of balises) {
@@ -308,7 +308,7 @@ test.describe("attaques dans le navigateur (T-34)", () => {
 test.describe("autres en-têtes (section 6)", () => {
   async function fichierStatique(request: APIRequestContext) {
     const html = await (await request.get("/")).text();
-    const trouve = /<script[^>]+src="(\/_next\/static\/[^"]+\.js)"/.exec(html);
+    const trouve = /<script[^>]+src="(\/_next\/static\/[^"]+\.js)"/i.exec(html);
     if (!trouve?.[1]) throw new Error("aucun fichier de /_next/static dans l'accueil");
     return trouve[1];
   }

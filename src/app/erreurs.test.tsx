@@ -75,14 +75,16 @@ function rendre(Page: (typeof PAGES)[number][1], error: Error & { digest?: strin
   return renderToString(<Page error={error} retry={sansEffet} />);
 }
 
-// Texte visible : balises retirées, entités courantes décodées.
+// Texte visible : balises retirées, entités courantes décodées. &amp; en
+// dernier : décodé avant les autres, « &amp;nbsp; » deviendrait « &nbsp; »,
+// puis une espace (double décodage).
 function texte(html: string): string {
   return html
     .replace(/<[^>]*>/g, " ")
     .replaceAll("&#x27;", "'")
     .replaceAll("&#39;", "'")
-    .replaceAll("&amp;", "&")
     .replaceAll("&nbsp;", " ")
+    .replaceAll("&amp;", "&")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -147,7 +149,7 @@ describe("global-error.tsx", () => {
   test("porte son propre document, en français", () => {
     const html = rendre(ErreurGlobale, erreurChargee(DIGEST));
 
-    expect(html).toMatch(/^<html[^>]*\slang="fr"/);
+    expect(html).toMatch(/^<html[^>]*\slang="fr"/i);
     expect(html).toContain("<body");
   });
 });
