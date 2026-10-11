@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 
 import { declarerAction, executerChaine, type DeclarationAction } from "./action";
-import { declarationExposee, exposer } from "./exposer";
+import { declarationExposee, ErreurPage, exposer, traduireLecture } from "./exposer";
 import type { Resultat } from "./refus";
 
 // L'adaptateur Next.js, sans Next.js : headers() et la chaîne sont remplacés
@@ -179,5 +179,93 @@ describe("exposer : déclaration non marquée refusée", () => {
     expect(() => exposer(declarationEcriteALaMain())).toThrow();
     expect(lireEntetes).not.toHaveBeenCalled();
     expect(chaine).not.toHaveBeenCalled();
+  });
+});
+
+// Fonctionnalité 0.6, PR 3 : traduction d'une lecture pour une page. Fiche :
+// docs/features/socle-interface.md, sections 2.1 et 4.2.
+describe("traduireLecture", () => {
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+  // Erreur levée par une fonction, pour la comparer à celle de notFound().
+  function leveeDe(fonction: () => unknown): unknown {
+    try {
+      fonction();
+    } catch (erreur) {
+      return erreur;
+    }
+    throw new Error("rien n'a été levé");
+  }
+
+  const digestDe = (erreur: unknown) => (erreur as { digest?: unknown }).digest;
+  const NOT_FOUND = digestDe(leveeDe(() => notFound()));
+
+  test("ok : renvoie les données elles-mêmes", () => {
+    const donnees = { role: "lecteur", entrees: [] };
+
+    expect(traduireLecture({ ok: true, donnees })).toBe(donnees);
+  });
+
+  test.each(["refuse", "connexion_requise"] as const)(
+    "%s : notFound(), la page « introuvable » (S-02, décision 1)",
+    (raison) => {
+      const erreur = leveeDe(() => traduireLecture({ ok: false, raison }));
+
+      expect(NOT_FOUND).toEqual(expect.any(String));
+      expect(digestDe(erreur)).toBe(NOT_FOUND);
+    },
+  );
+
+  test("refuse et connexion_requise : la même erreur, sans rien qui les distingue", () => {
+    const refuse = leveeDe(() => traduireLecture({ ok: false, raison: "refuse" })) as Error;
+    const connexion = leveeDe(() =>
+      traduireLecture({ ok: false, raison: "connexion_requise" }),
+    ) as Error;
+
+    expect(digestDe(refuse)).toBe(NOT_FOUND);
+    expect(connexion.constructor).toBe(refuse.constructor);
+    expect(connexion.message).toBe(refuse.message);
+    expect(digestDe(connexion)).toBe(digestDe(refuse));
+  });
+
+  test("erreur : ErreurPage, dont le digest est l'incident", () => {
+    const incident = "6f1c3c1e-8a3d-4c5b-9f0e-2d7a1b4c5e6f";
+
+    const erreur = leveeDe(() => traduireLecture({ ok: false, raison: "erreur", incident }));
+
+    expect(erreur).toBeInstanceOf(ErreurPage);
+    expect(erreur).toBeInstanceOf(Error);
+    expect(digestDe(erreur)).toBe(incident);
+  });
+
+  test("erreur : message fixe, qui ne contient pas l'incident, et sans cause", () => {
+    // Incident chargé de marqueurs : il ne doit apparaître que dans le digest.
+    const marque = "SELECT postgresql://x@y/z DATABASE_URL a@b.ci";
+    const premiere = leveeDe(() =>
+      traduireLecture({ ok: false, raison: "erreur", incident: marque }),
+    ) as Error;
+    const seconde = leveeDe(() =>
+      traduireLecture({ ok: false, raison: "erreur", incident: "autre-incident" }),
+    ) as Error;
+
+    expect(premiere).toBeInstanceOf(ErreurPage);
+    expect(seconde).toBeInstanceOf(ErreurPage);
+    expect(premiere.message).toBe(seconde.message);
+    expect(premiere.message).not.toContain("SELECT");
+    expect(premiere.message).not.toContain("postgresql");
+    expect(premiere.message).not.toContain("autre-incident");
+    expect(premiere.cause).toBeUndefined();
+    expect(Object.hasOwn(premiere, "cause")).toBe(false);
+  });
+
+  test("trop_de_requetes : traité comme erreur, avec un nouvel incident à chaque fois", () => {
+    const premiere = leveeDe(() => traduireLecture({ ok: false, raison: "trop_de_requetes" }));
+    const seconde = leveeDe(() => traduireLecture({ ok: false, raison: "trop_de_requetes" }));
+
+    expect(premiere).toBeInstanceOf(ErreurPage);
+    expect(digestDe(premiere)).toMatch(UUID);
+    expect(digestDe(seconde)).toMatch(UUID);
+    expect(digestDe(premiere)).not.toBe(digestDe(seconde));
+    expect((premiere as Error).cause).toBeUndefined();
   });
 });
