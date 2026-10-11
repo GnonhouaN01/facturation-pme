@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { eq, inArray, sql } from "drizzle-orm";
 import { Pool } from "pg";
-import { afterAll, describe, expect, test } from "vitest";
+import { afterAll, describe, expect, onTestFinished, test } from "vitest";
 
 import { cleCompteur, deriverSecret } from "../debit/cle";
 import { creerVerificateur, purgerCompteurs } from "../debit/debit";
@@ -17,14 +17,17 @@ import { compteurDebit } from "./schema/technique";
 // l'exécution, hors de LIMITES, et sont supprimées à la fin. Fiche :
 // docs/features/limitation-debit.md, sections 2, 4, 5 et 7.
 
-const pools: Pool[] = [];
 const cles: string[] = [];
 
 // Un Pool de plusieurs dizaines de connexions : les appels sont réellement
-// simultanés dans la base, et non mis en file par le Pool.
+// simultanés dans la base, et non mis en file par le Pool. Fermé à la fin du
+// test qui l'a ouvert : la base de la CI, sans regroupement de connexions,
+// plafonne à 100 (97 pour un rôle ordinaire), et deux Pool de 50 ouverts
+// ensemble la dépassent. Fiche : docs/features/limitation-debit.md, « Notes
+// de l'implémentation ».
 function compteurSur(max: number) {
   const pool = new Pool({ connectionString: env.DATABASE_URL, max });
-  pools.push(pool);
+  onTestFinished(() => pool.end());
   return creerCompteur(creerAcces(pool).db);
 }
 
@@ -41,11 +44,7 @@ async function ligne(cle: string) {
 }
 
 afterAll(async () => {
-  try {
-    if (cles.length > 0) await db.delete(compteurDebit).where(inArray(compteurDebit.cle, cles));
-  } finally {
-    await Promise.all(pools.map((pool) => pool.end()));
-  }
+  if (cles.length > 0) await db.delete(compteurDebit).where(inArray(compteurDebit.cle, cles));
 });
 
 describe("consommer : une instruction atomique (section 4)", () => {

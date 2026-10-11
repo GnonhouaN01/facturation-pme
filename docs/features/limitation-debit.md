@@ -526,3 +526,11 @@ Chaque fichier a été rétabli depuis une copie, puis comparé à cette copie (
 3. **« Un membre au-delà de sa limite ne gêne pas un autre »**, qui passait à vide. Clé sans l'utilisateur (valeur fixe) : le test échoue (le voisin reçoit `trop_de_requetes`). Cet essai a laissé sur `dev` une ligne de compteur pour la valeur fixe, sans donnée personnelle, qui expire avec sa fenêtre d'une heure.
 4. **Liste fermée des tables.** `compteur_debit` retiré de `TABLES_SANS_ORGANISATION` : le test échoue. Fichier de test rétabli, `git diff` vide pour lui.
 
+### CI : « too many clients already », le 2026-10-11
+
+- Constat sur la PR : `53300` dans `debit.integration.test.ts` (« maximum 10 ») et dans `client.integration.test.ts`, dès le garde-fou. Sur `dev`, tout passait.
+- Cause : les deux tests de concurrence ouvraient chacun un `Pool` de 50, fermés seulement en `afterAll`. Les 50 connexions du premier, inactives, restaient ouvertes pendant le second (`pg` ne les rend qu'au bout de 10 s) : au moins 101 connexions pour ce seul fichier, au-delà des 97 qu'accepte la base de la CI pour un rôle ordinaire. `client.integration.test.ts`, lancé en parallèle, recevait le refus. Sur `dev`, le regroupement de Neon absorbe ces connexions.
+- Écartée : une accumulation d'un fichier à l'autre. Chaque fichier s'exécute dans son propre processus (Vitest 5, `isolate: true`), et ses connexions se ferment avec lui.
+- Correction : `compteurSur` ferme son `Pool` à la fin du test qui l'a ouvert (`onTestFinished`). Taille du `Pool`, 100 appels simultanés et assertions inchangés. Pic estimé en CI : environ 70 connexions (50, plus le `Pool` principal, plus deux autres fichiers en parallèle sur un runner à 4 vCPU) ; pire cas théorique proche de 96.
+- Piège ajouté à `CLAUDE.md`.
+
