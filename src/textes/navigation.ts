@@ -1,20 +1,19 @@
 // Textes de la navigation de l'application (NF-01). Une entrée n'a de
-// libellé qu'avec sa page. Fiche : docs/features/socle-interface.md,
-// sections 2.4 et 10.
+// libellé qu'avec sa page : en 0.6, le tableau de bord seul. Fiche :
+// docs/features/socle-interface.md, sections 2.4 et 10.
 
-// Phase rouge : à remplacer par les textes.
-function nonImplemente(): never {
-  throw new Error("non implémenté");
-}
-
-export const TEXTES_NAVIGATION: {
-  readonly nom: string;
-  readonly organisationActive: string;
-  readonly entrees: { readonly tableauDeBord: string };
-  readonly roles: {
-    readonly proprietaire: string;
-    readonly comptable: string;
-    readonly commercial: string;
-    readonly lecteur: string;
-  };
-} = nonImplemente();
+export const TEXTES_NAVIGATION = {
+  // Nom accessible de l'élément nav.
+  nom: "Navigation principale",
+  organisationActive: "Organisation active",
+  entrees: {
+    tableauDeBord: "Tableau de bord",
+  },
+  // Clés : les rôles de src/server/autorisation/matrice.ts.
+  roles: {
+    proprietaire: "Propriétaire",
+    comptable: "Comptable",
+    commercial: "Commercial",
+    lecteur: "Lecteur",
+  },
+} as const;

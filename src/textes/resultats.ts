@@ -1,15 +1,11 @@
-// Libellés des codes de résultat de la chaîne de contrôles (NF-01).
-// Fiche : docs/features/socle-interface.md, section 11.1.
+// Libellés des codes de résultat de la chaîne de contrôles (NF-01), pour les
+// formulaires. Ni délai, ni compte, ni cause du refus (S-02). Fiche :
+// docs/features/socle-interface.md, section 11.1.
 
-// Phase rouge : à remplacer par les textes.
-function nonImplemente(): never {
-  throw new Error("non implémenté");
-}
-
-export const TEXTES_RESULTATS: {
-  readonly connexion_requise: string;
-  readonly refuse: string;
-  readonly trop_de_requetes: string;
-  readonly invalide: string;
-  readonly erreur: string;
-} = nonImplemente();
+export const TEXTES_RESULTATS = {
+  connexion_requise: "Votre session a expiré. Connectez-vous à nouveau.",
+  refuse: "Cette action n'est pas disponible.",
+  trop_de_requetes: "Trop de tentatives. Patientez un instant, puis réessayez.",
+  invalide: "Certains champs sont à corriger.",
+  erreur: "Une erreur est survenue.",
+} as const;

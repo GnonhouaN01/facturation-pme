@@ -70,6 +70,11 @@ describe("messages de sécurité, mot pour mot", () => {
   test("bandeau de simulation : le texte de DESIGN-SYSTEM.md", () => {
     expect(TEXTES_SIMULATION.bandeau).toBe(message("Document produit en mode simulateur"));
   });
+
+  test("bandeau de simulation de l'application : son propre texte de DESIGN-SYSTEM.md", () => {
+    expect(TEXTES_SIMULATION.bandeauApplication).toBe(message("Application en mode simulateur"));
+    expect(TEXTES_SIMULATION.bandeauApplication).not.toBe(TEXTES_SIMULATION.bandeau);
+  });
 });
 
 describe("textes fixés par la fiche", () => {

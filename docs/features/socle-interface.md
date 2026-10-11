@@ -1,6 +1,6 @@
 # Fonctionnalité : socle d'interface
 
-Statut : validée (2026-10-11). PR 1 en phase rouge.
+Statut : en cours. PR 1 implémentée le 2026-10-11 (non commitée) ; PR 2 et 3 à faire.
 
 Jalon 0, fonctionnalité 0.6 de `docs/PLAN.md`. Taille L (décision 12), en trois PR.
 
@@ -320,7 +320,10 @@ Ce que la 3.1 aura à peser : une étape 4 dans `etablirContexte` coûterait une
 
 **Zones publique et par lien :** non couvertes par la maquette décrite. Publique : en-tête au nom du produit, contenu, pied de page, marges comme ci-dessus. Par lien : contenu seul ; en-tête au nom de l'organisation émettrice avec la 4.5.
 
-**Écart à trancher : le texte du bandeau de simulation.** La maquette porte « Simulation : les documents ne sont pas certifiés par la DGI et n'ont pas de valeur fiscale. » ; `DESIGN-SYSTEM.md` (« Ce que la sécurité impose à l'écran ») porte « Simulation : document non certifié par la DGI, sans valeur fiscale. ». Les messages de sécurité reprennent ce tableau mot pour mot (`.claude/skills/interface`, règle 7), et le test des textes le lit. D'ici la réponse, le test et `src/textes/simulation.ts` suivent `DESIGN-SYSTEM.md`. Si le texte de la maquette l'emporte, il remplace d'abord celui de `DESIGN-SYSTEM.md`.
+**Texte du bandeau de simulation** (décision 15). Deux textes, deux emplacements, tous deux dans le tableau « Ce que la sécurité impose à l'écran » de `DESIGN-SYSTEM.md` :
+
+- sur un document (page, PDF), ligne « Document produit en mode simulateur » : « Simulation : document non certifié par la DGI, sans valeur fiscale. » (`TEXTES_SIMULATION.bandeau`, utilisé à partir des jalons 4 et 5) ;
+- en haut du contenu de chaque page de l'application, ligne « Application en mode simulateur » : « Simulation : les documents ne sont pas certifiés par la DGI et n'ont pas de valeur fiscale. » (`TEXTES_SIMULATION.bandeauApplication`, utilisé par le gabarit en PR 3).
 
 ### 11. Les textes et le formatage
 
@@ -332,7 +335,7 @@ Ce que la 3.1 aura à peser : une étape 4 dans `etablirContexte` coûterait une
 - `navigation.ts` : nom accessible de la navigation, libellé « Organisation active », libellés des entrées (en 0.6, « Tableau de bord » seul), libellés des quatre rôles.
 - `erreurs.ts` : « Cette page est introuvable », « Une erreur est survenue. », « Identifiant de l'incident : », « Recharger la page ».
 - `resultats.ts` : libellés des codes de `Resultat`, pour les formulaires du jalon 1.
-- `simulation.ts` : le bandeau de simulation.
+- `simulation.ts` : les deux bandeaux de simulation, sur un document et dans l'application (section 10).
 
 | Code | Libellé |
 |---|---|
@@ -409,7 +412,11 @@ Un test vérifie : les messages de sécurité sont identiques, au caractère pr�
 - Masquer une entrée de navigation ne protège rien (section 2.4). La protection de chaque page est le contrôle de sa propre lecture.
 - Le contrôle « chaque page appelle `lirePourPage` » est textuel : une page qui l'appelle sans en utiliser le résultat passe.
 - La politique laisse passer ce que liste la section 5.4.
-- La règle R ne voit ni une chaîne passée par une variable locale, ni un texte dans un attribut hors de sa liste : la revue reste nécessaire.
+- **Ce que les règles O à R laissent passer**, constaté le 2026-10-11 par l'API d'ESLint sur du code fourni en texte. La revue reste nécessaire :
+  - **O** : une clé calculée (`{ ["dangerously" + "SetInnerHTML"]: ... }`) ; `Object.assign(el, { innerHTML })` ; `window.document.write` et `document["write"]` (seul `document.write` est visé) ; `setAttribute("srcdoc", ...)` ; `createContextualFragment`, `DOMParser` et les autres analyseurs de HTML du navigateur ; une URL `javascript:` venue d'une variable (`<a href={x}>`), la règle de React ne voyant que les chaînes écrites ; `setTimeout(x)` avec une variable chaîne. Hors de `src/` (`scripts/`, fichiers de configuration), aucune règle ne s'applique. La politique de sécurité du contenu (PR 2) reste la seconde ligne contre ce qui s'exécuterait.
+  - **P** : un attribut `style` passé par décomposition (`<div {...p} />`) ou par `createElement` ; l'élément `<style>`, que la politique bloque de toute façon faute de nonce ; un style posé par JavaScript (`element.style`), que la politique ne bloque pas.
+  - **Q** : l'analyse ne voit que le JSX écrit. Un composant (`<Button />` sans nom accessible) n'est pas reconnu comme l'élément natif qu'il rend ; contrastes, ordre du focus et rôles posés à l'exécution ne sont pas vérifiés (décision 7 : `@axe-core/playwright` revu en 1.1).
+  - **R** : une chaîne passée par une constante (`const t = "Bonjour"`) ; une chaîne dans un ternaire (`{a ? "Oui" : "Non"}`) ; un texte dans un attribut hors de la liste (`aria-roledescription`) ou dans la propriété d'un composant (`<B libelle="Bonjour" />`, `ignoreProps`). Une concaténation (`{"Total " + a}`) est, elle, refusée.
 - Erreur d'un composant client : aucun identifiant, aucune consignation avant la 8.1 (décision 6).
 - La navigation par rôle n'est éprouvée dans un navigateur qu'à la 1.2.
 - Le gabarit et la page appellent chacun `etablirContexte` : deux lectures de session et d'adhésion par affichage. Dédoublonnage par requête (`cache` de React) à étudier quand une page lira des données.
@@ -426,10 +433,11 @@ Aucune.
 
 ### PR 1
 
-- [ ] `formaterMontant`, `formaterMontantColonne`, `formaterJour` et `formaterDate` donnent les formats de `DESIGN-SYSTEM.md`, avec U+00A0 ; refusent un montant non entier, non sûr ou négatif, et une date mal formée ou inexistante ; `formaterDate` donne le même jour sur un poste à UTC+14.
-- [ ] Les messages de sécurité de `src/textes/` sont identiques au tableau de `DESIGN-SYSTEM.md` ; aucun texte ne contient `!`, un emoji, « OK » ou « Valider » seuls ; les clés des résultats et des rôles sont exactes.
-- [ ] Les règles O, P, Q et R refusent leurs cas et acceptent les cas permis (`src/regles-interface.test.ts`) ; les 31 règles `jsx-a11y` du jeu recommandé sont en erreur pour un `.tsx` de `src/`.
-- [ ] `npm run lint` passe sur tout `src/` avec les nouvelles règles ; l'accueil et les métadonnées lisent `src/textes/`.
+- [x] `formaterMontant`, `formaterMontantColonne`, `formaterJour` et `formaterDate` donnent les formats de `DESIGN-SYSTEM.md`, avec U+00A0 ; refusent un montant non entier, non sûr ou négatif, et une date mal formée ou inexistante ; `formaterDate` donne le même jour sur un poste à UTC+14.
+- [x] Les messages de sécurité de `src/textes/` sont identiques au tableau de `DESIGN-SYSTEM.md` ; aucun texte ne contient `!`, un emoji, « OK » ou « Valider » seuls ; les clés des résultats et des rôles sont exactes.
+- [x] Les règles O, P, Q et R refusent leurs cas et acceptent les cas permis (`src/regles-interface.test.ts`) ; les 31 règles `jsx-a11y` du jeu recommandé sont en erreur pour un `.tsx` de `src/`.
+- [x] `npm run lint` passe sur tout `src/` avec les nouvelles règles ; l'accueil et les métadonnées lisent `src/textes/`.
+- [x] Sur le poste, le 2026-10-11 : `npm run lint`, `npm run typecheck`, `npm test` (881 tests), `npm run build` et `npm run test:e2e` (7 tests, sur `npm run dev` puis sur le site construit avec `CI=1`) passent. Aucune dépendance ajoutée. En CI : à constater sur la PR.
 
 ### PR 2
 
@@ -468,10 +476,10 @@ Aucune.
 
 PR 1 :
 
-- [ ] `src/lib/format/montants.test.ts` : 0, 1, 999, 1 000, 1 180 000, un milliard, `Number.MAX_SAFE_INTEGER`, `-0` ; U+00A0 exact, ni U+202F ni espace ordinaire ; `1.5`, `NaN`, `Infinity`, `-Infinity`, `2 ** 53`, `-1` refusés par `RangeError`.
-- [ ] `src/lib/format/dates.test.ts` : instants autour de minuit, sur un poste simulé à UTC+14 ; date invalide refusée ; `formaterJour` sur des jours valides (dont le 29 février d'une année bissextile) et refus des chaînes mal formées et des jours inexistants.
-- [ ] `src/textes/textes.test.ts` : messages de sécurité contre `DESIGN-SYSTEM.md` ; style ; clés des résultats et des rôles.
-- [ ] `src/regles-interface.test.ts` : règles O, P, Q, R.
+- [x] `src/lib/format/montants.test.ts` : 0, 1, 999, 1 000, 1 180 000, un milliard, `Number.MAX_SAFE_INTEGER`, `-0` ; U+00A0 exact, ni U+202F ni espace ordinaire ; `1.5`, `NaN`, `Infinity`, `-Infinity`, `2 ** 53`, `-1` refusés par `RangeError`.
+- [x] `src/lib/format/dates.test.ts` : instants autour de minuit, sur un poste simulé à UTC+14 ; date invalide refusée ; `formaterJour` sur des jours valides (dont le 29 février d'une année bissextile) et refus des chaînes mal formées et des jours inexistants.
+- [x] `src/textes/textes.test.ts` : messages de sécurité contre `DESIGN-SYSTEM.md` ; style ; clés des résultats et des rôles.
+- [x] `src/regles-interface.test.ts` : règles O, P, Q, R.
 
 PR 2 :
 
@@ -521,7 +529,7 @@ Propres à cette fiche, PR 2, `e2e/entetes.attaque.spec.ts` et `e2e/erreurs.atta
 PR 1 :
 
 - Créés : `src/textes/commun.ts`, `navigation.ts`, `erreurs.ts`, `resultats.ts`, `simulation.ts`, `textes.test.ts` ; `src/lib/format/montants.ts`, `montants.test.ts`, `dates.ts`, `dates.test.ts` ; `src/regles-interface.test.ts`.
-- Modifiés : `eslint.config.mjs` (règles O à R) ; `src/app/page.tsx` et `src/app/layout.tsx` (textes).
+- Modifiés : `eslint.config.mjs` (règles O à R ; le bloc de syntaxe général est scindé en trois, écrans hors `ui/`, `ui/` et le reste, à cause de la règle R) ; `src/app/page.tsx` et `src/app/layout.tsx` (textes) ; `docs/DESIGN-SYSTEM.md` (ligne « Application en mode simulateur », décision 15) ; `src/textes/textes.test.ts` (test du bandeau de l'application, ajouté à la demande, vu en échec avant le texte).
 
 PR 2 :
 
@@ -582,4 +590,7 @@ Prises à la validation de la fiche, le 2026-10-11.
 13. **Disposition.** Celle de la section 10, d'après la maquette. Les entrées dont la page n'existe pas ne sont pas affichées : en 0.6, « Tableau de bord » seul. Pages d'erreur : mise en page sobre.
 14. **Tests de bout en bout sur le site construit**, `npm run build` avant ; inscrit dans `CLAUDE.md`.
 
-Point à trancher, apparu à la mise à jour : le texte du bandeau de simulation (section 10, « Écart à trancher »).
+Prises pendant la PR 1, le 2026-10-11 :
+
+15. **Bandeau de simulation.** Deux textes, deux emplacements (section 10) : sur un document, le texte inchangé de `DESIGN-SYSTEM.md` ; en haut de l'application, « Simulation : les documents ne sont pas certifiés par la DGI et n'ont pas de valeur fiscale. », ajouté à `DESIGN-SYSTEM.md`.
+16. **Choix de la phase rouge validés** : cas des règles O à R dans un fichier nouveau ; messages des sélecteurs citant leur lettre ; `vi.stubEnv("TZ", ...)` pour simuler un poste hors UTC.

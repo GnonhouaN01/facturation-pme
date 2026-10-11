@@ -1,11 +1,9 @@
-// Bandeau permanent du mode simulateur de certification (NF-01).
-// Fiche : docs/features/socle-interface.md, section 10.
+// Bandeaux permanents du mode simulateur de certification (NF-01), mot pour
+// mot ceux de DESIGN-SYSTEM.md, deux emplacements : sur un document, et en
+// haut de l'application. Fiche : docs/features/socle-interface.md, section 10.
 
-// Phase rouge : à remplacer par le texte.
-function nonImplemente(): never {
-  throw new Error("non implémenté");
-}
-
-export const TEXTES_SIMULATION: {
-  readonly bandeau: string;
-} = nonImplemente();
+export const TEXTES_SIMULATION = {
+  bandeau: "Simulation : document non certifié par la DGI, sans valeur fiscale.",
+  bandeauApplication:
+    "Simulation : les documents ne sont pas certifiés par la DGI et n'ont pas de valeur fiscale.",
+} as const;
