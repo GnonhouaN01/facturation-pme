@@ -110,6 +110,14 @@ class DeclarationInvalide extends Error {
   }
 }
 
+// Marque des déclarations renvoyées par declarerAction. Le symbole, hors du
+// registre global et non énumérable, signale la marque sans être recopié par
+// une décomposition ; il reste lisible par Object.getOwnPropertySymbols, donc
+// recopiable à la main. La preuve est l'appartenance à DECLARATIONS, que seul
+// ce module remplit.
+const MARQUE = Symbol("déclaration d'action");
+const DECLARATIONS = new WeakSet<object>();
+
 // Un z.strictObject a pour catchall z.never() ; z.object n'en a pas,
 // z.looseObject et .catchall() en ont un autre.
 function estStrict(schema: unknown): boolean {
@@ -135,18 +143,19 @@ export function declarerAction<E extends SchemaEntree, J extends ActionJournal |
     throw new DeclarationInvalide(`nouvelleAuthentification absent (${nom})`);
   }
   if (typeof executer !== "function") throw new DeclarationInvalide(`executer absent (${nom})`);
-  return Object.freeze({ ...declaration });
+  const marquee = { ...declaration };
+  Object.defineProperty(marquee, MARQUE, { value: true });
+  DECLARATIONS.add(marquee);
+  return Object.freeze(marquee);
 }
 
 export type DeclarationQuelconque = DeclarationAction<SchemaEntree, ActionJournal | null, unknown>;
 
-// Vrai pour une déclaration renvoyée par declarerAction (marque posée par
-// lui seul), faux pour toute autre valeur, dont un objet écrit à la main ou
-// une copie. Fiche : section 7, « Déclarations marquées ». Phase rouge : non
-// implémenté.
+// Vrai pour une déclaration renvoyée par declarerAction, faux pour toute
+// autre valeur, dont un objet écrit à la main ou une copie. Fiche : section 7,
+// « Déclarations marquées ».
 export function estDeclaration(valeur: unknown): valeur is DeclarationQuelconque {
-  void valeur;
-  throw new Error("non implémenté");
+  return typeof valeur === "object" && valeur !== null && DECLARATIONS.has(valeur);
 }
 
 const identifiantOrganisation = z.uuid();

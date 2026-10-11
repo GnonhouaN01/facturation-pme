@@ -5,7 +5,13 @@ import type { z } from "zod";
 
 import type { ActionJournal } from "../journal/actions";
 
-import { executerChaine, type DeclarationAction, type SchemaEntree } from "./action";
+import {
+  estDeclaration,
+  executerChaine,
+  type DeclarationAction,
+  type DeclarationQuelconque,
+  type SchemaEntree,
+} from "./action";
 import type { Resultat } from "./refus";
 
 // Adaptateur Next.js : la fonction exportée d'un fichier "use server". Lit les
@@ -15,8 +21,6 @@ import type { Resultat } from "./refus";
 
 export type ActionExposee<E extends SchemaEntree, T> = (entree: z.input<E>) => Promise<Resultat<T>>;
 
-type DeclarationQuelconque = DeclarationAction<SchemaEntree, ActionJournal | null, unknown>;
-
 // Hors du registre global (Symbol et non Symbol.for) : seul ce module peut
 // poser la marque.
 const MARQUE = Symbol("action exposée");
@@ -24,6 +28,13 @@ const MARQUE = Symbol("action exposée");
 export function exposer<E extends SchemaEntree, J extends ActionJournal | null, T>(
   declaration: DeclarationAction<E, J, T>,
 ): ActionExposee<E, T> {
+  // Une déclaration qui n'est pas passée par declarerAction (objet écrit à la
+  // main, copie) est refusée au chargement du module : son schéma pourrait
+  // être non strict (section 7, « Déclarations marquées »). Le transtypage
+  // évite que la garde ne réduise le type de la déclaration (T perdu).
+  if (!estDeclaration(declaration as unknown)) {
+    throw new Error("Action exposée sans declarerAction : déclaration refusée.");
+  }
   // Rien n'est lu ici : le module "use server" se charge hors de toute
   // requête. Les erreurs de contrôle de Next.js levées par la chaîne (qui les
   // relance) traversent cette fonction sans être interceptées.

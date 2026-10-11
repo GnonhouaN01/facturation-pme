@@ -447,3 +447,150 @@ describe("L. next/headers dans actions/ seulement par exposer.ts", { timeout: 60
     expect(await refus(code, fichier)).toEqual([]);
   });
 });
+
+const CHAINE_ALIAS = `import { executerChaine } from "@/server/actions/action";
+export const f = executerChaine;
+`;
+const CHAINE_RELATIF_SERVICES = `import { executerChaine } from "../actions/action";
+export const f = executerChaine;
+`;
+const CHAINE_LOCAL = `import { executerChaine } from "./action";
+export const f = executerChaine;
+`;
+const CHAINE_ESPACE = `import * as action from "@/server/actions/action";
+export const f = action;
+`;
+const CHAINE_DYNAMIQUE = `export const f = () => import("@/server/actions/action");
+`;
+const CHAINE_REEXPORT = `export { executerChaine } from "@/server/actions/action";
+`;
+const DECLARER = `import { declarerAction } from "@/server/actions/action";
+export const f = declarerAction;
+`;
+const ETABLIR_CONTEXTE = `import { etablirContexte } from "@/server/actions/action";
+export const f = etablirContexte;
+`;
+
+describe(
+  "M. executerChaine seulement dans actions/exposer.ts et les tests",
+  { timeout: 60_000 },
+  () => {
+    test.each([
+      ["service, par l'alias", CHAINE_ALIAS, "src/server/services/essai.ts"],
+      ["service, par un chemin relatif", CHAINE_RELATIF_SERVICES, "src/server/services/essai.ts"],
+      ["page de l'application", CHAINE_ALIAS, "src/app/essai/page.tsx"],
+      ["fichier actions.ts de l'application", CHAINE_ALIAS, "src/app/essai/actions.ts"],
+      ["autre fichier de actions/", CHAINE_LOCAL, "src/server/actions/essai.ts"],
+      ["import d'espace de noms", CHAINE_ESPACE, "src/server/services/essai.ts"],
+      ["import dynamique depuis un service", CHAINE_DYNAMIQUE, "src/server/services/essai.ts"],
+      ["réexportation depuis un service", CHAINE_REEXPORT, "src/server/services/essai.ts"],
+    ])("%s : refusé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).not.toEqual([]);
+    });
+
+    test.each([
+      ["actions/exposer.ts", CHAINE_LOCAL, "src/server/actions/exposer.ts"],
+      ["test de actions/", CHAINE_LOCAL, "src/server/actions/essai.test.ts"],
+      ["test d'intégration de db/", CHAINE_ALIAS, "src/server/db/essai.integration.test.ts"],
+      ["declarerAction depuis un domaine de actions/", DECLARER, "src/server/actions/clients.ts"],
+      ["etablirContexte depuis une page", ETABLIR_CONTEXTE, "src/app/essai/page.tsx"],
+    ])("%s : autorisé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).toEqual([]);
+    });
+  },
+);
+
+const FABRIQUE_ALIAS = `import { creerChaine } from "@/server/actions/action";
+export const f = creerChaine;
+`;
+const FABRIQUE_RELATIF_SERVICES = `import { creerChaine } from "../actions/action";
+export const f = creerChaine;
+`;
+const FABRIQUE_LOCAL = `import { creerChaine } from "./action";
+export const f = creerChaine;
+`;
+const FABRIQUE_REEXPORT = `export { creerChaine } from "@/server/actions/action";
+`;
+const TYPE_DEPENDANCES = `import type { DependancesChaine } from "@/server/actions/action";
+export type D = DependancesChaine;
+`;
+
+describe(
+  "M. creerChaine seulement dans les tests (une chaîne aux dépendances factices)",
+  { timeout: 60_000 },
+  () => {
+    test.each([
+      ["service, par l'alias", FABRIQUE_ALIAS, "src/server/services/essai.ts"],
+      ["service, par un chemin relatif", FABRIQUE_RELATIF_SERVICES, "src/server/services/essai.ts"],
+      ["page de l'application", FABRIQUE_ALIAS, "src/app/essai/page.tsx"],
+      ["fichier actions.ts de l'application", FABRIQUE_ALIAS, "src/app/essai/actions.ts"],
+      ["autre fichier de actions/", FABRIQUE_LOCAL, "src/server/actions/essai.ts"],
+      ["actions/exposer.ts", FABRIQUE_LOCAL, "src/server/actions/exposer.ts"],
+      ["réexportation depuis un service", FABRIQUE_REEXPORT, "src/server/services/essai.ts"],
+    ])("%s : refusé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).not.toEqual([]);
+    });
+
+    test.each([
+      ["test de actions/", FABRIQUE_LOCAL, "src/server/actions/action.test.ts"],
+      ["test d'intégration de db/", FABRIQUE_ALIAS, "src/server/db/essai.integration.test.ts"],
+      [
+        "type DependancesChaine depuis un service",
+        TYPE_DEPENDANCES,
+        "src/server/services/essai.ts",
+      ],
+    ])("%s : autorisé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).toEqual([]);
+    });
+  },
+);
+
+// Aucun commentaire ne suspend une règle dans src/ (noInlineConfig) : une
+// exception passe par eslint.config.mjs, donc par une PR.
+const SUSPENDU_LIGNE_SUIVANTE = `// eslint-disable-next-line no-restricted-imports
+import { db } from "@/server/db/client";
+export const f = db;
+`;
+const SUSPENDU_MEME_LIGNE = `import { db } from "@/server/db/client"; // eslint-disable-line no-restricted-imports
+export const f = db;
+`;
+const SUSPENDU_FICHIER = `/* eslint-disable */
+import { db } from "@/server/db/client";
+export const f = db;
+`;
+const SUSPENDU_BLOC = `/* eslint-disable no-restricted-imports */
+import { db } from "@/server/db/client";
+/* eslint-enable no-restricted-imports */
+export const f = db;
+`;
+const REGLE_ETEINTE = `/* eslint no-restricted-imports: "off" */
+import { db } from "@/server/db/client";
+export const f = db;
+`;
+const SYNTAXE_SUSPENDUE = `"use server";
+// eslint-disable-next-line no-restricted-syntax
+export async function agir() {
+  return 1;
+}
+`;
+const IMPORT_INTERDIT_SEUL = `import { db } from "@/server/db/client";
+export const f = db;
+`;
+
+describe("aucun commentaire ne suspend une règle dans src/", { timeout: 60_000 }, () => {
+  test.each([
+    ["eslint-disable-next-line", SUSPENDU_LIGNE_SUIVANTE, "src/server/services/essai.ts"],
+    ["eslint-disable-line", SUSPENDU_MEME_LIGNE, "src/server/services/essai.ts"],
+    ["eslint-disable en tête de fichier", SUSPENDU_FICHIER, "src/server/services/essai.ts"],
+    ["eslint-disable puis eslint-enable", SUSPENDU_BLOC, "src/server/services/essai.ts"],
+    ["règle éteinte par un commentaire", REGLE_ETEINTE, "src/server/services/essai.ts"],
+    ["règle G suspendue", SYNTAXE_SUSPENDUE, "src/app/essai/actions.ts"],
+    ["dans un fichier de test", SUSPENDU_LIGNE_SUIVANTE, "src/server/services/essai.test.ts"],
+  ])("%s : la règle s'applique encore", async (_nom, code, fichier) => {
+    expect(await refus(code, fichier)).not.toEqual([]);
+  });
+
+  test("témoin : sans commentaire, le même import est refusé une seule fois", async () => {
+    expect(await refus(IMPORT_INTERDIT_SEUL, "src/server/services/essai.ts")).toHaveLength(1);
+  });
+});
