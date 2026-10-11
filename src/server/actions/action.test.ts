@@ -92,6 +92,7 @@ function dependances() {
       executerDansOrganisation as DependancesChaine["executerDansOrganisation"],
     lireAdhesion,
     journaliser,
+    verifierDebit: vi.fn(async () => true),
   };
   return { deps, lireSession, executerDansOrganisation, lireAdhesion, journaliser };
 }
@@ -113,6 +114,7 @@ function declaration<
     entree: SCHEMA_VIDE as unknown as E,
     journal: null as J,
     nouvelleAuthentification: false,
+    debit: null,
     executer: vi.fn(async () => {
       etapes.push("service");
       return "fait" as T;
@@ -703,6 +705,7 @@ describe("declarerAction : déclarations incomplètes refusées à la compilatio
           entree: SCHEMA_VIDE,
           journal: null,
           nouvelleAuthentification: false,
+          debit: null,
           executer,
         }),
       () =>
@@ -712,6 +715,7 @@ describe("declarerAction : déclarations incomplètes refusées à la compilatio
           droit: "organisation.membres.voir",
           journal: null,
           nouvelleAuthentification: false,
+          debit: null,
           executer,
         }),
       () =>
@@ -721,6 +725,7 @@ describe("declarerAction : déclarations incomplètes refusées à la compilatio
           droit: "organisation.membres.voir",
           entree: SCHEMA_VIDE,
           nouvelleAuthentification: false,
+          debit: null,
           executer,
         }),
       () =>
@@ -731,6 +736,7 @@ describe("declarerAction : déclarations incomplètes refusées à la compilatio
           // @ts-expect-error action hors de la liste du journal
           journal: "facture.emise",
           nouvelleAuthentification: false,
+          debit: null,
           executer,
         }),
       () =>
@@ -740,6 +746,7 @@ describe("declarerAction : déclarations incomplètes refusées à la compilatio
           droit: "organisation.membres.voir",
           entree: SCHEMA_VIDE,
           journal: null,
+          debit: null,
           executer,
         }),
       () =>
@@ -749,6 +756,7 @@ describe("declarerAction : déclarations incomplètes refusées à la compilatio
           entree: SCHEMA_VIDE,
           journal: null,
           nouvelleAuthentification: false,
+          debit: null,
           executer: async (ctx) => {
             // @ts-expect-error ctx.journaliser n'existe que si journal est déclaré
             await ctx.journaliser({ ressourceId: randomUUID() });
@@ -773,6 +781,7 @@ describe("declarerAction : schéma d'entrée non strict refusé à l'exécution"
         entree,
         journal: null,
         nouvelleAuthentification: false,
+        debit: null,
         executer: async () => "fait",
       });
   }

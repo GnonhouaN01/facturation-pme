@@ -14,6 +14,7 @@ export const demoAgir = declarerAction({
   entree: schema,
   journal: null,
   nouvelleAuthentification: false,
+  debit: null,
   executer: async () => "fait",
 });
 
@@ -23,6 +24,7 @@ export const demoAutre = declarerAction({
   entree: schema,
   journal: null,
   nouvelleAuthentification: false,
+  debit: null,
   executer: async () => "fait",
 });
 
@@ -33,5 +35,6 @@ export const declarationALaMain: DeclarationAction<typeof schema, null, string> 
   entree: schema,
   journal: null,
   nouvelleAuthentification: false,
+  debit: null,
   executer: async () => "fait",
 };

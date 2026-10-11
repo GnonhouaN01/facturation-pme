@@ -253,3 +253,46 @@ describe("inventaire : droits et index", () => {
     }
   });
 });
+
+// 0.5 : tables sans organisation_id, en liste fermée. Les huit tables de
+// Better Auth et le compteur de débit, qui compte aussi des visiteurs
+// anonymes. Une table métier qui oublierait organisation_id échapperait aux
+// contrôles ci-dessus : elle fait échouer celui-ci. Fiche :
+// docs/features/limitation-debit.md, section 7.
+const TABLES_SANS_ORGANISATION = [
+  "account",
+  "compteur_debit",
+  "invitation",
+  "member",
+  "organization",
+  "session",
+  "two_factor",
+  "user",
+  "verification",
+];
+
+describe("inventaire : tables sans organisation_id", () => {
+  test("elles sont exactement TABLES_SANS_ORGANISATION", async () => {
+    const tables = (await db.execute<DroitsCatalogue>(REQUETE_DROITS)).rows;
+
+    expect(tables.length).toBeGreaterThan(0);
+    expect(
+      tables
+        .filter((t) => !t.organisation)
+        .map((t) => t.table)
+        .sort(),
+    ).toEqual([...TABLES_SANS_ORGANISATION].sort());
+  });
+
+  test("compteur_debit : SELECT, INSERT, UPDATE, DELETE, et pas TRUNCATE", async () => {
+    const tables = (await db.execute<DroitsCatalogue>(REQUETE_DROITS)).rows;
+    const t = tables.find((ligne) => ligne.table === "compteur_debit");
+
+    expect(t, "compteur_debit présente").toBeDefined();
+    expect(t?.lecture, "SELECT").toBe(true);
+    expect(t?.insertion, "INSERT").toBe(true);
+    expect(t?.modification, "UPDATE").toBe(true);
+    expect(t?.suppression, "DELETE").toBe(true);
+    expect(t?.vidage, "pas de TRUNCATE").toBe(false);
+  });
+});

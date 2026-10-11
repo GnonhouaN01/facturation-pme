@@ -408,7 +408,7 @@ erDiagram
 - **LIEN_PUBLIC** ne stocke que l'empreinte du jeton. Le jeton lui-même n'existe que dans l'adresse envoyée au client. Même en cas de fuite de la base, les liens ne sont pas utilisables (S-20).
 - **COMPTEUR_REFERENCE** tient le dernier numéro attribué, par organisation, par type de document et par année. C'est la ligne que l'émission verrouille pour garantir une suite sans trou ni doublon (R-03, S-32).
 - **JOURNAL_AUDIT** ne reçoit que des ajouts. Le rôle de base de données utilisé par l'application n'a ni le droit de modifier, ni celui de supprimer, ni celui de vider cette table (`UPDATE`, `DELETE`, `TRUNCATE` retirés ; S-70, T-21). Sa colonne `details` ne contient ni secret ni donnée personnelle : seulement des identifiants, des valeurs énumérées, des nombres et des booléens. **`auteur_id` n'a pas de clé étrangère** : la suppression d'un compte (S-62) ne doit ni être bloquée par ses traces, ni les effacer, ni les modifier ; l'identifiant reste, même s'il ne désigne plus aucun compte. Un index commence par `organisation_id`, suivi de `cree_le`. Fiche : `docs/features/journal-audit.md`.
-- **COMPTEUR_DEBIT** sert à la limitation de débit. Sa clé combine l'action et l'origine, par exemple « lien public, adresse IP » ou « envoi d'email, organisation ». C'est la seule table sans `organisation_id`, car elle compte aussi des visiteurs anonymes.
+- **COMPTEUR_DEBIT** sert à la limitation de débit. Sa clé est le nom de la limite suivi d'une empreinte HMAC-SHA-256 de ce que l'on compte (utilisateur, et plus tard adresse IP ou email) : jamais la valeur en clair. La clé secrète est dérivée de `BETTER_AUTH_SECRET`. Une tentative est comptée par une seule instruction atomique (`INSERT ... ON CONFLICT DO UPDATE`), en fenêtre fixe, avec le temps de la base. C'est, avec les tables de Better Auth, une table sans `organisation_id`, car elle compte aussi des visiteurs anonymes : elle figure dans la liste fermée du test d'inventaire. Seul `src/server/db/debit.ts` y accède (règle ESLint N) ; les lignes expirées sont purgées par la tâche quotidienne. Fiche : `docs/features/limitation-debit.md`.
 
 ### 2.4 Contraintes portées par la base
 
@@ -503,6 +503,7 @@ sequenceDiagram
     C->>C: 1. Verifie l'origine de la requete
     C->>B: 2. Lit la session (Better Auth)
     C->>C: 3. Organisation active presente, format UUID
+    C->>B: 4. Compte la tentative, hors transaction
     C->>B: 5. Ouvre la transaction, fixe l'organisation active
     C->>B: 6. Lit l'adhesion FOR SHARE, role, matrice
     alt Refuse (etapes 1, 3, 6, 8)
@@ -524,7 +525,7 @@ sequenceDiagram
 1. **Origine.** `Origin` obligatoire, égale à l'origine de `BETTER_AUTH_URL` ; `Sec-Fetch-Site`, s'il est présent, vaut `same-origin` (S-81, T-17).
 2. **Identité.** La session est relue en base à chaque requête. Sans session valide : `connexion_requise`.
 3. **Organisation active.** Lue dans la session, jamais dans l'entrée ; absente ou mal formée : refus, avant toute requête.
-4. Réservée à la limitation de débit (0.5).
+4. **Limitation de débit.** Si la déclaration nomme une limite (`debit`), la tentative est comptée pour l'utilisateur de la session, avant l'ouverture de la transaction, par une instruction propre : elle reste comptée même si l'action est annulée ensuite. Au-delà de la limite : `trop_de_requetes`, sans transaction. Si le compteur ne répond pas : refus par erreur. Les lectures des pages n'ont pas de limite (S-84, T-41 ; fiche `docs/features/limitation-debit.md`).
 5. **Contexte.** Toutes les étapes suivantes se déroulent dans `executerDansOrganisation` : l'organisation active est fixée dans la transaction.
 6. **Adhésion et autorisation.** L'adhésion est relue **dans la transaction**, verrouillée `FOR SHARE` : un membre retiré ou rétrogradé est refusé dès la requête suivante, et un retrait attend la fin des actions en cours (S-17, T-52). Le rôle doit être l'un des quatre, et la matrice, qui n'existe qu'à un seul endroit du code, doit l'autoriser (T-50, T-51).
 7. Réservée à la double authentification par rôle (1.4).
@@ -534,7 +535,7 @@ sequenceDiagram
 11. **Trace.** L'écriture au journal fait partie de la même transaction. Une trace déclarée et non écrite annule l'action (S-70, T-20).
 12. La transaction est validée.
 
-**Refus.** Le client reçoit des codes, jamais de texte : `refuse` (origine, organisation active, adhésion, rôle, droit, ressource inexistante ou d'une autre organisation, sans distinction, S-02), `connexion_requise`, `invalide` (chemins des champs seulement), `erreur` (identifiant d'incident, S-85). Le journal technique ne contient jamais le message d'une erreur.
+**Refus.** Le client reçoit des codes, jamais de texte : `refuse` (origine, organisation active, adhésion, rôle, droit, ressource inexistante ou d'une autre organisation, sans distinction, S-02), `connexion_requise`, `trop_de_requetes` (limite de débit atteinte, sans délai ni compte), `invalide` (chemins des champs seulement), `erreur` (identifiant d'incident, S-85). Le journal technique ne contient jamais le message d'une erreur.
 
 Écart avec la première version de ce diagramme : l'adhésion n'est plus lue avant la transaction, mais dans celle-ci (étape 6), et la validation de l'entrée vient après l'autorisation.
 

@@ -91,6 +91,7 @@ Regrouper les pages publiques par lien dans un dossier à part rend visible, d'u
 src/server/
 ├── db/                      Couche d'accès aux données
 │   ├── client.ts            Connexion, transaction avec organisation active
+│   ├── debit.ts             Compteur de débit : incrément atomique, purge (seul accès à compteur_debit)
 │   ├── outils-test/         Outillage des tests avec base (tests seulement)
 │   ├── schema/              Description des tables
 │   │   ├── auth.ts          Tables de Better Auth (fichier généré)
@@ -127,6 +128,10 @@ src/server/
 │   ├── certification/       Interface, simulateur
 │   ├── pdf/                 Génération des documents
 │   └── email/               Interface, envoi réel, interception locale
+├── debit/
+│   ├── limites.ts           Les limites de débit, source unique
+│   ├── cle.ts               Clé d'un compteur : nom de la limite et empreinte HMAC
+│   └── debit.ts             verifierDebit, purgerCompteurs
 ├── journal/
 │   ├── actions.ts           Liste fermée des actions, schémas stricts des détails
 │   └── audit.ts             journaliser : seule écriture au journal d'audit
@@ -139,6 +144,7 @@ src/server/
 - **`schema/`** décrit les tables. Un fichier par domaine, pour que chaque fiche de fonctionnalité touche un fichier précis. `auth.ts` est produit par l'outil de Better Auth et ne se modifie pas à la main. `isolation.ts` est le modèle unique de la règle de sécurité au niveau des lignes (`colonneOrganisation()`, `regleIsolation()`) ; `technique.ts` contient la table témoin `temoin_isolation`. Aucun fichier de test dans `schema/`, que drizzle-kit charge en entier.
 - **`outils-test/`** contient l'outillage des tests avec base : création et nettoyage d'organisations, vérification générique d'isolation, garde-fou contre toute base non marquée. Il ne s'importe que depuis un fichier de test (règle ESLint).
 - **`requetes/`** contient les fonctions qui lisent et écrivent. Ce sont les seules à utiliser Drizzle. `requetes/journal.ts` insère une entrée du journal d'audit sans la valider : il ne s'importe que depuis `server/journal/audit.ts` (règle ESLint). `requetes/adhesions.ts` lit le rôle de l'utilisateur dans l'organisation de la transaction, verrouillé en partage (`FOR SHARE`) jusqu'à la fin de l'action.
+- **`debit.ts`** compte une tentative par une seule instruction atomique sur `compteur_debit`, table technique sans `organisation_id`, hors de toute transaction d'organisation, et purge les lignes expirées. C'est le seul fichier qui importe `compteurDebit`, et il ne s'importe que depuis `server/debit/` (règle ESLint N).
 - **`executerDansOrganisation`** ne s'importe que dans `server/actions/action.ts`, dans `db/` et dans les tests (règle ESLint) : un service n'ouvre jamais de transaction, il reçoit celle de la chaîne.
 
 ### 3.2 `autorisation/` : un seul fichier pour les droits
@@ -149,7 +155,7 @@ src/server/
 
 `action.ts` contient la fonction commune décrite dans DESIGN.md, section 3.2. Elle enchaîne, dans l'ordre : origine de la requête, session, organisation active, puis, dans la transaction de cette organisation, adhésion et rôle, matrice, validation des données, service et trace au journal. Une action déclarée à travers elle ne peut pas atteindre un service sans avoir passé ces contrôles.
 
-- Une action se **déclare** dans `actions/<domaine>.ts` par `declarerAction` (droit, schéma d'entrée, action du journal, nouvelle authentification), et figure dans `registre.ts`.
+- Une action se **déclare** dans `actions/<domaine>.ts` par `declarerAction` (droit, schéma d'entrée, action du journal, nouvelle authentification, limite de débit ou `null`), et figure dans `registre.ts`.
 - Elle s'**expose** dans `src/app/(app)/<domaine>/actions.ts`, fichier `"use server"`, uniquement sous la forme `export const x = exposer(declaration)`. Une règle ESLint et un test d'inventaire refusent toute autre forme. `exposer` refuse une déclaration qui n'est pas passée par `declarerAction`, et `executerChaine` ne s'importe que dans `exposer.ts` : une action ne joint un service que par une fonction exposée.
 - Le service reçoit un contexte (utilisateur, organisation, rôle, transaction) et écrit au journal par `ctx.journaliser`, lié à l'action déclarée et à l'auteur de la session.
 
@@ -174,6 +180,12 @@ Le seul fichier qui lit `process.env`. Aucun autre fichier ne lit directement un
 - **`actions.ts`** tient la liste fermée des actions journalisables, leur type de ressource et le schéma strict de leurs détails (identifiants, valeurs énumérées, entiers, booléens ; aucun texte libre).
 - **`audit.ts`** fournit `journaliser(tx, entree)`, **seule façon d'écrire au journal**. Elle reçoit la `TransactionOrganisation` de l'action, valide l'entrée, puis l'insère : l'action et sa trace sont validées ou annulées ensemble, et l'organisation de l'entrée est celle de la transaction. Fiche : `docs/features/journal-audit.md`.
 - `journal_audit` est une table en ajout seul : le rôle de l'application n'y a ni `UPDATE`, ni `DELETE`, ni `TRUNCATE`.
+
+### 3.8 `debit/` : la limitation de débit
+
+- **`limites.ts`** est la source unique des limites : nom, maximum, fenêtre, ce que la clé désigne.
+- **`cle.ts`** calcule la clé d'un compteur : le nom de la limite, puis une empreinte HMAC-SHA-256 du nom et de la valeur, avec une clé secrète dérivée de `BETTER_AUTH_SECRET`. La valeur comptée n'est jamais stockée en clair.
+- **`debit.ts`** fournit `verifierDebit(nom, valeur)`, appelée par la chaîne à l'étape 4, et `purgerCompteurs()`, pour la tâche quotidienne. `verifierDebit` ne s'appelle jamais pendant une transaction ouverte. Fiche : `docs/features/limitation-debit.md`.
 
 **Règle : aucun fichier hors de `src/server/db/` n'importe `drizzle-orm`.** C'est l'exigence S-86.
 
@@ -243,9 +255,10 @@ Ces règles seront vérifiées automatiquement par l'analyse du code, en phase 9
 | Dossier | Peut importer | Ne peut pas importer |
 |---|---|---|
 | `app/`, `components/` | `components/`, `schemas/`, `lib/`, `textes/`, et `server/` uniquement par les actions et les services | `server/db/` |
-| `server/actions/` | `server/auth/`, `server/autorisation/`, `server/db/client.ts` (`executerDansOrganisation`, dans `action.ts` seulement), `server/db/requetes/adhesions.ts`, `server/journal/` (`journaliser`, dans `action.ts` seulement), `server/services/`, `schemas/` ; `next/headers` dans `exposer.ts` seulement | Les autres fichiers de `server/db/requetes/` |
+| `server/actions/` | `server/auth/`, `server/autorisation/`, `server/debit/` (`verifierDebit` et les types, dans `action.ts`), `server/db/client.ts` (`executerDansOrganisation`, dans `action.ts` seulement), `server/db/requetes/adhesions.ts`, `server/journal/` (`journaliser`, dans `action.ts` seulement), `server/services/`, `schemas/` ; `next/headers` dans `exposer.ts` seulement | Les autres fichiers de `server/db/requetes/` |
 | `server/services/` | `server/db/` (sauf `executerDansOrganisation`), `server/modules/`, `lib/`, `schemas/` | `app/`, `components/`, `server/journal/` (le journal s'écrit par `ctx.journaliser`) |
 | `server/journal/` | `server/db/` (le type `TransactionOrganisation` et `requetes/journal.ts`), `zod` | Tout le reste du projet |
+| `server/debit/` | `server/db/debit.ts`, `server/env.ts` | Tout le reste du projet |
 | `server/db/` | `drizzle-orm`, `pg`, `server/env.ts` | Tout le reste de `server/` |
 | `schemas/`, `lib/`, `textes/` | Rien du projet, sauf entre eux | `server/`, `app/`, `components/` |
 
@@ -258,6 +271,8 @@ Règles de la chaîne de contrôles (fonctionnalité 0.4, vérifiées par ESLint
 - Dans `server/actions/`, `next/headers` ne s'importe que dans `exposer.ts`.
 - `executerChaine` ne s'importe que dans `server/actions/exposer.ts` et les tests.
 - `creerChaine` ne s'importe que dans les tests.
+
+Règle du compteur de débit (fonctionnalité 0.5, règle N de `docs/features/limitation-debit.md`, section 7) : `compteurDebit` ne s'importe que dans `server/db/debit.ts` et les tests, et `server/db/debit.ts` ne s'importe que dans `server/debit/` et les tests. Le chargement dynamique de `db/debit` et de `schema/technique` est refusé.
 - Aucun commentaire `eslint-disable` n'a d'effet dans `src/` : une exception passe par `eslint.config.mjs`.
 
 Le test d'inventaire (`src/server/actions/inventaire.test.ts`) vérifie en plus, à l'exécution, que chaque export de `src/app/**/actions.ts` vient d'`exposer`, avec une déclaration marquée par `declarerAction` et inscrite dans `registre.ts`, et que chaque `route.ts` figure sur la liste admise.
@@ -296,6 +311,7 @@ Les dossiers et fichiers de ce document se créent au fur et à mesure, avec la 
 | Une requête à la base | `src/server/db/requetes/<domaine>.ts` |
 | Une table | `src/server/db/schema/<domaine>.ts`, puis une migration générée |
 | Un droit | `src/server/autorisation/matrice.ts`, après mise à jour de THREATS.md |
+| Une limite de débit | `src/server/debit/limites.ts`, puis `debit` dans la déclaration de l'action |
 | Une règle de validation | `src/schemas/<domaine>.ts` |
 | Un calcul réutilisable | `src/lib/` |
 | Un texte affiché | `src/textes/` |

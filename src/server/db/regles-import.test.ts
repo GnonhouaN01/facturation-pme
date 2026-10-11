@@ -594,3 +594,99 @@ describe("aucun commentaire ne suspend une règle dans src/", { timeout: 60_000 
     expect(await refus(IMPORT_INTERDIT_SEUL, "src/server/services/essai.ts")).toHaveLength(1);
   });
 });
+// N. Le compteur de débit : compteurDebit ne s'importe que dans db/debit.ts et
+// les tests ; db/debit.ts ne s'importe que dans server/debit/ et les tests.
+// Fiche : docs/features/limitation-debit.md, section 7.
+const COMPTEUR_TABLE = `import { compteurDebit } from "./schema/technique";
+export const f = compteurDebit;
+`;
+const COMPTEUR_TABLE_REQUETES = `import { compteurDebit } from "../schema/technique";
+export const f = compteurDebit;
+`;
+const COMPTEUR_TABLE_ALIAS = `import { compteurDebit } from "@/server/db/schema/technique";
+export const f = compteurDebit;
+`;
+const COMPTEUR_TABLE_ESPACE = `import * as technique from "./schema/technique";
+export const f = technique;
+`;
+const COMPTEUR_TABLE_REEXPORT = `export { compteurDebit } from "./schema/technique";
+`;
+const AUTRE_TABLE_TECHNIQUE = `import { journalAudit } from "../schema/technique";
+export const f = journalAudit;
+`;
+const COMPTEUR_ALIAS = `import { compteur } from "@/server/db/debit";
+export const f = compteur;
+`;
+const COMPTEUR_RELATIF_ACTIONS = `import { compteur } from "../db/debit";
+export const f = compteur;
+`;
+const COMPTEUR_RELATIF_DEBIT = `import { compteur } from "../db/debit";
+export const f = compteur;
+`;
+const COMPTEUR_RELATIF_REQUETES = `import { compteur } from "../debit";
+export const f = compteur;
+`;
+const COMPTEUR_DYNAMIQUE = `export const f = () => import("@/server/db/debit");
+`;
+const COMPTEUR_REEXPORT = `export { compteur } from "@/server/db/debit";
+`;
+const VERIFIER_DEBIT = `import { verifierDebit } from "../debit/debit";
+export const f = verifierDebit;
+`;
+
+describe(
+  "N. compteurDebit seulement dans db/debit.ts ; db/debit.ts seulement dans server/debit/",
+  { timeout: 60_000 },
+  () => {
+    test.each([
+      ["compteurDebit dans un autre fichier de db/", COMPTEUR_TABLE, "src/server/db/essai.ts"],
+      [
+        "compteurDebit dans une requête",
+        COMPTEUR_TABLE_REQUETES,
+        "src/server/db/requetes/essai.ts",
+      ],
+      ["compteurDebit dans un service", COMPTEUR_TABLE_ALIAS, "src/server/services/essai.ts"],
+      ["schema/technique par espace de noms", COMPTEUR_TABLE_ESPACE, "src/server/db/essai.ts"],
+      ["réexportation de compteurDebit", COMPTEUR_TABLE_REEXPORT, "src/server/db/essai.ts"],
+      [
+        "db/debit.ts dans actions/action.ts",
+        COMPTEUR_RELATIF_ACTIONS,
+        "src/server/actions/action.ts",
+      ],
+      ["db/debit.ts dans un service", COMPTEUR_ALIAS, "src/server/services/essai.ts"],
+      [
+        "db/debit.ts dans une requête",
+        COMPTEUR_RELATIF_REQUETES,
+        "src/server/db/requetes/essai.ts",
+      ],
+      ["db/debit.ts dans une page", COMPTEUR_ALIAS, "src/app/essai/page.tsx"],
+      ["import dynamique de db/debit.ts", COMPTEUR_DYNAMIQUE, "src/server/services/essai.ts"],
+      ["réexportation de db/debit.ts", COMPTEUR_REEXPORT, "src/server/services/essai.ts"],
+    ])("%s : refusé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).not.toEqual([]);
+    });
+
+    test.each([
+      ["compteurDebit dans db/debit.ts", COMPTEUR_TABLE, "src/server/db/debit.ts"],
+      [
+        "compteurDebit dans un test d'intégration de db/",
+        COMPTEUR_TABLE,
+        "src/server/db/essai.integration.test.ts",
+      ],
+      [
+        "une autre table de schema/technique dans une requête",
+        AUTRE_TABLE_TECHNIQUE,
+        "src/server/db/requetes/essai.ts",
+      ],
+      ["db/debit.ts dans server/debit/", COMPTEUR_RELATIF_DEBIT, "src/server/debit/debit.ts"],
+      [
+        "db/debit.ts dans un test de server/debit/",
+        COMPTEUR_RELATIF_DEBIT,
+        "src/server/debit/essai.test.ts",
+      ],
+      ["verifierDebit dans actions/action.ts", VERIFIER_DEBIT, "src/server/actions/action.ts"],
+    ])("%s : autorisé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).toEqual([]);
+    });
+  },
+);

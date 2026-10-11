@@ -49,6 +49,7 @@ function demoLire() {
     entree: z.strictObject({}),
     journal: null,
     nouvelleAuthentification: false,
+    debit: null,
     executer: async (ctx) => ({ organisationId: ctx.organisationId, role: ctx.role }),
   });
 }
@@ -62,6 +63,7 @@ function demoEcrire() {
     entree: z.strictObject({ valeur: z.string().max(100) }),
     journal: "organisation.parametres_modifies",
     nouvelleAuthentification: false,
+    debit: null,
     executer: async (ctx, entree) => {
       const [ligne] = await ctx.tx
         .insert(temoinIsolation)
@@ -83,6 +85,7 @@ function demoReservee() {
     entree: z.strictObject({}),
     journal: null,
     nouvelleAuthentification: false,
+    debit: null,
     executer: async (ctx) => ctx.role,
   });
 }
@@ -95,6 +98,7 @@ function demoRessource() {
     entree: z.strictObject({ id: z.uuid() }),
     journal: null,
     nouvelleAuthentification: false,
+    debit: null,
     executer: async (ctx, entree) => {
       const [ligne] = await ctx.tx
         .select({ valeur: temoinIsolation.valeur })
@@ -382,6 +386,7 @@ describe("T-52 : membre retiré ou rétrogradé", () => {
       entree: z.strictObject({}),
       journal: null,
       nouvelleAuthentification: false,
+      debit: null,
       executer: async () => {
         signalerEntree();
         await liberation;

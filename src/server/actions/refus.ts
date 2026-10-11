@@ -14,6 +14,7 @@ export type Resultat<T> =
   | { ok: true; donnees: T }
   | { ok: false; raison: "connexion_requise" }
   | { ok: false; raison: "refuse" }
+  | { ok: false; raison: "trop_de_requetes" }
   | { ok: false; raison: "invalide"; champs: string[] }
   | { ok: false; raison: "erreur"; incident: string };
 
@@ -35,6 +36,12 @@ export class RefusUniforme extends Error {
 
 export function refus(): Refus {
   return { ok: false, raison: "refuse" };
+}
+
+// Limite de débit atteinte (étape 4) : ni délai, ni compte, ni nom de la
+// limite. Fiche : docs/features/limitation-debit.md, section 10.
+export function tropDeRequetes(): Refus {
+  return { ok: false, raison: "trop_de_requetes" };
 }
 
 export function connexionRequise(): Refus {
