@@ -26,6 +26,7 @@ function champs(): DeclarationAction<typeof SCHEMA, null, string> {
     entree: SCHEMA,
     journal: null,
     nouvelleAuthentification: false,
+    debit: null,
     executer: async () => "fait",
   };
 }

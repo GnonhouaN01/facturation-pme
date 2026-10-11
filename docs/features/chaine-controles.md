@@ -1,6 +1,6 @@
 # Fonctionnalité : chaîne de contrôles et matrice des droits
 
-Statut : en cours (PR 3 prête ; « livrée » une fois la CI verte)
+Statut : livrée
 
 Jalon 0, fonctionnalité 0.4 de `docs/PLAN.md`. Taille L.
 
@@ -539,7 +539,7 @@ Cohérence de `main` entre les PR : jusqu'à la PR 3, `STRUCTURE.md` section 7 i
 - [x] `DESIGN.md` section 3.2, `STRUCTURE.md` sections 3.2, 3.3 et 7, `CLAUDE.md` règle 5 sont à jour.
 - [x] Tout nouveau fichier de `src/server/` commence par `import "server-only";`.
 - [x] Aucune dépendance ajoutée : `package-lock.json` inchangé.
-- [x] `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:integration` (sur `dev` et en CI) passent. Sur `dev`, constaté le 2026-10-10 ; en CI, à constater sur la PR.
+- [x] `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:integration` (sur `dev` et en CI) passent. Sur `dev`, constaté le 2026-10-10 ; en CI, constaté sur les PR #29, #30 et #31, fusionnées.
 
 ## Tests à écrire
 

@@ -6,6 +6,8 @@ import { lireSession } from "../auth/session";
 import { DROITS, perimetre, peut, ROLES, type Droit, type Role } from "../autorisation/matrice";
 import { executerDansOrganisation, type TransactionOrganisation } from "../db/client";
 import { lireAdhesion } from "../db/requetes/adhesions";
+import { verifierDebit } from "../debit/debit";
+import type { NomLimite } from "../debit/limites";
 import { env } from "../env";
 import { ACTIONS_JOURNAL, type ActionJournal } from "../journal/actions";
 import { journaliser, type EntreeJournal } from "../journal/audit";
@@ -49,6 +51,9 @@ export type DeclarationAction<E extends SchemaEntree, J extends ActionJournal | 
   entree: E;
   journal: J;
   nouvelleAuthentification: boolean;
+  // Limite de débit de l'étape 4, ou null : champ obligatoire, sans défaut.
+  // Fiche : docs/features/limitation-debit.md, section 10.
+  debit: NomLimite | null;
   executer: (ctx: Contexte<J>, entree: z.output<E>) => Promise<T>;
 };
 
@@ -73,6 +78,7 @@ export type DependancesChaine = {
   ) => Promise<T>;
   lireAdhesion: (tx: TransactionOrganisation, utilisateurId: string) => Promise<AdhesionLue | null>;
   journaliser: (tx: TransactionOrganisation, entree: EntreeJournal) => Promise<void>;
+  verifierDebit: (nom: NomLimite, valeur: string) => Promise<boolean>;
 };
 
 // Contexte d'une lecture par une page : sans trace (section 3.2, décision 9).
@@ -300,6 +306,7 @@ const chaine = creerChaine({
   executerDansOrganisation,
   lireAdhesion,
   journaliser,
+  verifierDebit,
 });
 
 // Chaîne liée aux vraies dépendances : seul chemin d'une action vers un

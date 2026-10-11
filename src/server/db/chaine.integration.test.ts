@@ -57,6 +57,7 @@ function demoLire() {
     entree: z.strictObject({}),
     journal: null,
     nouvelleAuthentification: false,
+    debit: null,
     executer: async (ctx) => ({
       utilisateurId: ctx.utilisateurId,
       organisationId: ctx.organisationId,
@@ -77,6 +78,7 @@ function demoEcrire() {
     entree: z.strictObject({ valeur: z.string().max(100) }),
     journal: "organisation.parametres_modifies",
     nouvelleAuthentification: false,
+    debit: null,
     executer: async (ctx, entree) => {
       const [ligne] = await ctx.tx
         .insert(temoinIsolation)
@@ -97,6 +99,7 @@ function demoOubliTrace() {
     entree: z.strictObject({ valeur: z.string().max(100) }),
     journal: "organisation.parametres_modifies",
     nouvelleAuthentification: false,
+    debit: null,
     executer: async (ctx, entree) => {
       await ctx.tx
         .insert(temoinIsolation)
@@ -205,6 +208,7 @@ describe("demo.sensible : nouvelle authentification fermée en 0.4", () => {
       entree: z.strictObject({}),
       journal: null,
       nouvelleAuthentification: true,
+      debit: null,
       executer,
     });
 

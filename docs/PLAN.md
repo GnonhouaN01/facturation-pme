@@ -53,12 +53,14 @@ Aucun écran métier. Ce jalon construit ce dont toutes les fonctionnalités aur
 
 | # | Fonctionnalité | Cas d'utilisation | Exigences et menaces | Taille |
 |---|---|---|---|---|
-| 1.1 | Inscription et vérification de l'email. Avant toute exposition de `/api/auth` : fermeture des points d'entrée natifs du module organisation de Better Auth (`/organization/*`), qui contournent la chaîne de contrôles. Origine acceptée sur `preview` (adresse de branche de Vercel) et réglage équivalent de Better Auth | UC-01 | F-001, S-10, S-11, S-15, T-07, T-55 | M |
+| 1.1 | Inscription et vérification de l'email. Avant toute exposition de `/api/auth` : fermeture des points d'entrée natifs du module organisation de Better Auth (`/organization/*`), qui contournent la chaîne de contrôles. Origine acceptée sur `preview` (adresse de branche de Vercel) et réglage équivalent de Better Auth. Limitation de débit de Better Auth branchée sur le compteur de la 0.5 (`customStorage`), activée explicitement ; lecture de l'adresse IP selon la règle de `docs/features/limitation-debit.md` (section 9), vérifiée sur `preview` avec un en-tête forgé | UC-01 | F-001, S-10, S-11, S-15, T-07, T-55 | M |
 | 1.2 | Connexion et déconnexion | UC-02 | F-002, S-11, S-82, T-01, T-03 | M |
 | 1.3 | Réinitialisation du mot de passe | UC-03 | F-002, S-15, S-17, T-04 | M |
 | 1.4 | Double authentification et codes de secours | UC-04 | F-003, S-12, S-13, T-02, T-06 | M |
 | 1.5 | Sessions actives | UC-05 | F-004, S-17 | S |
 | 1.6 | Nouvelle authentification avant une action sensible | UC-07, UC-10, UC-13, UC-30 | S-14, T-12, T-44 | M |
+
+La tâche quotidienne (8.3) est avancée au jalon 1 : sa route et la purge des compteurs de débit (`purgerCompteurs`, livrée par la 0.5) sont mises en service avant la 1.1, première limitation par adresse IP ou par email (`docs/features/limitation-debit.md`, décision 6). Le reste de la 8.3 s'y ajoute ensuite.
 
 La 1.6 livre le mécanisme qu'attend la chaîne de contrôles : jusque-là, toute action déclarée avec `nouvelleAuthentification: true` est refusée (`docs/features/chaine-controles.md`). Elle précède donc les fonctionnalités 2.2, 2.4, 2.5 et 7.2. La 1.4 active, dans la chaîne, l'exigence de double authentification par rôle (S-12, S-13) et écrit le test de T-02.
 
@@ -140,7 +142,7 @@ La 1.6 livre le mécanisme qu'attend la chaîne de contrôles : jusque-là, tout
 |---|---|---|---|
 | 8.1 | Suivi des erreurs | Service de suivi, sans donnée personnelle, identifiant d'incident | S |
 | 8.2 | Sauvegarde | Sauvegarde hebdomadaire automatique, restauration réalisée et documentée | M |
-| 8.3 | Tâche quotidienne | Purges, signalement des relances | S |
+| 8.3 | Tâche quotidienne | Avancée au jalon 1 pour la purge des compteurs de débit (voir jalon 1). Ici : purges restantes, signalement des relances | S |
 | 8.4 | Test d'intrusion | Passage d'un outil libre sur l'application, rapport et corrections | M |
 | 8.5 | Vitrine | README, schéma d'architecture, compte de démonstration, vidéo, SECURITY.md | M |
 

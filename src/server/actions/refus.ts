@@ -14,6 +14,7 @@ export type Resultat<T> =
   | { ok: true; donnees: T }
   | { ok: false; raison: "connexion_requise" }
   | { ok: false; raison: "refuse" }
+  | { ok: false; raison: "trop_de_requetes" }
   | { ok: false; raison: "invalide"; champs: string[] }
   | { ok: false; raison: "erreur"; incident: string };
 

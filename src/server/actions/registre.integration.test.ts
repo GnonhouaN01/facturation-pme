@@ -108,6 +108,7 @@ function demo(nom: string, droit: DeclarationQuelconque["droit"], introuvable = 
     entree: SCHEMA,
     journal: null,
     nouvelleAuthentification: false,
+    debit: null,
     executer: async (ctx) => (introuvable ? ctx.introuvable() : ctx.role),
   }) as DeclarationQuelconque;
 }
