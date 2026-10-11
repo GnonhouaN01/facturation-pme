@@ -21,6 +21,7 @@ const EXPOSER = "src/server/actions/exposer.ts";
 const APP_ACTIONS = "src/app/**/actions.ts";
 const DEBIT = "src/server/debit/**";
 const DB_DEBIT = "src/server/db/debit.ts";
+const PROXY = "src/proxy.ts";
 // Écrans : pages et composants, où s'affiche le texte (règle R). Les
 // composants de ui/, générés par shadcn, ne portent pas de texte affiché.
 const ECRANS = ["src/app/**", "src/components/**"];
@@ -65,6 +66,21 @@ const IMPORTS_B = {
 };
 const PROPRIETES_B = [{ object: "process", property: "env", message: MESSAGE_B }];
 const SYNTAXE_B = chargementsDynamiques("/^(node:)?process$/", MESSAGE_B);
+// Exception de la 0.6 (décision 11) : src/proxy.ts lit process.env.NODE_ENV,
+// et cette seule propriété, pour choisir la politique de développement.
+// no-restricted-properties ne sait pas exclure une propriété de process.env :
+// pour ce fichier, il est remplacé par ces sélecteurs. Refusés : toute autre
+// propriété, l'accès entre crochets, process.env employé seul (copie,
+// décomposition, argument), process["env"] et const { env } = process.
+const MESSAGE_B_PROXY =
+  "Dans src/proxy.ts, seul process.env.NODE_ENV se lit ; process.env ne se lit que dans src/server/env.ts (CLAUDE.md, règle 12).";
+const SYNTAXE_B_PROXY = [
+  "MemberExpression[object.object.name='process'][object.property.name='env']:not([computed=false][property.name='NODE_ENV'])",
+  ":not(MemberExpression) > MemberExpression[object.name='process'][property.name='env']",
+  "MemberExpression > MemberExpression.property[object.name='process'][property.name='env']",
+  "MemberExpression[object.name='process'][property.value='env']",
+  "VariableDeclarator[init.name='process'] > ObjectPattern > Property[key.name='env']",
+].map((selector) => ({ selector, message: MESSAGE_B_PROXY }));
 
 // C. Le rôle propriétaire n'apparaît nulle part dans l'application.
 const SYNTAXE_C = [
@@ -357,6 +373,17 @@ const SYNTAXE_R = [
   `${ATTRIBUTS_TEXTE} > JSXExpressionContainer > TemplateLiteral`,
 ].map((selector) => ({ selector, message: MESSAGE_R }));
 
+// S. src/proxy.ts n'importe pas server/env.ts : une variable invalide fait
+// échouer register, puis chaque requête (docs/features/socle-interface.md,
+// sections 4.3, 5.5 et 7, règle S). Par alias, chemin relatif, chargement
+// dynamique ou réexportation. Un import indirect n'est pas vu.
+const MESSAGE_S =
+  "src/proxy.ts n'importe pas server/env.ts : une variable invalide ferait échouer chaque requête (docs/features/socle-interface.md, section 7, règle S).";
+const IMPORTS_S = {
+  patterns: [{ regex: "(^|/)server/env(\\.ts)?$", message: MESSAGE_S }],
+};
+const SYNTAXE_S = chargementsDynamiques("/(^|\\u002F)server\\u002Fenv(\\.ts)?$/", MESSAGE_S);
+
 const restreindreImports = (...listes) => [
   "error",
   {
@@ -367,8 +394,31 @@ const restreindreImports = (...listes) => [
 
 const restreindreSyntaxe = (...listes) => ["error", ...listes.flat()];
 
-// Restrictions de syntaxe du cas général de src/ : le bloc général et les
-// blocs des écrans.
+// Restrictions d'import du cas général de src/ : le bloc général et celui de
+// src/proxy.ts. Une interdiction ajoutée ici s'applique aux deux.
+const IMPORTS_GENERAUX = [
+  IMPORTS_A,
+  IMPORTS_B,
+  IMPORTS_D,
+  IMPORTS_E,
+  IMPORTS_F,
+  IMPORTS_I,
+  IMPORTS_J,
+  IMPORTS_M,
+  IMPORTS_N_TABLE,
+  IMPORTS_N_COMPTEUR,
+];
+
+// Propriétés interdites du cas général de src/. Celles de src/proxy.ts en
+// dérivent : une interdiction ajoutée ici s'applique aussi au proxy. Seule
+// l'entrée process.env y est retirée, remplacée par SYNTAXE_B_PROXY.
+const PROPRIETES_GENERALES = [...PROPRIETES_B];
+const PROPRIETES_PROXY = PROPRIETES_GENERALES.filter(
+  (entree) => !(entree.object === "process" && entree.property === "env"),
+);
+
+// Restrictions de syntaxe du cas général de src/ : le bloc général, les
+// blocs des écrans et celui de src/proxy.ts.
 const SYNTAXE_GENERALE = [
   SYNTAXE_O,
   SYNTAXE_P,
@@ -399,20 +449,17 @@ const eslintConfig = defineConfig([
   // Imports statiques.
   {
     files: [SRC],
-    ignores: [DB, ENV, TESTS, CONFIG_AUTH, JOURNAL_AUDIT, ACTIONS, DEBIT],
+    ignores: [DB, ENV, TESTS, CONFIG_AUTH, JOURNAL_AUDIT, ACTIONS, DEBIT, PROXY],
     rules: {
-      "no-restricted-imports": restreindreImports(
-        IMPORTS_A,
-        IMPORTS_B,
-        IMPORTS_D,
-        IMPORTS_E,
-        IMPORTS_F,
-        IMPORTS_I,
-        IMPORTS_J,
-        IMPORTS_M,
-        IMPORTS_N_TABLE,
-        IMPORTS_N_COMPTEUR,
-      ),
+      "no-restricted-imports": restreindreImports(...IMPORTS_GENERAUX),
+    },
+  },
+  // src/proxy.ts : les listes du bloc général (IMPORTS_GENERAUX), plus S. Un
+  // second bloc pour ce fichier remplacerait celui-ci au lieu de s'y ajouter.
+  {
+    files: [PROXY],
+    rules: {
+      "no-restricted-imports": restreindreImports(...IMPORTS_GENERAUX, IMPORTS_S),
     },
   },
   {
@@ -570,17 +617,29 @@ const eslintConfig = defineConfig([
     files: [TESTS_DB, OUTILS_TEST],
     rules: { "no-restricted-imports": restreindreImports(IMPORTS_B) },
   },
-  // Lecture de process.env (B).
+  // Propriétés interdites, dont la lecture de process.env (B).
   {
     files: [SRC],
-    ignores: [ENV],
-    rules: { "no-restricted-properties": ["error", ...PROPRIETES_B] },
+    ignores: [ENV, PROXY],
+    rules: { "no-restricted-properties": ["error", ...PROPRIETES_GENERALES] },
+  },
+  // src/proxy.ts : les mêmes, moins process.env, remplacé par SYNTAXE_B_PROXY.
+  {
+    files: [PROXY],
+    rules: { "no-restricted-properties": ["error", ...PROPRIETES_PROXY] },
   },
   // Syntaxe interdite. Les écrans ont leurs blocs, à cause de la règle R.
   {
     files: [SRC],
-    ignores: [DB, ENV, TESTS, ACTIONS, APP_ACTIONS, ...ECRANS],
+    ignores: [DB, ENV, TESTS, ACTIONS, APP_ACTIONS, PROXY, ...ECRANS],
     rules: { "no-restricted-syntax": restreindreSyntaxe(...SYNTAXE_GENERALE) },
+  },
+  // src/proxy.ts : la syntaxe générale, l'exception de B et S.
+  {
+    files: [PROXY],
+    rules: {
+      "no-restricted-syntax": restreindreSyntaxe(...SYNTAXE_GENERALE, SYNTAXE_B_PROXY, SYNTAXE_S),
+    },
   },
   {
     files: ECRANS,

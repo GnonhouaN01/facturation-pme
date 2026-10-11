@@ -173,7 +173,7 @@ Le seul fichier qui lit `process.env`. Aucun autre fichier ne lit directement un
 
 - `env-schema.ts`, à côté, contient le schéma Zod et la fonction pure `validerEnvironnement`. Elle reçoit les variables en paramètre, ce qui permet de la tester sans toucher à `process.env`. En cas d'erreur, son message nomme chaque variable fautive et la raison, jamais la valeur.
 - `env.ts` appelle cette fonction sur `process.env` à son chargement et exporte l'objet `env`, seule source des variables pour le reste de `src/server/`.
-- `src/instrumentation.ts` importe `env.ts` dans sa fonction `register`, que Next.js appelle au lancement du serveur : une variable invalide est consignée dès le démarrage. Le serveur ne s'arrête pas pour autant : tout module qui importe `env.ts` échoue au chargement, mais les pages statiques, qui ne lisent aucune variable, restent servies.
+- `src/instrumentation.ts` importe `env.ts` dans sa fonction `register`, que Next.js appelle au lancement du serveur : une variable invalide est consignée dès le démarrage. Constaté le 2026-10-12 avec Next.js 16.3.8 (`next start`) : le processus continue de tourner et annonce « Ready », mais `register` lève et **chaque requête échoue ensuite**, `/` et les pages statiques comprises : statut 500, corps `Internal Server Error`, sans message ni pile dans la réponse. Le message, qui nomme la variable fautive, et la pile ne figurent que dans le journal du serveur. Une configuration refusée empêche donc tout service ; `register` n'attrape pas cette erreur, volontairement (`docs/features/socle-interface.md`, section 4.3, décision 17).
 
 ### 3.7 `journal/` : l'écriture au journal d'audit
 
@@ -255,11 +255,12 @@ Ces règles seront vérifiées automatiquement par l'analyse du code, en phase 9
 | Dossier | Peut importer | Ne peut pas importer |
 |---|---|---|
 | `app/`, `components/` | `components/`, `schemas/`, `lib/`, `textes/`, et `server/` uniquement par les actions, les services et `server/autorisation/navigation.ts` (entrées de navigation filtrées par la matrice, fonctionnalité 0.6) | `server/db/` |
-| `server/actions/` | `server/auth/`, `server/autorisation/`, `server/debit/` (`verifierDebit` et les types, dans `action.ts`), `server/db/client.ts` (`executerDansOrganisation`, dans `action.ts` seulement), `server/db/requetes/adhesions.ts`, `server/journal/` (`journaliser`, dans `action.ts` seulement), `server/services/`, `schemas/` ; `next/headers` dans `exposer.ts` seulement | Les autres fichiers de `server/db/requetes/` |
+| `server/actions/` | `server/auth/`, `server/autorisation/`, `server/debit/` (`verifierDebit` et les types, dans `action.ts`), `server/db/client.ts` (`executerDansOrganisation`, dans `action.ts` seulement), `server/db/requetes/adhesions.ts`, `server/journal/` (`journaliser`, dans `action.ts` seulement), `server/services/`, `schemas/`, `server/erreurs/code-postgres.ts` (dans `refus.ts`) ; `next/headers` dans `exposer.ts` seulement | Les autres fichiers de `server/db/requetes/` |
 | `server/services/` | `server/db/` (sauf `executerDansOrganisation`), `server/modules/`, `lib/`, `schemas/` | `app/`, `components/`, `server/journal/` (le journal s'écrit par `ctx.journaliser`) |
 | `server/journal/` | `server/db/` (le type `TransactionOrganisation` et `requetes/journal.ts`), `zod` | Tout le reste du projet |
 | `server/debit/` | `server/db/debit.ts`, `server/env.ts` | Tout le reste du projet |
 | `server/db/` | `drizzle-orm`, `pg`, `server/env.ts` | Tout le reste de `server/` |
+| `server/erreurs/` | Rien du projet, sauf entre eux (fonctionnalité 0.6 : `onRequestError` ne charge pas `env.ts`) | Tout le reste du projet |
 | `schemas/`, `lib/`, `textes/` | Rien du projet, sauf entre eux | `server/`, `app/`, `components/` |
 
 Règles de la chaîne de contrôles (fonctionnalité 0.4, vérifiées par ESLint, règles G à M de `docs/features/chaine-controles.md`, section 7) :

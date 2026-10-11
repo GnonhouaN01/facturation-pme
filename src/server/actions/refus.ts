@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { unstable_rethrow } from "next/navigation";
 
 import { OrganisationActiveInvalide } from "../db/client";
+import { codePostgres } from "../erreurs/code-postgres";
 
 // Modèle de résultat renvoyé au client, et traduction des erreurs. Des codes,
 // jamais de texte ni de valeur reçue (S-02, S-54, S-85). Fiche :
@@ -51,21 +52,6 @@ export function connexionRequise(): Refus {
 // Refus de la règle d'isolation, et clé étrangère vers une ressource
 // invisible : traduits comme une ressource introuvable (section 6.2).
 const CODES_REFUS = new Set(["42501", "23503"]);
-
-// Code PostgreSQL de l'erreur, en suivant la chaîne des cause : Drizzle
-// enveloppe l'erreur de pg. Seul un code de cinq caractères est retenu, pour
-// qu'aucune autre valeur ne passe au journal technique.
-function codePostgres(erreur: unknown): string | undefined {
-  let courante: unknown = erreur;
-  for (let profondeur = 0; profondeur < 10 && courante; profondeur += 1) {
-    if (typeof courante === "object" && "code" in courante) {
-      const { code } = courante as { code: unknown };
-      if (typeof code === "string" && /^[0-9A-Z]{5}$/.test(code)) return code;
-    }
-    courante = typeof courante === "object" ? (courante as { cause?: unknown }).cause : undefined;
-  }
-  return undefined;
-}
 
 // Classe de l'erreur, jamais son message : un message PostgreSQL peut contenir
 // des valeurs (S-54, T-35).

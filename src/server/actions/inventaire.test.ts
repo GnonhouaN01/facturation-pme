@@ -209,3 +209,73 @@ describe("inventaire de démonstration (tests/fixtures/inventaire/)", () => {
     await expect(demo("absent")).rejects.toThrow();
   });
 });
+
+// Un seul fichier de proxy : src/proxy.ts. Next.js en cherche un à la racine
+// du projet ou de src/, sous le nom proxy ou middleware ; un second fichier,
+// ou un fichier ailleurs que prévu, poserait une autre politique, ou aucune.
+// Fiche : docs/features/socle-interface.md, section 7.
+const RACINE = fileURLToPath(new URL("../../../", import.meta.url));
+const SRC = fileURLToPath(new URL("../../", import.meta.url));
+const PROXY = /^(proxy|middleware)\.(ts|tsx|js|jsx|mjs|mts|cjs|cts)$/;
+const PROXY_ADMIS = "src/proxy.ts";
+
+// chemins : relatifs à la racine du projet, séparés par des « / ».
+function problemesDeProxy(chemins: readonly string[]): string[] {
+  const proxys = chemins.filter((chemin) => PROXY.test(chemin.split("/").at(-1) ?? ""));
+  const problemes = proxys
+    .filter((chemin) => chemin !== PROXY_ADMIS)
+    .map((chemin) => `${chemin} : fichier de proxy hors de ${PROXY_ADMIS}`);
+  if (!proxys.includes(PROXY_ADMIS)) problemes.push(`${PROXY_ADMIS} : absent`);
+  return problemes;
+}
+
+// Fichiers de la racine du projet (sans descendre), et tout src/.
+function cheminsDuProjet(): string[] {
+  const racine = readdirSync(RACINE, { withFileTypes: true })
+    .filter((entree) => entree.isFile())
+    .map((entree) => entree.name);
+  const src = fichiers(SRC).map((chemin) => `src/${versPosix(relative(SRC, chemin))}`);
+  return [...racine, ...src];
+}
+
+describe("fichier de proxy", () => {
+  test("dépôt : src/proxy.ts existe et il est le seul", () => {
+    const chemins = cheminsDuProjet();
+
+    expect(chemins).toContain("package.json");
+    expect(chemins).toContain("src/app/layout.tsx");
+    expect(problemesDeProxy(chemins)).toEqual([]);
+  });
+
+  test.each([
+    ["src/proxy.ts seul", ["src/proxy.ts", "src/proxy.test.ts"], []],
+    ["absent", ["src/app/page.tsx"], ["src/proxy.ts : absent"]],
+    [
+      "middleware.ts à la racine, en plus",
+      ["src/proxy.ts", "middleware.ts"],
+      ["middleware.ts : fichier de proxy hors de src/proxy.ts"],
+    ],
+    [
+      "src/middleware.ts, en plus",
+      ["src/proxy.ts", "src/middleware.ts"],
+      ["src/middleware.ts : fichier de proxy hors de src/proxy.ts"],
+    ],
+    [
+      "proxy.ts à la racine au lieu de src/",
+      ["proxy.ts"],
+      ["proxy.ts : fichier de proxy hors de src/proxy.ts", "src/proxy.ts : absent"],
+    ],
+    [
+      "src/proxy.js, en plus",
+      ["src/proxy.ts", "src/proxy.js"],
+      ["src/proxy.js : fichier de proxy hors de src/proxy.ts"],
+    ],
+    [
+      "un proxy.ts dans un dossier de src/",
+      ["src/proxy.ts", "src/app/proxy.ts"],
+      ["src/app/proxy.ts : fichier de proxy hors de src/proxy.ts"],
+    ],
+  ])("démonstration, %s", (_nom, chemins, attendus) => {
+    expect(problemesDeProxy(chemins)).toEqual(attendus);
+  });
+});
