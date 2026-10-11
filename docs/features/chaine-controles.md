@@ -1,6 +1,6 @@
 # Fonctionnalité : chaîne de contrôles et matrice des droits
 
-Statut : validée
+Statut : en cours (PR 3 prête ; « livrée » une fois la CI verte)
 
 Jalon 0, fonctionnalité 0.4 de `docs/PLAN.md`. Taille L.
 
@@ -276,8 +276,10 @@ Les deux mécanismes, complémentaires :
 - H. La directive `"use server"` n'apparaît qu'en tête de fichier, et seulement dans `src/app/**/actions.ts` (pas d'action serveur en ligne dans un composant).
 - I. `executerDansOrganisation` ne s'importe que dans `src/server/actions/action.ts`, `src/server/db/` et les tests. Un service ne peut donc ni ouvrir une transaction, ni en imbriquer une seconde : il reçoit `ctx.tx` (report de `acces-donnees.md`).
 - J. `journaliser` ne s'importe que dans `src/server/actions/action.ts` et les tests : un service écrit au journal par `ctx.journaliser`, avec l'auteur de la session (report de `journal-audit.md`). Change `STRUCTURE.md` section 7, qui autorisait `server/services/` à importer `server/journal/`.
-- K. La chaîne `app.organisation_id` (littéral ou gabarit) n'apparaît que dans `src/server/db/client.ts` et `src/server/db/schema/isolation.ts` : un `set_config` vers une autre organisation par du code qui dispose de `tx` devient visible (report de `acces-donnees.md`).
+- K. La chaîne `app.organisation_id` (littéral ou gabarit) n'apparaît que dans `src/server/db/client.ts`, `src/server/db/schema/isolation.ts` et les fichiers de test : un `set_config` vers une autre organisation par du code qui dispose de `tx` devient visible (report de `acces-donnees.md`). Les tests sont exceptés (décision 16) : six tests de `src/server/db/` lisent ou forcent le réglage pour éprouver l'isolation, et `regles-import.test.ts` contient la chaîne. La règle ne voit pas une chaîne construite par concaténation (limite acceptée, décision 18).
 - L. `src/server/actions/` n'importe pas `next/headers` sauf `exposer.ts` : la chaîne reste testable sans Next.js.
+- M. `executerChaine` ne s'importe que dans `src/server/actions/exposer.ts` et les fichiers de test (décision 17) : une action ne s'exécute que par une fonction exposée, donc avec une déclaration marquée. `creerChaine` ne s'importe que dans les fichiers de test (décision 19) : elle construit une chaîne aux dépendances de son choix. `declarerAction`, `etablirContexte` et les types restent importables. Le chargement dynamique de `actions/action` est refusé en entier.
+- Aucun commentaire ne suspend ni ne modifie une règle dans `src/` (`linterOptions.noInlineConfig`, décision 19) : `eslint-disable`, `eslint-enable` et `/* eslint ... */` y sont sans effet. Une exception passe par `eslint.config.mjs`, donc par une PR.
 
 Test d'inventaire, `src/server/actions/inventaire.test.ts` (sans base) :
 
@@ -462,6 +464,30 @@ Nouvel outil, `src/server/db/outils-test/membres.ts` :
 - Matrice des droits : créée (section 8.2), 33 droits. Aucune action réelle en 0.4.
 - Tables créées ou modifiées : aucune. `member` est lue (`FOR SHARE`), sans changement de schéma.
 
+## Limites connues
+
+État à la livraison de la PR 3 (mis à jour le 2026-10-11). Ce que les garde-fous ne ferment pas, ou pas encore.
+
+**Contournements possibles par du code écrit à dessein**, que seule la revue attrape :
+
+- **Règle K** : une chaîne construite par concaténation (`"app." + "organisation_id"`) lui échappe (décision 18).
+- **Règle G** vérifie le nom `exposer`, pas son origine (`import { autre as exposer }` passe). Le test d'inventaire le rattrape, sauf si la fonction porte une marque d'`exposer` recopiée à la main : ce symbole se lit par `Object.getOwnPropertySymbols`, contrairement à la marque des déclarations, vérifiée par un `WeakSet`.
+- **Tables de Better Auth sans règle d'isolation** (`member`, `user`, `session`, `organization`, `invitation`) : une fonction de `requetes/` peut, avec `ctx.tx`, lire les membres d'une autre organisation (RR-8 de `THREATS.md`).
+- **Un service qui avale le refus** (`try { ctx.introuvable() } catch {}`) et continue.
+- **Une modification de `eslint.config.mjs`** qui retire ou élargit une règle : c'est désormais le seul moyen de suspendre une règle dans `src/` (les commentaires y sont sans effet). Elle passe par une PR, et `regles-import.test.ts` échoue si une règle n'attrape plus ses cas refusés.
+
+**Choix humains que rien ne vérifie** : un droit trop large déclaré pour une écriture, `journal: null` sur une action qui devrait laisser une trace, `nouvelleAuthentification: false` sur une action sensible. Le test par action et par rôle vérifie que la réponse suit le droit déclaré, pas que ce droit est le bon ; il n'a pas de témoin « accepté à tort » (décision 18).
+
+**Points d'entrée hors du périmètre de l'inventaire** :
+
+- Les points d'entrée natifs `/organization/*` de Better Auth (T-55), dès que `/api/auth` sera exposé : la 1.1 les ferme. Aujourd'hui la route n'existe pas.
+- Les pages : aucune n'existe ; l'adaptateur sur `etablirContexte` est livré par la 0.6, et d'ici là rien n'oblige une page à l'utiliser. Une page ne peut toutefois ni ouvrir de transaction (règles E et I) ni appeler la chaîne (règle M).
+- Les autres points d'entrée de Next.js (`proxy.ts`, ancien `middleware.ts`) ne sont pas inventoriés ; aucun n'existe.
+
+**Contrôles absents ou provisoires, par conception** : limitation de débit (0.5) ; double authentification par rôle (1.4) ; nouvelle authentification (1.6), refusée par défaut d'ici là ; filtrage par portefeuille (7.4), un Commercial voyant toute l'organisation sur les droits à portée « portefeuille » jusque-là ; organisation active non vidée dans les sessions d'un membre retiré (2.4), sessions que la chaîne refuse déjà.
+
+**Non testé** : l'écart de durée entre un refus par rôle et une recherche de ressource (section 6.2).
+
 ## Dépendances nouvelles
 
 Aucune (règle 10). `testUtils` fait partie de `better-auth` 1.7.7 ; `next/headers`, `next/navigation` (`unstable_rethrow`) font partie de `next` ; `zod` est déjà déclaré.
@@ -478,9 +504,9 @@ La fonctionnalité est de taille L. Retenu (décision 14) : une fiche, trois PR 
 |---|---|---|---|
 | 1. Matrice | `matrice.ts` (rôles, 33 droits, `peut`, `perimetre`), `matrice.test.ts` ; documents mis à jour à la validation (`THREATS.md`, `PLAN.md`, `STRUCTURE.md`, cette fiche, `journal-audit.md`) | La matrice du code est identique, case par case, au tableau de `THREATS.md` ; toute divergence future fait échouer la CI ; les rôles hors liste n'ont aucun droit | Non |
 | 2. Chaîne | `action.ts` (dont `etablirContexte`), `origine.ts`, `refus.ts`, `exposer.ts`, `session.ts`, `requetes/adhesions.ts`, `outils-test/membres.ts`, `optionsAuth`, tests unitaires (dont `exposer.test.ts` et `config.test.ts`), d'intégration et d'attaque ; `DESIGN.md` section 3.2 ; correction du test d'horodatage de `schema-journal.integration.test.ts` | L'ordre des contrôles ; le refus uniforme (ressource d'une autre organisation et ressource inexistante indiscernables) ; l'origine (T-17) ; le membre retiré ou rétrogradé refusé (T-52) ; la trace obligatoire (T-20) ; l'auteur pris dans la session ; sur de vraies sessions et la vraie base | Oui |
-| 3. Garde-fous | Règles ESLint G à L, marque des déclarations par `declarerAction`, refusée absente par `exposer` et l'inventaire (section 7), `registre.ts`, `inventaire.test.ts`, `registre.integration.test.ts`, `CLAUDE.md` règle 5 | Aucune action ne contourne la chaîne : toute action exposée est déclarée, inscrite au registre et testée pour chaque rôle (T-50, T-72) ; un service n'ouvre pas de transaction et n'écrit pas au journal lui-même | Oui |
+| 3. Garde-fous | Règles ESLint G à M, marque des déclarations par `declarerAction`, refusée absente par `exposer` et l'inventaire (section 7), `registre.ts`, `inventaire.test.ts`, `registre.integration.test.ts`, `CLAUDE.md` règle 5 | Aucune action ne contourne la chaîne : toute action exposée est déclarée, inscrite au registre et testée pour chaque rôle (T-50, T-72) ; un service n'ouvre pas de transaction et n'écrit pas au journal lui-même | Oui |
 
-Cohérence de `main` entre les PR : `STRUCTURE.md` section 7 indique que les règles de la chaîne sont vérifiées par ESLint « à partir de sa troisième PR ». Aucune action n'existe avant la PR 3, donc aucune ne peut contourner la chaîne entre-temps.
+Cohérence de `main` entre les PR : jusqu'à la PR 3, `STRUCTURE.md` section 7 indiquait que les règles de la chaîne seraient vérifiées par ESLint « à partir de sa troisième PR ». Aucune action n'existait avant la PR 3, donc aucune ne pouvait contourner la chaîne entre-temps. La mention est retirée par la PR 3.
 
 ## Critères d'acceptation
 
@@ -506,14 +532,14 @@ Cohérence de `main` entre les PR : `STRUCTURE.md` section 7 indique que les rè
 - [x] Une erreur inattendue du service renvoie `erreur` et un incident ; le journal technique ne contient ni le message de l'erreur ni aucune valeur de l'entrée.
 - [x] `redirect()` levé dans un service traverse la chaîne.
 - [x] `testUtils` est absent de la configuration de production de Better Auth (`optionsAuth`, `auth`, contexte de `auth`) et n'est mentionné dans `src/` que par les tests et `outils-test/` ; `config.test.ts` échoue si on l'y ajoute (vérifié en l'ajoutant temporairement).
-- [ ] Les règles ESLint G à L refusent chacune un exemple fautif et acceptent l'exemple correct (`regles-import.test.ts`).
-- [ ] Le test d'inventaire échoue sur un fichier `actions.ts` de démonstration dont un export n'est pas passé par `exposer`, sur une déclaration absente du registre, sur un `route.ts` hors liste ; il passe sur le dépôt.
-- [ ] Une déclaration écrite à la main, sans `declarerAction` : `exposer` la refuse (exception), et le test d'inventaire échoue sur un registre de démonstration qui en contient une (section 7, « Déclarations marquées »).
-- [ ] Le test par action et par rôle échoue sur un registre de démonstration contenant une action sans cas.
-- [ ] `DESIGN.md` section 3.2, `STRUCTURE.md` sections 3.2, 3.3 et 7, `CLAUDE.md` règle 5 sont à jour.
-- [ ] Tout nouveau fichier de `src/server/` commence par `import "server-only";`.
-- [ ] Aucune dépendance ajoutée : `package-lock.json` inchangé.
-- [ ] `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:integration` (sur `dev` et en CI) passent.
+- [x] Les règles ESLint G à M refusent chacune un exemple fautif et acceptent l'exemple correct (`regles-import.test.ts`).
+- [x] Le test d'inventaire échoue sur un fichier `actions.ts` de démonstration dont un export n'est pas passé par `exposer`, sur une déclaration absente du registre, sur un `route.ts` hors liste ; il passe sur le dépôt.
+- [x] Une déclaration écrite à la main, sans `declarerAction` : `exposer` la refuse (exception), et le test d'inventaire échoue sur un registre de démonstration qui en contient une (section 7, « Déclarations marquées »).
+- [x] Le test par action et par rôle échoue sur un registre de démonstration contenant une action sans cas.
+- [x] `DESIGN.md` section 3.2, `STRUCTURE.md` sections 3.2, 3.3 et 7, `CLAUDE.md` règle 5 sont à jour.
+- [x] Tout nouveau fichier de `src/server/` commence par `import "server-only";`.
+- [x] Aucune dépendance ajoutée : `package-lock.json` inchangé.
+- [x] `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:integration` (sur `dev` et en CI) passent. Sur `dev`, constaté le 2026-10-10 ; en CI, à constater sur la PR.
 
 ## Tests à écrire
 
@@ -553,11 +579,13 @@ Tous écrits avant le code et vus en échec.
 
 - [x] `testUtils` absent de `optionsAuth.plugins` et de `auth.options.plugins`, aucune aide `test` dans le contexte de `auth`, aucune mention de `testUtils` dans `src/` hors des tests et de `outils-test/` (section 10). Le test vérifie aussi qu'il reconnaît le module quand il est présent.
 
-`src/server/actions/inventaire.test.ts` : section 7, dont le refus d'une déclaration non marquée.
+`src/server/actions/inventaire.test.ts` : section 7, dont le refus d'une déclaration non marquée. Exemples de démonstration dans `tests/fixtures/inventaire/`, hors de `src/` : ils ne créent aucun point d'entrée.
+
+`src/server/actions/marque.test.ts` : la marque posée par `declarerAction`, absente d'un objet écrit à la main, d'une copie et de toute autre valeur ; symbole hors du registre global.
 
 `src/server/actions/exposer.test.ts` (ajout de la PR 3) : une déclaration non marquée est refusée par `exposer` ; les tests existants passent leurs déclarations par `declarerAction`.
 
-`src/server/db/regles-import.test.ts` : règles G à L.
+`src/server/db/regles-import.test.ts` : règles G à M, dont `creerChaine` ; commentaires `eslint-disable` sans effet dans `src/`.
 
 ### Tests d'intégration
 
@@ -599,7 +627,8 @@ Créés :
 
 - `src/server/autorisation/matrice.ts`, `matrice.test.ts`
 - `src/server/actions/action.ts`, `refus.ts`, `origine.ts`, `exposer.ts`, `registre.ts`
-- `src/server/actions/action.test.ts`, `origine.attaque.test.ts`, `exposer.test.ts`, `inventaire.test.ts`, `registre.integration.test.ts`
+- `src/server/actions/action.test.ts`, `origine.attaque.test.ts`, `exposer.test.ts`, `inventaire.test.ts`, `marque.test.ts`, `registre.integration.test.ts`
+- `tests/fixtures/inventaire/` : exemples de démonstration du test d'inventaire
 - `src/server/auth/session.ts`, `src/server/auth/config.test.ts`
 - `src/server/db/requetes/adhesions.ts`
 - `src/server/db/outils-test/membres.ts`
@@ -610,7 +639,7 @@ Modifiés :
 - `src/server/auth/config.ts` : export de `optionsAuth` (section 10)
 - `src/server/db/schema-journal.integration.test.ts` : test d'horodatage corrigé (`journal-audit.md`, « Notes de l'implémentation »)
 - `src/server/db/outils-test/organisations.ts` : nettoyage des utilisateurs avant les organisations, si `membres.ts` ne le porte pas seul
-- `eslint.config.mjs` : règles G à L ; `src/server/db/regles-import.test.ts`
+- `eslint.config.mjs` : règles G à M ; `src/server/db/regles-import.test.ts`
 - `docs/DESIGN.md` section 3.2 : adhésion lue dans la transaction, modèle de refus
 - `docs/STRUCTURE.md` sections 3.2, 3.3, 7 (services sans `server/journal/` ; `server/actions/` importe `server/db/client` et `server/journal/`)
 - `CLAUDE.md` règle 5 : forme `declarerAction` / `exposer`, et le registre
@@ -672,6 +701,13 @@ Prises à la validation de la fiche, le 2026-10-09.
 14. **Découpage.** Trois PR sous une fiche, à condition qu'après chacune `main` reste cohérent et la CI verte.
 15. **Points d'entrée natifs de Better Auth.** Confirmé : la fiche 1.1 les ferme avant toute exposition de `/api/auth` (inscrit dans `PLAN.md`, ligne 1.1), et toute opération d'organisation passe par la chaîne. Menace T-55 ajoutée à `THREATS.md`, avec sa parade.
 
+Prises pendant la PR 3, le 2026-10-10 (en plus des déclarations marquées, section 7) :
+
+16. **Règle K.** Les fichiers de test sont exceptés.
+17. **Règle M.** `executerChaine` ne s'importe que dans `exposer.ts` et les tests.
+18. **Limites acceptées.** Pas de témoin « accepté à tort » dans le test par action et par rôle : la chaîne et le test lisent le même droit dans la déclaration, l'écart ne se provoque pas sans fausser la chaîne. La règle K reste contournable par concaténation.
+19. **Garde-fous ajoutés le 2026-10-11.** `linterOptions.noInlineConfig` pour `src/` : aucun commentaire ne suspend une règle. `creerChaine` ajoutée à la règle M, importable par les seuls tests. Constaté avant : aucun commentaire de configuration ESLint dans `src/`, et `creerChaine` importée par `action.test.ts` seul.
+
 Vérifié avant la phase rouge, par un essai jetable supprimé ensuite : la forme `export const x = exposer(...)` dans un fichier `"use server"` (section 3.2) et l'import de ces fichiers sous Vitest (section 7).
 
 ## Notes de l'implémentation
@@ -706,3 +742,14 @@ Outil `membres.ts` : `creerMembre(options)` et `nettoyerMembres()`. Les tests ap
 - Preuves par modification temporaire, annulée ensuite : sans `.for("share")` dans `lireAdhesion`, le test de concurrence échoue (la suppression aboutit pendant l'action) ; avec `testUtils()` dans `optionsAuth`, les quatre contrôles de `config.test.ts` échouent.
 - Constaté : le parcours des sources de `config.test.ts` refuse aussi le mot `testUtils` dans un commentaire de `config.ts`. Le commentaire parle du « module de test de Better Auth ».
 
+
+### PR 3 : notes de l'implémentation
+
+- Marque des déclarations : `declarerAction` pose sur sa copie figée un symbole privé, non énumérable (une décomposition ou `Object.assign` ne le recopie pas), et l'inscrit dans un `WeakSet` du module. `estDeclaration` ne lit que le `WeakSet` : le symbole se lit par `Object.getOwnPropertySymbols` et pourrait être recopié à la main, l'appartenance au `WeakSet` ne se falsifie pas. `exposer` lève une exception au chargement du module sur une déclaration non marquée.
+- `eslint.config.mjs` : les blocs restent disjoints pour chaque règle (`no-restricted-imports`, `no-restricted-syntax`). Nouveaux ensembles : `src/server/actions/action.ts`, `src/server/actions/exposer.ts`, le reste de `src/server/actions/`, `src/app/**/actions.ts`, `src/server/db/client.ts` et `src/server/db/schema/isolation.ts` ; l'outillage de test et les tests de `db/` ont désormais chacun leur bloc de syntaxe. Un test de `outils-test/` relève des deux blocs : le dernier, celui des tests de `db/`, s'applique.
+- Règle G : sélecteurs sur `Program:has(> ExpressionStatement[directive='use server'])` (esquery 1.7.0). Un export de type (`export type`, `export interface`), effacé à la compilation, reste permis.
+- Règle H : la directive est refusée partout, sauf en tête de `src/app/**/actions.ts`, où seule la forme dans une fonction (`BlockStatement > ...`) est refusée.
+- Règles I, J, M : `no-restricted-imports` avec `importNames`, donc seul le nom visé est refusé (`TransactionOrganisation`, `OrganisationActiveInvalide`, `declarerAction`, `etablirContexte` restent importables), mais un import d'espace de noms (`import * as`) du module est refusé. Le chargement dynamique du module est refusé en entier, comme pour A, D et F : une page ne peut donc pas charger `etablirContexte` par `import()`.
+- Échappement : dans les expressions régulières d'esquery, la barre oblique s'écrit `\\u002F` dans le source (deux barres inverses), comme pour A, D et F. Constaté : une seule barre inverse rend une barre oblique nue, qui termine l'expression (`Invalid regular expression: /(^|/: Unterminated group`), et toutes les règles tombent.
+- Rien à modifier dans `docs/DESIGN.md` section 3.2 : elle décrit déjà la déclaration par `declarerAction`, l'exposition par `exposer` et le passage obligé par `executerChaine`.
+- `noInlineConfig` vise `src/` seul. Hors de `src/` (`scripts/`, fichiers de configuration), les commentaires restent permis : aucune règle d'architecture ne s'y applique. Avec le réglage, un commentaire `eslint-disable` dans `src/` produit un avertissement (« has no effect because you have 'noInlineConfig' setting ») et la règle visée s'applique.

@@ -1,0 +1,211 @@
+import { readdirSync } from "node:fs";
+import { join, relative, sep } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+import { describe, expect, test, vi } from "vitest";
+
+import { declarerAction, estDeclaration } from "./action";
+import { declarationExposee } from "./exposer";
+import { REGISTRE } from "./registre";
+
+// Aucune action ne contourne la chaîne (T-50, T-72) : chaque export de chaque
+// src/app/**/actions.ts est une fonction d'exposer, dont la déclaration est
+// marquée par declarerAction et inscrite au registre ; chaque route.ts est
+// sur la liste admise. La même fonction parcourt le dépôt, qui doit passer,
+// et des exemples de démonstration (tests/fixtures/inventaire/), qui doivent
+// échouer. Fiche : docs/features/chaine-controles.md, section 7.
+
+// Les fichiers importés chargent action.ts, donc env.ts et client.ts :
+// valeurs factices, aucune connexion n'est ouverte.
+vi.mock("../env", () => ({
+  env: {
+    DATABASE_URL: "postgresql://app_facturation:factice@localhost:5432/factice",
+    BETTER_AUTH_SECRET: "secret-factice-de-trente-deux-caracteres",
+    BETTER_AUTH_URL: "https://facturation.exemple.ci",
+  },
+}));
+
+const APP = fileURLToPath(new URL("../../app/", import.meta.url));
+const DEMO = fileURLToPath(new URL("../../../tests/fixtures/inventaire/", import.meta.url));
+
+// Liste fermée des gestionnaires de route, chacun avec sa fiche. Aucun
+// n'existe en 0.4. Chemin du dossier sous src/app/, séparé par des « / ».
+const ROUTES_ADMISES: Readonly<Record<string, string>> = {
+  "api/auth/[...all]": "PLAN.md 1.1 : exposition de /api/auth, après fermeture de /organization/*",
+  "api/taches/quotidienne": "PLAN.md 8.3 : tâche quotidienne, avec son propre contrôle",
+};
+
+const ACTIONS = /^actions\.(ts|tsx|js|jsx|mjs|mts)$/;
+const ROUTE = /^route\.(ts|tsx|js|jsx|mjs|mts)$/;
+
+type Inventaire = { parcourus: string[]; problemes: string[] };
+
+function fichiers(dossier: string): string[] {
+  return readdirSync(dossier, { recursive: true, withFileTypes: true })
+    .filter((entree) => entree.isFile())
+    .map((entree) => join(entree.parentPath, entree.name));
+}
+
+function versPosix(chemin: string): string {
+  return chemin.split(sep).join("/");
+}
+
+// Problèmes du registre seul : déclaration non marquée, nom en double.
+function problemesDuRegistre(registre: readonly unknown[]): string[] {
+  const problemes: string[] = [];
+  const vus = new Set<string>();
+  registre.forEach((declaration, rang) => {
+    if (!estDeclaration(declaration)) {
+      problemes.push(`registre[${rang}] : déclaration non marquée par declarerAction`);
+      return;
+    }
+    if (vus.has(declaration.nom)) problemes.push(`registre : nom en double ${declaration.nom}`);
+    vus.add(declaration.nom);
+  });
+  return problemes;
+}
+
+// Parcourt racine (un dossier app/), importe chaque actions.ts et vérifie
+// chaque export ; vérifie chaque route.ts contre la liste admise. Lève si le
+// dossier n'existe pas : un parcours vide ne passe pas pour un succès.
+async function inventorier(
+  racine: string,
+  registre: readonly unknown[],
+  routesAdmises: Readonly<Record<string, string>> = ROUTES_ADMISES,
+): Promise<Inventaire> {
+  const parcourus = fichiers(racine).map((chemin) => versPosix(relative(racine, chemin)));
+  const problemes = problemesDuRegistre(registre);
+
+  for (const chemin of parcourus) {
+    const morceaux = chemin.split("/");
+    const nom = morceaux.at(-1) ?? "";
+    const dossier = morceaux.slice(0, -1).join("/");
+
+    if (ROUTE.test(nom) && !Object.hasOwn(routesAdmises, dossier)) {
+      problemes.push(`${chemin} : route hors de la liste admise`);
+    }
+
+    if (!ACTIONS.test(nom)) continue;
+    let charge: Record<string, unknown>;
+    try {
+      charge = (await import(pathToFileURL(join(racine, chemin)).href)) as Record<string, unknown>;
+    } catch {
+      // Une déclaration non marquée fait lever exposer au chargement.
+      problemes.push(`${chemin} : chargement refusé`);
+      continue;
+    }
+    for (const [exporte, valeur] of Object.entries(charge)) {
+      const declaration = declarationExposee(valeur);
+      if (declaration === undefined) {
+        problemes.push(`${chemin} : ${exporte} n'est pas passé par exposer`);
+      } else if (!estDeclaration(declaration)) {
+        problemes.push(`${chemin} : ${exporte} porte une déclaration non marquée`);
+      } else if (!registre.includes(declaration)) {
+        problemes.push(`${chemin} : ${exporte} est absent du registre`);
+      }
+    }
+  }
+
+  return { parcourus, problemes };
+}
+
+describe("inventaire du dépôt", () => {
+  test("src/app/ : aucun problème, et le parcours a bien eu lieu", async () => {
+    const { parcourus, problemes } = await inventorier(APP, REGISTRE);
+
+    expect(parcourus).toContain("layout.tsx");
+    expect(parcourus).toContain("page.tsx");
+    expect(problemes).toEqual([]);
+  });
+
+  test("le registre : déclarations marquées, noms uniques", () => {
+    expect(problemesDuRegistre(REGISTRE)).toEqual([]);
+  });
+
+  test("chaque route admise cite sa fiche", () => {
+    for (const [route, fiche] of Object.entries(ROUTES_ADMISES)) {
+      expect(fiche, route).toMatch(/^PLAN\.md \d+\.\d+ : /);
+    }
+  });
+});
+
+describe("inventaire de démonstration (tests/fixtures/inventaire/)", () => {
+  async function demo(cas: string, registre: readonly unknown[] = []) {
+    return inventorier(join(DEMO, cas), registre);
+  }
+
+  test("action exposée, déclaration marquée et inscrite au registre : aucun problème", async () => {
+    const { demoAgir } = await import("../../../tests/fixtures/inventaire/declarations");
+
+    const { parcourus, problemes } = await demo("correcte", [demoAgir]);
+
+    expect(parcourus).toEqual(["essai/actions.ts"]);
+    expect(problemes).toEqual([]);
+  });
+
+  test("la même action, absente du registre : refusée", async () => {
+    expect((await demo("correcte")).problemes).toEqual([
+      "essai/actions.ts : agir est absent du registre",
+    ]);
+  });
+
+  test("action exposée hors du registre (une autre y figure) : refusée", async () => {
+    const { demoAgir } = await import("../../../tests/fixtures/inventaire/declarations");
+
+    expect((await demo("hors-registre", [demoAgir])).problemes).toEqual([
+      "essai/actions.ts : autre est absent du registre",
+    ]);
+  });
+
+  test("export async function, sans exposer : refusé", async () => {
+    expect((await demo("export-brut")).problemes).toEqual([
+      "essai/actions.ts : agirSansChaine n'est pas passé par exposer",
+    ]);
+  });
+
+  test("export d'une valeur qui n'est pas une action : refusé", async () => {
+    expect((await demo("valeur-exportee")).problemes).toEqual([
+      "essai/actions.ts : reglage n'est pas passé par exposer",
+    ]);
+  });
+
+  test("déclaration écrite à la main, exposée : refusée", async () => {
+    const { problemes } = await demo("non-marquee");
+
+    expect(problemes).toHaveLength(1);
+    expect(problemes[0]).toMatch(
+      /^essai\/actions\.ts : (chargement refusé|aLaMain porte une déclaration non marquée)$/,
+    );
+  });
+
+  test("route.ts hors de la liste admise : refusé", async () => {
+    expect((await demo("route-hors-liste")).problemes).toEqual([
+      "api/autre/route.ts : route hors de la liste admise",
+    ]);
+  });
+
+  test("route.ts de la liste admise : accepté", async () => {
+    expect((await demo("route-admise")).problemes).toEqual([]);
+  });
+
+  test("registre avec une déclaration écrite à la main : refusé", async () => {
+    const { declarationALaMain } = await import("../../../tests/fixtures/inventaire/declarations");
+
+    expect((await demo("vide", [declarationALaMain])).problemes).toEqual([
+      "registre[0] : déclaration non marquée par declarerAction",
+    ]);
+  });
+
+  test("registre avec deux déclarations de même nom : refusé", async () => {
+    const { demoAgir } = await import("../../../tests/fixtures/inventaire/declarations");
+    const homonyme = declarerAction({ ...demoAgir });
+
+    expect((await demo("vide", [demoAgir, homonyme])).problemes).toEqual([
+      "registre : nom en double demo.inventaire_agir",
+    ]);
+  });
+
+  test("dossier absent : lève, au lieu de passer à vide", async () => {
+    await expect(demo("absent")).rejects.toThrow();
+  });
+});

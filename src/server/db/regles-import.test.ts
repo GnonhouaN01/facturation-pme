@@ -96,7 +96,7 @@ describe("db ne s'importe que dans auth/config.ts et db/", { timeout: 60_000 }, 
   test.each([
     ["auth/config.ts", DB_RELATIF_AUTH, "src/server/auth/config.ts"],
     ["requête de db/", DB_RELATIF_REQUETES, "src/server/db/requetes/essai.ts"],
-    ["executerDansOrganisation depuis un service", EXECUTER, "src/server/services/essai.ts"],
+    ["executerDansOrganisation depuis actions/action.ts", EXECUTER, "src/server/actions/action.ts"],
   ])("%s : autorisé", async (_nom, code, fichier) => {
     expect(await refus(code, fichier)).toEqual([]);
   });
@@ -140,3 +140,457 @@ describe(
     });
   },
 );
+
+// 0.4 : la chaîne de contrôles ne se contourne pas (règles G à L). Fiche :
+// docs/features/chaine-controles.md, section 7.
+
+const ACTION_EXPOSEE = `"use server";
+import { exposer } from "@/server/actions/exposer";
+import { demo } from "@/server/actions/demo";
+export const agir = exposer(demo);
+`;
+const ACTION_FONCTION = `"use server";
+export async function agir() {
+  return 1;
+}
+`;
+const ACTION_DEFAUT = `"use server";
+export default async function agir() {
+  return 1;
+}
+`;
+const ACTION_FLECHE = `"use server";
+export const agir = async () => 1;
+`;
+const ACTION_AUTRE_APPEL = `"use server";
+import { envelopper } from "@/server/actions/autre";
+import { demo } from "@/server/actions/demo";
+export const agir = envelopper(demo);
+`;
+const ACTION_LISTE = `"use server";
+const agir = async () => 1;
+export { agir };
+`;
+const ACTION_REEXPORT = `"use server";
+export { agir } from "./autre";
+`;
+const ACTION_TOUT = `"use server";
+export * from "./autre";
+`;
+const ACTION_LET = `"use server";
+import { exposer } from "@/server/actions/exposer";
+import { demo } from "@/server/actions/demo";
+export let agir = exposer(demo);
+`;
+const ACTION_DECLARATIONS_MULTIPLES = `"use server";
+import { exposer } from "@/server/actions/exposer";
+import { demo } from "@/server/actions/demo";
+export const agir = exposer(demo),
+  autre = async () => 1;
+`;
+const SANS_DIRECTIVE = `export async function utilitaire() {
+  return 1;
+}
+`;
+
+describe('G. un fichier "use server" n\'exporte que exposer(...)', { timeout: 60_000 }, () => {
+  test.each([
+    ["export async function", ACTION_FONCTION],
+    ["export default", ACTION_DEFAUT],
+    ["fonction fléchée", ACTION_FLECHE],
+    ["appel d'une autre fonction", ACTION_AUTRE_APPEL],
+    ["export { ... } d'une fonction", ACTION_LISTE],
+    ["réexportation nommée", ACTION_REEXPORT],
+    ["réexportation de tout", ACTION_TOUT],
+    ["export let", ACTION_LET],
+    ["second export dans la même déclaration", ACTION_DECLARATIONS_MULTIPLES],
+  ])("%s : refusé", async (_nom, code) => {
+    expect(await refus(code, "src/app/essai/actions.ts")).not.toEqual([]);
+  });
+
+  test.each([
+    ["export const x = exposer(y)", ACTION_EXPOSEE, "src/app/essai/actions.ts"],
+    ["dans un groupe de routes", ACTION_EXPOSEE, "src/app/(app)/clients/actions.ts"],
+    ["fichier sans directive", SANS_DIRECTIVE, "src/app/essai/utilitaires.ts"],
+  ])("%s : autorisé", async (_nom, code, fichier) => {
+    expect(await refus(code, fichier)).toEqual([]);
+  });
+});
+
+const DIRECTIVE_EN_LIGNE_PAGE = `export default function Page() {
+  async function agir() {
+    "use server";
+    return 1;
+  }
+  void agir;
+  return null;
+}
+`;
+const DIRECTIVE_EN_LIGNE_ACTIONS = `"use server";
+import { exposer } from "@/server/actions/exposer";
+import { demo } from "@/server/actions/demo";
+export const agir = exposer(demo);
+const interne = async () => {
+  "use server";
+  return 1;
+};
+void interne;
+`;
+const DIRECTIVE_SERVICE = `"use server";
+export const agir = 1;
+`;
+const COMPOSANT_CLIENT = `"use client";
+export default function Composant() {
+  return null;
+}
+`;
+const CHAINE_ORDINAIRE = `export const texte = "use server";
+`;
+
+describe('H. "use server" seulement en tête de src/app/**/actions.ts', { timeout: 60_000 }, () => {
+  test.each([
+    ["en tête d'une page", ACTION_EXPOSEE, "src/app/essai/page.tsx"],
+    ["en tête d'un service", DIRECTIVE_SERVICE, "src/server/services/essai.ts"],
+    ["en tête d'un fichier de actions/", DIRECTIVE_SERVICE, "src/server/actions/essai.ts"],
+    ["en tête d'un actions.tsx", ACTION_EXPOSEE, "src/app/essai/actions.tsx"],
+    ["dans une fonction d'une page", DIRECTIVE_EN_LIGNE_PAGE, "src/app/essai/page.tsx"],
+    ["dans une fonction de actions.ts", DIRECTIVE_EN_LIGNE_ACTIONS, "src/app/essai/actions.ts"],
+  ])("%s : refusé", async (_nom, code, fichier) => {
+    expect(await refus(code, fichier)).not.toEqual([]);
+  });
+
+  test.each([
+    ["en tête de actions.ts", ACTION_EXPOSEE, "src/app/essai/actions.ts"],
+    ["composant client", COMPOSANT_CLIENT, "src/app/essai/composant.tsx"],
+    ["chaîne ordinaire, hors directive", CHAINE_ORDINAIRE, "src/server/services/essai.ts"],
+  ])("%s : autorisé", async (_nom, code, fichier) => {
+    expect(await refus(code, fichier)).toEqual([]);
+  });
+});
+
+const EXECUTER_RELATIF_SERVICES = `import { executerDansOrganisation } from "../db/client";
+export const f = executerDansOrganisation;
+`;
+const EXECUTER_RELATIF_AUTH = `import { executerDansOrganisation } from "../db/client";
+export const f = executerDansOrganisation;
+`;
+const EXECUTER_RELATIF_REQUETES = `import { executerDansOrganisation } from "../client";
+export const f = executerDansOrganisation;
+`;
+const EXECUTER_DYNAMIQUE = `export const f = () => import("@/server/db/client");
+`;
+const EXECUTER_REEXPORT = `export { executerDansOrganisation } from "@/server/db/client";
+`;
+const TYPE_TRANSACTION = `import type { TransactionOrganisation } from "@/server/db/client";
+export type T = TransactionOrganisation;
+`;
+const ERREUR_ORGANISATION = `import { OrganisationActiveInvalide } from "../db/client";
+export const f = OrganisationActiveInvalide;
+`;
+
+describe(
+  "I. executerDansOrganisation seulement dans actions/action.ts, db/ et les tests",
+  { timeout: 60_000 },
+  () => {
+    test.each([
+      ["service, par l'alias", EXECUTER, "src/server/services/essai.ts"],
+      ["service, par un chemin relatif", EXECUTER_RELATIF_SERVICES, "src/server/services/essai.ts"],
+      ["page de l'application", EXECUTER, "src/app/essai/page.tsx"],
+      ["autre fichier de actions/", EXECUTER_RELATIF_SERVICES, "src/server/actions/essai.ts"],
+      ["fichier de auth/", EXECUTER_RELATIF_AUTH, "src/server/auth/essai.ts"],
+      ["fichier de journal/", EXECUTER_RELATIF_SERVICES, "src/server/journal/essai.ts"],
+      ["import dynamique depuis un service", EXECUTER_DYNAMIQUE, "src/server/services/essai.ts"],
+      ["réexportation depuis un service", EXECUTER_REEXPORT, "src/server/services/essai.ts"],
+    ])("%s : refusé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).not.toEqual([]);
+    });
+
+    test.each([
+      ["actions/action.ts", EXECUTER_RELATIF_SERVICES, "src/server/actions/action.ts"],
+      ["requête de db/", EXECUTER_RELATIF_REQUETES, "src/server/db/requetes/essai.ts"],
+      ["outillage de test", EXECUTER_RELATIF_REQUETES, "src/server/db/outils-test/essai.ts"],
+      ["test de actions/", EXECUTER, "src/server/actions/essai.test.ts"],
+      ["test d'un service", EXECUTER, "src/server/services/essai.test.ts"],
+      [
+        "type TransactionOrganisation depuis un service",
+        TYPE_TRANSACTION,
+        "src/server/services/essai.ts",
+      ],
+      [
+        "OrganisationActiveInvalide depuis actions/refus.ts",
+        ERREUR_ORGANISATION,
+        "src/server/actions/refus.ts",
+      ],
+    ])("%s : autorisé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).toEqual([]);
+    });
+  },
+);
+
+const JOURNALISER_ALIAS = `import { journaliser } from "@/server/journal/audit";
+export const f = journaliser;
+`;
+const JOURNALISER_RELATIF = `import { journaliser } from "../journal/audit";
+export const f = journaliser;
+`;
+const JOURNALISER_REQUETES = `import { journaliser } from "../../journal/audit";
+export const f = journaliser;
+`;
+const JOURNALISER_LOCAL = `import { journaliser } from "./audit";
+export const f = journaliser;
+`;
+const JOURNALISER_DYNAMIQUE = `export const f = () => import("@/server/journal/audit");
+`;
+const JOURNALISER_REEXPORT = `export { journaliser } from "@/server/journal/audit";
+`;
+
+describe(
+  "J. journaliser seulement dans actions/action.ts et les tests",
+  { timeout: 60_000 },
+  () => {
+    test.each([
+      ["service, par l'alias", JOURNALISER_ALIAS, "src/server/services/essai.ts"],
+      ["service, par un chemin relatif", JOURNALISER_RELATIF, "src/server/services/essai.ts"],
+      ["page de l'application", JOURNALISER_ALIAS, "src/app/essai/page.tsx"],
+      ["autre fichier de actions/", JOURNALISER_RELATIF, "src/server/actions/essai.ts"],
+      ["requête de db/", JOURNALISER_REQUETES, "src/server/db/requetes/essai.ts"],
+      ["autre fichier de journal/", JOURNALISER_LOCAL, "src/server/journal/essai.ts"],
+      ["import dynamique depuis un service", JOURNALISER_DYNAMIQUE, "src/server/services/essai.ts"],
+      ["réexportation depuis un service", JOURNALISER_REEXPORT, "src/server/services/essai.ts"],
+    ])("%s : refusé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).not.toEqual([]);
+    });
+
+    test.each([
+      ["actions/action.ts", JOURNALISER_RELATIF, "src/server/actions/action.ts"],
+      ["test de journal/", JOURNALISER_LOCAL, "src/server/journal/audit.test.ts"],
+      ["test d'intégration de db/", JOURNALISER_RELATIF, "src/server/db/essai.integration.test.ts"],
+      ["test de actions/", JOURNALISER_ALIAS, "src/server/actions/essai.test.ts"],
+    ])("%s : autorisé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).toEqual([]);
+    });
+  },
+);
+
+const CLE_LITTERALE = `export const cle = "app.organisation_id";
+`;
+const CLE_LECTURE = `export const requete = "SELECT current_setting('app.organisation_id', true)";
+`;
+const CLE_GABARIT = `import { sql } from "drizzle-orm";
+export const fixer = (id: string) => sql\`SELECT set_config('app.organisation_id', \${id}, true)\`;
+`;
+const CLE_GABARIT_SIMPLE = `export const cle = \`app.organisation_id\`;
+`;
+
+describe(
+  "K. app.organisation_id seulement dans db/client.ts, db/schema/isolation.ts et les tests",
+  { timeout: 60_000 },
+  () => {
+    test.each([
+      ["littéral dans un service", CLE_LITTERALE, "src/server/services/essai.ts"],
+      ["lecture du réglage dans un service", CLE_LECTURE, "src/server/services/essai.ts"],
+      ["gabarit dans une requête de db/", CLE_GABARIT, "src/server/db/requetes/essai.ts"],
+      ["gabarit dans un autre fichier de db/", CLE_GABARIT, "src/server/db/essai.ts"],
+      [
+        "gabarit sans expression dans actions/action.ts",
+        CLE_GABARIT_SIMPLE,
+        "src/server/actions/action.ts",
+      ],
+      ["littéral dans une page", CLE_LITTERALE, "src/app/essai/page.tsx"],
+      ["gabarit dans l'outillage de test", CLE_GABARIT, "src/server/db/outils-test/essai.ts"],
+    ])("%s : refusé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).not.toEqual([]);
+    });
+
+    test.each([
+      ["db/client.ts", CLE_GABARIT, "src/server/db/client.ts"],
+      ["db/schema/isolation.ts", CLE_GABARIT, "src/server/db/schema/isolation.ts"],
+      ["test d'attaque de db/", CLE_GABARIT, "src/server/db/essai.attaque.integration.test.ts"],
+      ["test unitaire hors de db/", CLE_LITTERALE, "src/server/actions/essai.test.ts"],
+    ])("%s : autorisé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).toEqual([]);
+    });
+  },
+);
+
+const ENTETES = `import { headers } from "next/headers";
+export const f = headers;
+`;
+const COOKIES = `import { cookies } from "next/headers";
+export const f = cookies;
+`;
+const ENTETES_JS = `import { headers } from "next/headers.js";
+export const f = headers;
+`;
+const ENTETES_DYNAMIQUE = `export const f = () => import("next/headers");
+`;
+const ENTETES_REEXPORT = `export { headers } from "next/headers";
+`;
+
+describe("L. next/headers dans actions/ seulement par exposer.ts", { timeout: 60_000 }, () => {
+  test.each([
+    ["actions/action.ts", ENTETES, "src/server/actions/action.ts"],
+    ["actions/refus.ts, cookies", COOKIES, "src/server/actions/refus.ts"],
+    ["autre fichier de actions/, next/headers.js", ENTETES_JS, "src/server/actions/essai.ts"],
+    ["import dynamique", ENTETES_DYNAMIQUE, "src/server/actions/essai.ts"],
+    ["réexportation", ENTETES_REEXPORT, "src/server/actions/essai.ts"],
+  ])("%s : refusé", async (_nom, code, fichier) => {
+    expect(await refus(code, fichier)).not.toEqual([]);
+  });
+
+  test.each([
+    ["actions/exposer.ts", ENTETES, "src/server/actions/exposer.ts"],
+    ["test de actions/", ENTETES, "src/server/actions/exposer.test.ts"],
+    ["page de l'application", ENTETES, "src/app/essai/page.tsx"],
+    ["fichier de auth/", ENTETES, "src/server/auth/essai.ts"],
+  ])("%s : autorisé", async (_nom, code, fichier) => {
+    expect(await refus(code, fichier)).toEqual([]);
+  });
+});
+
+const CHAINE_ALIAS = `import { executerChaine } from "@/server/actions/action";
+export const f = executerChaine;
+`;
+const CHAINE_RELATIF_SERVICES = `import { executerChaine } from "../actions/action";
+export const f = executerChaine;
+`;
+const CHAINE_LOCAL = `import { executerChaine } from "./action";
+export const f = executerChaine;
+`;
+const CHAINE_ESPACE = `import * as action from "@/server/actions/action";
+export const f = action;
+`;
+const CHAINE_DYNAMIQUE = `export const f = () => import("@/server/actions/action");
+`;
+const CHAINE_REEXPORT = `export { executerChaine } from "@/server/actions/action";
+`;
+const DECLARER = `import { declarerAction } from "@/server/actions/action";
+export const f = declarerAction;
+`;
+const ETABLIR_CONTEXTE = `import { etablirContexte } from "@/server/actions/action";
+export const f = etablirContexte;
+`;
+
+describe(
+  "M. executerChaine seulement dans actions/exposer.ts et les tests",
+  { timeout: 60_000 },
+  () => {
+    test.each([
+      ["service, par l'alias", CHAINE_ALIAS, "src/server/services/essai.ts"],
+      ["service, par un chemin relatif", CHAINE_RELATIF_SERVICES, "src/server/services/essai.ts"],
+      ["page de l'application", CHAINE_ALIAS, "src/app/essai/page.tsx"],
+      ["fichier actions.ts de l'application", CHAINE_ALIAS, "src/app/essai/actions.ts"],
+      ["autre fichier de actions/", CHAINE_LOCAL, "src/server/actions/essai.ts"],
+      ["import d'espace de noms", CHAINE_ESPACE, "src/server/services/essai.ts"],
+      ["import dynamique depuis un service", CHAINE_DYNAMIQUE, "src/server/services/essai.ts"],
+      ["réexportation depuis un service", CHAINE_REEXPORT, "src/server/services/essai.ts"],
+    ])("%s : refusé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).not.toEqual([]);
+    });
+
+    test.each([
+      ["actions/exposer.ts", CHAINE_LOCAL, "src/server/actions/exposer.ts"],
+      ["test de actions/", CHAINE_LOCAL, "src/server/actions/essai.test.ts"],
+      ["test d'intégration de db/", CHAINE_ALIAS, "src/server/db/essai.integration.test.ts"],
+      ["declarerAction depuis un domaine de actions/", DECLARER, "src/server/actions/clients.ts"],
+      ["etablirContexte depuis une page", ETABLIR_CONTEXTE, "src/app/essai/page.tsx"],
+    ])("%s : autorisé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).toEqual([]);
+    });
+  },
+);
+
+const FABRIQUE_ALIAS = `import { creerChaine } from "@/server/actions/action";
+export const f = creerChaine;
+`;
+const FABRIQUE_RELATIF_SERVICES = `import { creerChaine } from "../actions/action";
+export const f = creerChaine;
+`;
+const FABRIQUE_LOCAL = `import { creerChaine } from "./action";
+export const f = creerChaine;
+`;
+const FABRIQUE_REEXPORT = `export { creerChaine } from "@/server/actions/action";
+`;
+const TYPE_DEPENDANCES = `import type { DependancesChaine } from "@/server/actions/action";
+export type D = DependancesChaine;
+`;
+
+describe(
+  "M. creerChaine seulement dans les tests (une chaîne aux dépendances factices)",
+  { timeout: 60_000 },
+  () => {
+    test.each([
+      ["service, par l'alias", FABRIQUE_ALIAS, "src/server/services/essai.ts"],
+      ["service, par un chemin relatif", FABRIQUE_RELATIF_SERVICES, "src/server/services/essai.ts"],
+      ["page de l'application", FABRIQUE_ALIAS, "src/app/essai/page.tsx"],
+      ["fichier actions.ts de l'application", FABRIQUE_ALIAS, "src/app/essai/actions.ts"],
+      ["autre fichier de actions/", FABRIQUE_LOCAL, "src/server/actions/essai.ts"],
+      ["actions/exposer.ts", FABRIQUE_LOCAL, "src/server/actions/exposer.ts"],
+      ["réexportation depuis un service", FABRIQUE_REEXPORT, "src/server/services/essai.ts"],
+    ])("%s : refusé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).not.toEqual([]);
+    });
+
+    test.each([
+      ["test de actions/", FABRIQUE_LOCAL, "src/server/actions/action.test.ts"],
+      ["test d'intégration de db/", FABRIQUE_ALIAS, "src/server/db/essai.integration.test.ts"],
+      [
+        "type DependancesChaine depuis un service",
+        TYPE_DEPENDANCES,
+        "src/server/services/essai.ts",
+      ],
+    ])("%s : autorisé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).toEqual([]);
+    });
+  },
+);
+
+// Aucun commentaire ne suspend une règle dans src/ (noInlineConfig) : une
+// exception passe par eslint.config.mjs, donc par une PR.
+const SUSPENDU_LIGNE_SUIVANTE = `// eslint-disable-next-line no-restricted-imports
+import { db } from "@/server/db/client";
+export const f = db;
+`;
+const SUSPENDU_MEME_LIGNE = `import { db } from "@/server/db/client"; // eslint-disable-line no-restricted-imports
+export const f = db;
+`;
+const SUSPENDU_FICHIER = `/* eslint-disable */
+import { db } from "@/server/db/client";
+export const f = db;
+`;
+const SUSPENDU_BLOC = `/* eslint-disable no-restricted-imports */
+import { db } from "@/server/db/client";
+/* eslint-enable no-restricted-imports */
+export const f = db;
+`;
+const REGLE_ETEINTE = `/* eslint no-restricted-imports: "off" */
+import { db } from "@/server/db/client";
+export const f = db;
+`;
+const SYNTAXE_SUSPENDUE = `"use server";
+// eslint-disable-next-line no-restricted-syntax
+export async function agir() {
+  return 1;
+}
+`;
+const IMPORT_INTERDIT_SEUL = `import { db } from "@/server/db/client";
+export const f = db;
+`;
+
+describe("aucun commentaire ne suspend une règle dans src/", { timeout: 60_000 }, () => {
+  test.each([
+    ["eslint-disable-next-line", SUSPENDU_LIGNE_SUIVANTE, "src/server/services/essai.ts"],
+    ["eslint-disable-line", SUSPENDU_MEME_LIGNE, "src/server/services/essai.ts"],
+    ["eslint-disable en tête de fichier", SUSPENDU_FICHIER, "src/server/services/essai.ts"],
+    ["eslint-disable puis eslint-enable", SUSPENDU_BLOC, "src/server/services/essai.ts"],
+    ["règle éteinte par un commentaire", REGLE_ETEINTE, "src/server/services/essai.ts"],
+    ["règle G suspendue", SYNTAXE_SUSPENDUE, "src/app/essai/actions.ts"],
+    ["dans un fichier de test", SUSPENDU_LIGNE_SUIVANTE, "src/server/services/essai.test.ts"],
+  ])("%s : la règle s'applique encore", async (_nom, code, fichier) => {
+    expect(await refus(code, fichier)).not.toEqual([]);
+  });
+
+  test("témoin : sans commentaire, le même import est refusé une seule fois", async () => {
+    expect(await refus(IMPORT_INTERDIT_SEUL, "src/server/services/essai.ts")).toHaveLength(1);
+  });
+});

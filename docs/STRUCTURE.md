@@ -150,7 +150,7 @@ src/server/
 `action.ts` contient la fonction commune décrite dans DESIGN.md, section 3.2. Elle enchaîne, dans l'ordre : origine de la requête, session, organisation active, puis, dans la transaction de cette organisation, adhésion et rôle, matrice, validation des données, service et trace au journal. Une action déclarée à travers elle ne peut pas atteindre un service sans avoir passé ces contrôles.
 
 - Une action se **déclare** dans `actions/<domaine>.ts` par `declarerAction` (droit, schéma d'entrée, action du journal, nouvelle authentification), et figure dans `registre.ts`.
-- Elle s'**expose** dans `src/app/(app)/<domaine>/actions.ts`, fichier `"use server"`, uniquement sous la forme `export const x = exposer(declaration)`. Une règle ESLint et un test d'inventaire refusent toute autre forme.
+- Elle s'**expose** dans `src/app/(app)/<domaine>/actions.ts`, fichier `"use server"`, uniquement sous la forme `export const x = exposer(declaration)`. Une règle ESLint et un test d'inventaire refusent toute autre forme. `exposer` refuse une déclaration qui n'est pas passée par `declarerAction`, et `executerChaine` ne s'importe que dans `exposer.ts` : une action ne joint un service que par une fonction exposée.
 - Le service reçoit un contexte (utilisateur, organisation, rôle, transaction) et écrit au journal par `ctx.journaliser`, lié à l'action déclarée et à l'auteur de la session.
 
 ### 3.4 `services/` : les règles métier
@@ -243,18 +243,24 @@ Ces règles seront vérifiées automatiquement par l'analyse du code, en phase 9
 | Dossier | Peut importer | Ne peut pas importer |
 |---|---|---|
 | `app/`, `components/` | `components/`, `schemas/`, `lib/`, `textes/`, et `server/` uniquement par les actions et les services | `server/db/` |
-| `server/actions/` | `server/auth/`, `server/autorisation/`, `server/db/client.ts` (`executerDansOrganisation`), `server/db/requetes/adhesions.ts`, `server/journal/`, `server/services/`, `schemas/` ; `next/headers` dans `exposer.ts` seulement | Les autres fichiers de `server/db/requetes/` |
+| `server/actions/` | `server/auth/`, `server/autorisation/`, `server/db/client.ts` (`executerDansOrganisation`, dans `action.ts` seulement), `server/db/requetes/adhesions.ts`, `server/journal/` (`journaliser`, dans `action.ts` seulement), `server/services/`, `schemas/` ; `next/headers` dans `exposer.ts` seulement | Les autres fichiers de `server/db/requetes/` |
 | `server/services/` | `server/db/` (sauf `executerDansOrganisation`), `server/modules/`, `lib/`, `schemas/` | `app/`, `components/`, `server/journal/` (le journal s'écrit par `ctx.journaliser`) |
 | `server/journal/` | `server/db/` (le type `TransactionOrganisation` et `requetes/journal.ts`), `zod` | Tout le reste du projet |
 | `server/db/` | `drizzle-orm`, `pg`, `server/env.ts` | Tout le reste de `server/` |
 | `schemas/`, `lib/`, `textes/` | Rien du projet, sauf entre eux | `server/`, `app/`, `components/` |
 
-Règles de la chaîne de contrôles (fonctionnalité 0.4, vérifiées par ESLint à partir de sa troisième PR) :
+Règles de la chaîne de contrôles (fonctionnalité 0.4, vérifiées par ESLint, règles G à M de `docs/features/chaine-controles.md`, section 7) :
 
-- `journaliser` ne s'importe que dans `server/actions/action.ts` et les tests.
+- `"use server"` n'apparaît qu'en tête des fichiers `src/app/**/actions.ts`, dont chaque export est `export const x = exposer(...)`.
 - `executerDansOrganisation` ne s'importe que dans `server/actions/action.ts`, `server/db/` et les tests.
-- La chaîne `app.organisation_id` n'apparaît que dans `server/db/client.ts` et `server/db/schema/isolation.ts`.
-- `"use server"` n'apparaît qu'en tête des fichiers `src/app/**/actions.ts`, dont chaque export est `exposer(...)`.
+- `journaliser` ne s'importe que dans `server/actions/action.ts` et les tests.
+- La chaîne `app.organisation_id` n'apparaît que dans `server/db/client.ts`, `server/db/schema/isolation.ts` et les tests.
+- Dans `server/actions/`, `next/headers` ne s'importe que dans `exposer.ts`.
+- `executerChaine` ne s'importe que dans `server/actions/exposer.ts` et les tests.
+- `creerChaine` ne s'importe que dans les tests.
+- Aucun commentaire `eslint-disable` n'a d'effet dans `src/` : une exception passe par `eslint.config.mjs`.
+
+Le test d'inventaire (`src/server/actions/inventaire.test.ts`) vérifie en plus, à l'exécution, que chaque export de `src/app/**/actions.ts` vient d'`exposer`, avec une déclaration marquée par `declarerAction` et inscrite dans `registre.ts`, et que chaque `route.ts` figure sur la liste admise.
 
 Quatre règles s'y ajoutent :
 
