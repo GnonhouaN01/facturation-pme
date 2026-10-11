@@ -191,3 +191,70 @@ describe("consignerErreurRequete", () => {
     expect(journal()).not.toContain(EMAIL);
   });
 });
+
+// consignerErreurRequete ne lève jamais : une valeur levée hostile (accesseur
+// qui lève, Proxy) ou inattendue donne une ligne, au pire la ligne fixe, sans
+// aucune donnée de la valeur levée.
+const LIGNE_FIXE = { echec: "consignation" };
+
+function accesseurQuiLeve(nom: string): Error {
+  return Object.defineProperty(new Error("x"), nom, {
+    get() {
+      throw new Error(`accesseur piégé ${EMAIL}`);
+    },
+  });
+}
+
+const PROXY_HOSTILE = new Proxy(
+  {},
+  {
+    get() {
+      throw new Error(`lecture piégée ${EMAIL}`);
+    },
+    has() {
+      throw new Error(`in piégé ${EMAIL}`);
+    },
+    getPrototypeOf() {
+      throw new Error(`prototype piégé ${EMAIL}`);
+    },
+    getOwnPropertyDescriptor() {
+      throw new Error(`descripteur piégé ${EMAIL}`);
+    },
+    ownKeys() {
+      throw new Error(`clés piégées ${EMAIL}`);
+    },
+  },
+);
+
+describe("consignerErreurRequete ne lève jamais", () => {
+  test.each([
+    ["accesseur digest qui lève", accesseurQuiLeve("digest")],
+    ["accesseur code qui lève", accesseurQuiLeve("code")],
+    ["accesseur cause qui lève", accesseurQuiLeve("cause")],
+    ["accesseur constructor qui lève", accesseurQuiLeve("constructor")],
+    ["Proxy qui lève à toute lecture", PROXY_HOSTILE],
+  ])("%s : la ligne fixe, sans donnée de la valeur levée", async (_nom, valeur) => {
+    await expect(consignerErreurRequete(valeur, REQUETE, CONTEXTE)).resolves.toBeUndefined();
+
+    expect(ligne()).toEqual(LIGNE_FIXE);
+    expect(journal()).not.toContain(EMAIL);
+    expect(journal()).not.toContain("piégé");
+  });
+
+  test.each([
+    ["null", null, "null"],
+    ["undefined", undefined, "undefined"],
+    ["une chaîne", `erreur pour ${EMAIL}`, "string"],
+    ["un symbole", Symbol(EMAIL), "symbol"],
+    [
+      "un objet sans prototype",
+      Object.assign(Object.create(null) as object, { message: EMAIL }),
+      "inconnue",
+    ],
+  ])("%s : ne lève pas, une ligne sans la valeur", async (_nom, valeur, classe) => {
+    await expect(consignerErreurRequete(valeur, REQUETE, CONTEXTE)).resolves.toBeUndefined();
+
+    expect(ligne()).toEqual({ classe, routePath: "/lien/devis/[jeton]", routeType: "render" });
+    expect(journal()).not.toContain(EMAIL);
+  });
+});

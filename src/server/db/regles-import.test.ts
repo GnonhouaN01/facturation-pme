@@ -906,3 +906,40 @@ describe("S. src/proxy.ts n'importe pas server/env.ts", { timeout: 60_000 }, () 
     expect(await refusB(ENV_MODULE, "src/server/services/essai.ts")).toEqual([]);
   });
 });
+
+// Propriétés interdites : celles de src/proxy.ts dérivent de la liste
+// générale, moins la seule entrée process.env, remplacée par les sélecteurs
+// de l'exception B. Une interdiction de propriété ajoutée plus tard au cas
+// général s'applique donc aussi au proxy. Au 2026-10-12, process.env est la
+// seule interdiction de propriété : la liste du proxy est vide, et ce test
+// ne prend toute sa valeur qu'avec une seconde interdiction.
+type EntreePropriete = { object?: string; property?: string; message?: string };
+
+async function proprietesInterdites(fichier: string): Promise<EntreePropriete[]> {
+  const config = (await eslint.calculateConfigForFile(fichier)) as {
+    rules?: Record<string, unknown[]>;
+  };
+  const [, ...entrees] = config.rules?.["no-restricted-properties"] ?? [];
+  return entrees as EntreePropriete[];
+}
+
+describe("propriétés interdites dans src/proxy.ts", { timeout: 60_000 }, () => {
+  test("les mêmes que dans le cas général, moins process.env", async () => {
+    const generales = await proprietesInterdites("src/lib/essai.ts");
+    const duProxy = await proprietesInterdites("src/proxy.ts");
+
+    expect(generales).toContainEqual(
+      expect.objectContaining({ object: "process", property: "env" }),
+    );
+    expect(duProxy).toEqual(
+      generales.filter((entree) => !(entree.object === "process" && entree.property === "env")),
+    );
+  });
+
+  test("la règle reste active sur src/proxy.ts", async () => {
+    const config = (await eslint.calculateConfigForFile("src/proxy.ts")) as {
+      rules?: Record<string, unknown[]>;
+    };
+    expect(config.rules?.["no-restricted-properties"]?.[0]).toBe(2);
+  });
+});

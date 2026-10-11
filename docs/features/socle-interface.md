@@ -1,6 +1,6 @@
 # Fonctionnalité : socle d'interface
 
-Statut : en cours. PR 1 implémentée le 2026-10-11 (non commitée) ; PR 2 et 3 à faire.
+Statut : en cours. PR 1 livrée (#33). PR 2 implémentée le 2026-10-12 (non commitée) ; PR 3 à faire.
 
 Jalon 0, fonctionnalité 0.6 de `docs/PLAN.md`. Taille L (décision 12), en trois PR.
 
@@ -427,6 +427,9 @@ Un test vérifie : les messages de sécurité sont identiques, au caractère pr�
   - **Q** : l'analyse ne voit que le JSX écrit. Un composant (`<Button />` sans nom accessible) n'est pas reconnu comme l'élément natif qu'il rend ; contrastes, ordre du focus et rôles posés à l'exécution ne sont pas vérifiés (décision 7 : `@axe-core/playwright` revu en 1.1).
   - **R** : une chaîne passée par une constante (`const t = "Bonjour"`) ; une chaîne dans un ternaire (`{a ? "Oui" : "Non"}`) ; un texte dans un attribut hors de la liste (`aria-roledescription`) ou dans la propriété d'un composant (`<B libelle="Bonjour" />`, `ignoreProps`). Une concaténation (`{"Total " + a}`) est, elle, refusée.
 - **S** : un import indirect (`src/proxy.ts` importe un module qui importe `server/env.ts`) n'est pas vu ; la revue reste nécessaire.
+- **B** : `globalThis.process.env` échappe à la règle B, dans tout `src/` comme dans l'exception de `src/proxy.ts` : `no-restricted-properties` et les sélecteurs ne visent que l'identifiant `process`.
+- Propriétés interdites de `src/proxy.ts` : dérivées de la liste générale, moins `process.env`. Au 2026-10-12, `process.env` est la seule interdiction de propriété : la liste du proxy est vide, et le test qui le vérifie ne prend toute sa valeur qu'avec une seconde interdiction (contre-épreuve faite : une interdiction générale ajoutée et une liste du proxy recopiée vide le font échouer).
+- **`'strict-dynamic'`** : un script ajouté au DOM par un script autorisé s'exécute, même en ligne et sans nonce (section 5.4). Un test l'atteste comme limite connue (décision 23).
 - Erreur d'un composant client : aucun identifiant, aucune consignation avant la 8.1 (décision 6).
 - La navigation par rôle n'est éprouvée dans un navigateur qu'à la 1.2.
 - Le gabarit et la page appellent chacun `etablirContexte` : deux lectures de session et d'adhésion par affichage. Dédoublonnage par requête (`cache` de React) à étudier quand une page lira des données.
@@ -451,18 +454,18 @@ Aucune.
 
 ### PR 2
 
-- [ ] Toute réponse HTML, sur l'accueil, la page « introuvable » et la page « erreur », porte la politique de la section 5.3, avec un nonce de 16 octets, différent à chaque requête.
-- [ ] La politique de production ne contient aucun mot-clé `unsafe-`.
-- [ ] Un script injecté dans le DOM sans nonce, un gestionnaire `onerror` en ligne, une URL `javascript:` et un script d'une autre origine ne s'exécutent pas ; un événement `securitypolicyviolation` est observé pour chacun.
-- [ ] La page ne s'affiche pas dans un cadre d'une autre origine.
-- [ ] Une requête portant un en-tête `Content-Security-Policy` ou `next-router-prefetch` forgé reçoit la politique du serveur, avec un nonce qui n'est pas celui fourni.
-- [ ] Les en-têtes de la section 6 sont présents avec leurs valeurs exactes, y compris sur un fichier de `/_next/static` et sur une 404 ; `X-Powered-By` est absent ; `X-Robots-Tag` est présent sous `/lien/`.
-- [ ] Aucune requête vers `fonts.googleapis.com` ni `fonts.gstatic.com`.
-- [ ] `error.tsx` et `global-error.tsx`, rendus avec une erreur chargée de marqueurs, n'en affichent aucun.
-- [ ] `consignerErreurRequete` ne consigne que `digest`, `classe`, `code`, `routePath`, `routeType`.
-- [ ] La règle B accepte `process.env.NODE_ENV` dans `src/proxy.ts` seulement ; toute autre variable y est refusée ; `NODE_ENV` reste refusé ailleurs.
-- [ ] La règle S refuse tout import de `server/env.ts` dans `src/proxy.ts` ; les interdictions des règles A à O y tiennent toujours.
-- [ ] Un seul fichier de proxy existe (inventaire).
+- [x] Toute réponse HTML, sur l'accueil et la page « introuvable », porte la politique de la section 5.3, avec un nonce de 16 octets, différent à chaque requête. La page « erreur » : vérifiée en PR 3, sur le second serveur (décision 17).
+- [x] La politique de production ne contient aucun mot-clé `unsafe-`.
+- [x] Un script inséré dans le HTML sans nonce ou avec un nonce forgé, un gestionnaire `onerror` en ligne, une URL `javascript:` et un script d'une autre origine ne s'exécutent pas ; des événements `securitypolicyviolation` sont observés (au moins quatre pour les quatre injections dans le HTML). `eval`, `new Function` et `setTimeout` avec une chaîne, lancés par un script de la page, sont refusés avec une violation chacun. Un script ajouté au DOM par un script autorisé s'exécute : limite connue (section 5.4, décision 23).
+- [x] La page ne s'affiche pas dans un cadre d'une autre origine.
+- [x] Une requête portant un en-tête `Content-Security-Policy` ou `next-router-prefetch` forgé reçoit la politique du serveur, avec un nonce qui n'est pas celui fourni.
+- [x] Les en-têtes de la section 6 sont présents avec leurs valeurs exactes, y compris sur un fichier de `/_next/static` et sur une 404 ; `X-Powered-By` est absent ; `X-Robots-Tag` est présent sous `/lien/`.
+- [x] Aucune requête vers `fonts.googleapis.com` ni `fonts.gstatic.com`.
+- [x] `error.tsx` et `global-error.tsx`, rendus avec une erreur chargée de marqueurs, n'en affichent aucun.
+- [x] `consignerErreurRequete` ne consigne que `digest`, `classe`, `code`, `routePath`, `routeType`.
+- [x] La règle B accepte `process.env.NODE_ENV` dans `src/proxy.ts` seulement ; toute autre variable y est refusée ; `NODE_ENV` reste refusé ailleurs.
+- [x] La règle S refuse tout import de `server/env.ts` dans `src/proxy.ts` ; les interdictions des règles A à O y tiennent toujours.
+- [x] Un seul fichier de proxy existe (inventaire).
 
 ### PR 3
 
@@ -494,13 +497,13 @@ PR 1 :
 
 PR 2 :
 
-- [ ] `src/lib/securite/entetes.test.ts` : politique de production, directive par directive ; nonce inséré dans `script-src` et `style-src` ; politique de développement ; aucun `unsafe-` en production ; liste `ENTETES_SECURITE` exacte.
-- [ ] `src/lib/securite/entetes.attaque.test.ts` : un nonce contenant `'`, `;` ou un espace est refusé par `politiqueSecurite`.
-- [ ] `src/proxy.test.ts` : sélecteur, par `unstable_doesMiddlewareMatch` (`next/experimental/testing/server`, fourni par `next` ; Next.js 16.3.8 n'exporte pas `unstable_doesProxyMatch`) ; nonce de 16 octets, différent à chaque appel ; politique posée sur la requête et la réponse ; un en-tête de politique reçu est remplacé.
-- [ ] `src/server/erreurs/consigner.test.ts` : espion sur `console.error`, contenu inspecté par `util.inspect` : champs permis seuls ; erreur dont le message contient une adresse email et une URL PostgreSQL ; chemin réel `/lien/devis/<jeton>` absent.
-- [ ] `src/app/erreurs.test.tsx` : rendu en chaîne de `error.tsx` et `global-error.tsx`, avec et sans `digest`, erreur chargée de marqueurs.
-- [ ] `src/server/db/regles-import.test.ts` (complété, modification signalée) : exception de la règle B pour `NODE_ENV` dans `src/proxy.ts` ; règle S ; interdictions des règles A à O toujours en vigueur sur `src/proxy.ts`.
-- [ ] `src/server/actions/inventaire.test.ts` (complété, modification signalée) : second fichier de proxy refusé.
+- [x] `src/lib/securite/entetes.test.ts` : politique de production, directive par directive ; nonce inséré dans `script-src` et `style-src` ; politique de développement ; aucun `unsafe-` en production ; liste `ENTETES_SECURITE` exacte.
+- [x] `src/lib/securite/entetes.attaque.test.ts` : un nonce contenant `'`, `;` ou un espace est refusé par `politiqueSecurite`.
+- [x] `src/proxy.test.ts` : sélecteur, par `unstable_doesMiddlewareMatch` (`next/experimental/testing/server`, fourni par `next` ; Next.js 16.3.8 n'exporte pas `unstable_doesProxyMatch`) ; nonce de 16 octets, différent à chaque appel ; politique posée sur la requête et la réponse ; un en-tête de politique reçu est remplacé.
+- [x] `src/server/erreurs/consigner.test.ts` : espion sur `console.error`, contenu inspecté par `util.inspect` : champs permis seuls ; erreur dont le message contient une adresse email et une URL PostgreSQL ; chemin réel `/lien/devis/<jeton>` absent.
+- [x] `src/app/erreurs.test.tsx` : rendu en chaîne de `error.tsx` et `global-error.tsx`, avec et sans `digest`, erreur chargée de marqueurs.
+- [x] `src/server/db/regles-import.test.ts` (complété, modification signalée) : exception de la règle B pour `NODE_ENV` dans `src/proxy.ts` ; règle S ; interdictions des règles A à O toujours en vigueur sur `src/proxy.ts`.
+- [x] `src/server/actions/inventaire.test.ts` (complété, modification signalée) : second fichier de proxy refusé.
 
 PR 3 :
 
@@ -523,11 +526,13 @@ Les quatre tests obligatoires (`PLAN.md`, section 4.3), appliqués à ce que la 
 
 Propres à cette fiche, PR 2, `e2e/entetes.attaque.spec.ts` et `e2e/erreurs.attaque.spec.ts`, sur le site construit :
 
-- [ ] Script sans nonce ajouté au DOM, gestionnaire `onerror` en ligne, `javascript:`, script d'une autre origine : non exécutés, violation observée.
-- [ ] Affichage dans un cadre depuis une autre origine : bloqué.
-- [ ] En-têtes `Content-Security-Policy`, `x-nonce` et `next-router-prefetch` forgés par le client : sans effet sur la politique reçue.
-- [ ] Nonce différent sur deux requêtes successives de la même page (rendu dynamique).
-- [ ] `/lien/devis/<jeton aléatoire>` : 404 « introuvable », `X-Robots-Tag`, `Referrer-Policy: same-origin`, aucun en-tête `Set-Cookie`.
+- [x] Script en ligne et script au nonce forgé insérés dans le HTML, gestionnaire `onerror` en ligne, `javascript:`, script d'une autre origine : non exécutés, violation observée.
+- [x] `eval`, `new Function` et `setTimeout` avec une chaîne, depuis un script de la page portant le nonce : refusés, violation observée pour chacun (décision 22).
+- [x] Limite connue (section 5.4) : un script en ligne ajouté au DOM par un script autorisé s'exécute, sans violation (décision 23).
+- [x] Affichage dans un cadre depuis une autre origine : bloqué.
+- [x] En-têtes `Content-Security-Policy`, `x-nonce` et `next-router-prefetch` forgés par le client : sans effet sur la politique reçue.
+- [x] Nonce différent sur deux requêtes successives de la même page (rendu dynamique).
+- [x] `/lien/devis/<jeton aléatoire>` : 404 « introuvable », `X-Robots-Tag`, `Referrer-Policy: same-origin`, aucun en-tête `Set-Cookie`.
 
 Propres à cette fiche, PR 3, `e2e/erreurs.attaque.spec.ts`, second serveur (section 4.3, niveau 3). Retirés de la PR 2 (décision 17). En PR 3, le second serveur a une configuration **valide** (rôle `app_facturation`) et une base injoignable (port fermé sur `127.0.0.1`) ; la panne est observée sur `/tableau-de-bord` :
 
@@ -539,7 +544,7 @@ Propres à cette fiche, PR 3, `e2e/erreurs.attaque.spec.ts`, second serveur (sec
 
 ### Tests de bout en bout
 
-- [ ] PR 2, `e2e/accueil.spec.ts` (modifié, signalé) : titre, langue, contenu de l'accueil ; les tests du thème Signal passent sur l'action de la page « introuvable ».
+- [x] PR 2, `e2e/accueil.spec.ts` (modifié, signalé) : titre, langue, contenu de l'accueil ; les tests du thème Signal passent sur l'action de la page « introuvable ».
 - [ ] PR 3, `e2e/affichage.spec.ts` : projets 390 et 1280, plus 360 pour le défilement : pages publique, introuvable, erreur, tableau de bord (sans session : introuvable).
 
 ## Fichiers concernés
@@ -551,8 +556,8 @@ PR 1 :
 
 PR 2 :
 
-- Créés : `src/proxy.ts`, `src/proxy.test.ts` ; `src/lib/securite/entetes.ts`, `entetes.test.ts`, `entetes.attaque.test.ts` ; `src/app/not-found.tsx`, `error.tsx`, `global-error.tsx`, `erreurs.test.tsx` ; `src/components/erreurs/incident.tsx` ; `src/server/erreurs/consigner.ts`, `consigner.test.ts` ; `e2e/entetes.attaque.spec.ts`, `e2e/erreurs.attaque.spec.ts`.
-- Modifiés : `src/app/layout.tsx` (`connection()`) ; `src/instrumentation.ts` (`onRequestError`) ; `next.config.ts` (`headers`, `poweredByHeader`) ; `eslint.config.mjs` (exception de la règle B) ; `src/server/db/regles-import.test.ts`, `src/server/actions/inventaire.test.ts` ; `vitest.config.mts` (inclusion des `.test.tsx`) ; `playwright.config.ts` (site construit en local) ; `e2e/accueil.spec.ts` ; `CLAUDE.md` (règle 12 et son exception ; pièges du rendu dynamique, de `cacheComponents` et de `Referrer-Policy` ; règle O).
+- Créés : `src/proxy.ts`, `src/proxy.test.ts` ; `src/lib/securite/entetes.ts`, `entetes.test.ts`, `entetes.attaque.test.ts` ; `src/app/not-found.tsx`, `error.tsx`, `global-error.tsx`, `erreurs.test.tsx` ; `src/app/polices.ts` (ajouté à l'implémentation : les trois polices de `next/font/google` déclarées une seule fois, pour le gabarit racine et pour `global-error.tsx`, qui porte son propre document) ; `src/components/erreurs/incident.tsx` ; `src/server/erreurs/consigner.ts`, `consigner.test.ts`, `code-postgres.ts` (décision 26) ; `e2e/entetes.attaque.spec.ts`, `e2e/erreurs.attaque.spec.ts`.
+- Modifiés : `src/app/layout.tsx` (`connection()`, polices lues dans `polices.ts`) ; `src/server/actions/refus.ts` (`codePostgres` importé, décision 26) ; `docs/STRUCTURE.md` (section 7 : `server/erreurs/`) ; `e2e/entetes.attaque.spec.ts` (décisions 22 et 23) ; `src/instrumentation.ts` (`onRequestError`) ; `next.config.ts` (`headers`, `poweredByHeader`) ; `eslint.config.mjs` (exception de la règle B) ; `src/server/db/regles-import.test.ts`, `src/server/actions/inventaire.test.ts` ; `vitest.config.mts` (inclusion des `.test.tsx`) ; `playwright.config.ts` (site construit en local) ; `e2e/accueil.spec.ts` ; `CLAUDE.md` (règle 12 et son exception ; pièges du rendu dynamique, de `cacheComponents` et de `Referrer-Policy` ; règle O).
 
 PR 3 :
 
@@ -618,3 +623,10 @@ Prises pendant la PR 2, le 2026-10-12 :
 17. **Second serveur.** Reporté à la PR 3, avec une configuration valide et une base injoignable (section 4.3). `register` n'attrape jamais l'erreur de configuration : `src/instrumentation.ts` n'est pas modifié pour les tests.
 18. **Règle S.** Retenue (section 7), écrite à l'implémentation de la PR 2.
 19. **Corrections.** `unstable_doesMiddlewareMatch` au lieu d'`unstable_doesProxyMatch` ; `vitest.config.mts`.
+20. **Simulacre des polices.** Dans `src/app/erreurs.test.tsx`, le simulacre de `next/font/google` nomme les trois polices : un `Proxy` ne suffit pas, Vitest exige que chaque nom importé soit une clé de l'objet (constaté le 2026-10-12, même avec un piège `has`). Modification d'un test, autorisée par le relecteur.
+21. **`onRequestError`.** Ajouté à `src/instrumentation.ts`, qui délègue à `consignerErreurRequete`. `register` est inchangé et n'attrape aucune erreur.
+22. **Test d'`eval`.** Les essais (`eval`, `new Function`, `setTimeout` avec une chaîne) partent d'un script de la page portant le nonce de la réponse : Playwright intercepte le document de l'accueil (`page.route`) et insère ce script en tête. `page.evaluate` passe par le protocole DevTools, que Chromium exempte de la règle sur `eval` (constaté le 2026-10-12). Aucune page ni route ajoutée dans `src/`. Contre-épreuve : sans la politique, les trois essais échouent.
+23. **Script ajouté au DOM.** Le test devient un test de limite connue (section 5.4) : avec `'strict-dynamic'`, un script ajouté au DOM par un script autorisé s'exécute, même en ligne et sans nonce, sans violation. `'strict-dynamic'` reste. Le test d'injection dans le HTML est inchangé.
+24. **`consignerErreurRequete` ne lève jamais.** Tout le calcul passe dans un `try` ; en cas d'échec (accesseur ou `Proxy` qui lève), la ligne fixe `{"echec":"consignation"}` est consignée, sans donnée de la valeur levée.
+25. **Propriétés interdites de `src/proxy.ts`.** Dérivées de `PROPRIETES_GENERALES` dans `eslint.config.mjs`, moins `process.env`. Un test compare les deux configurations effectives.
+26. **Code PostgreSQL.** Une seule fonction, `codePostgres`, dans `src/server/erreurs/code-postgres.ts`, importée par `refus.ts` et `consigner.ts`. Pas dans `refus.ts` : celui-ci importe `db/client.ts`, qui charge `env.ts`, et la consignation ne doit pas dépendre de la configuration. Aucune règle d'import ne s'y oppose.

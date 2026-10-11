@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 
-import { type APIRequestContext, expect, test } from "@playwright/test";
+import { type APIRequestContext, type Page, expect, test } from "@playwright/test";
 
 import { TEXTES_COMMUNS } from "../src/textes/commun";
 import { TEXTES_ERREURS } from "../src/textes/erreurs";
@@ -115,24 +115,48 @@ test.describe("en-têtes forgés par le client", () => {
   }
 });
 
+// Simule un script de l'application : un <script> portant le nonce de la
+// réponse, inséré en tête du document de l'accueil par Playwright. Rien
+// n'est ajouté dans src/ pour les besoins du test.
+async function injecterScriptDeLaPage(page: Page, code: string): Promise<void> {
+  await page.route(
+    (url) => url.pathname === "/",
+    async (route) => {
+      if (route.request().resourceType() !== "document") return route.continue();
+      const reponse = await route.fetch();
+      const nonce = nonceDe(reponse.headers()["content-security-policy"]);
+      const html = await reponse.text();
+      const corps = html.replace("<head>", `<head><script nonce="${nonce}">${code}</script>`);
+      if (corps === html) throw new Error("balise <head> introuvable dans l'accueil");
+      await route.fulfill({ response: reponse, body: corps });
+    },
+  );
+}
+
 test.describe("attaques dans le navigateur (T-34)", () => {
   test.beforeEach(async ({ page }) => {
     await observerViolations(page);
   });
 
-  test("script en ligne sans nonce ajouté au DOM : non exécuté, violation observée", async ({
+  // Limite connue, section 5.4 : 'strict-dynamic' fait confiance à tout script
+  // non inséré par l'analyseur, même en ligne et sans nonce. Un script ajouté
+  // au DOM par un script autorisé s'exécute donc, sans violation. Le test
+  // l'atteste ; s'il échoue, la politique a changé et la fiche est à revoir.
+  test("limite connue (section 5.4) : un script en ligne ajouté au DOM par un script autorisé s'exécute, sans violation", async ({
     page,
   }) => {
-    await page.goto("/");
-
-    await page.evaluate(() => {
-      const script = document.createElement("script");
+    await injecterScriptDeLaPage(
+      page,
+      `const script = document.createElement("script");
       script.textContent = "window.__attaque.push('script ajouté au DOM')";
-      document.body.append(script);
-    });
+      document.head.append(script);`,
+    );
 
-    await expect.poll(() => violations(page)).not.toEqual([]);
-    expect(await attaques(page)).toEqual([]);
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
+
+    expect(await attaques(page)).toEqual(["script ajouté au DOM"]);
+    expect(await violations(page)).toEqual([]);
   });
 
   test("gestionnaire onerror en ligne : non exécuté, violation observée", async ({ page }) => {
@@ -164,35 +188,43 @@ test.describe("attaques dans le navigateur (T-34)", () => {
     expect(await attaques(page)).toEqual([]);
   });
 
-  test("eval, new Function et setTimeout avec une chaîne : refusés", async ({ page }) => {
-    await page.goto("/");
+  // Les essais partent d'un script de la page qui porte le nonce de la
+  // réponse : page.evaluate passe par le protocole DevTools, que Chromium
+  // exempte de la règle sur eval (constaté le 2026-10-12). setTimeout avec
+  // une chaîne ne lève pas : la chaîne n'est simplement pas exécutée.
+  for (const [nom, code, refus] of [
+    [
+      "eval",
+      `try { eval("window.__attaque.push('eval')"); window.__essai = "exécuté"; }
+      catch (erreur) { window.__essai = erreur.name; }`,
+      "EvalError",
+    ],
+    [
+      "new Function",
+      `try { new Function("window.__attaque.push('Function')")(); window.__essai = "exécuté"; }
+      catch (erreur) { window.__essai = erreur.name; }`,
+      "EvalError",
+    ],
+    [
+      "setTimeout avec une chaîne",
+      `try { setTimeout("window.__attaque.push('setTimeout')", 0); window.__essai = "programmé"; }
+      catch (erreur) { window.__essai = erreur.name; }`,
+      "programmé",
+    ],
+  ] as const) {
+    test(`${nom}, depuis un script de la page : refusé, violation observée`, async ({ page }) => {
+      await injecterScriptDeLaPage(page, code);
 
-    const resultats = await page.evaluate(() => {
-      const essayer = (nom: string, faire: () => unknown) => {
-        try {
-          faire();
-          return `${nom} : exécuté`;
-        } catch (erreur) {
-          return `${nom} : ${(erreur as Error).name}`;
-        }
-      };
-      return [
-        essayer("eval", () => window.eval("window.__attaque.push('eval')")),
-        essayer("new Function", () => new Function("window.__attaque.push('Function')")()),
-      ];
+      await page.goto("/");
+      await page.waitForLoadState("networkidle");
+
+      expect(await page.evaluate(() => (window as { __essai?: string }).__essai)).toBe(refus);
+      await expect
+        .poll(() => violations(page))
+        .toContainEqual({ directive: "script-src", bloque: "eval" });
+      expect(await attaques(page)).toEqual([]);
     });
-    // setTimeout avec une chaîne ne lève pas : il est ignoré.
-    await page.evaluate(() =>
-      (window.setTimeout as (code: string, delai: number) => number)(
-        "window.__attaque.push('setTimeout')",
-        0,
-      ),
-    );
-
-    expect(resultats).toEqual(["eval : EvalError", "new Function : EvalError"]);
-    await expect.poll(() => violations(page)).not.toEqual([]);
-    expect(await attaques(page)).toEqual([]);
-  });
+  }
 
   // Injection dans le HTML rendu par le serveur (XSS stockée) : les balises
   // sont insérées par l'analyseur, cas que 'strict-dynamic' ne laisse pas

@@ -12,11 +12,12 @@ import ErreurGlobale from "./global-error";
 // Fiche : docs/features/socle-interface.md, sections 4.1 et 4.3 (niveau 1).
 
 // next/font/google n'est transformé que par le compilateur de Next.js : sous
-// Vitest, chaque police devient un objet de classes vides. Sans effet si les
-// pages ne l'importent pas.
+// Vitest, chaque police de src/app/polices.ts, que global-error.tsx importe,
+// devient un objet de classes vides. Vitest exige que chaque nom importé
+// soit une clé de l'objet renvoyé : les trois polices sont nommées.
 vi.mock("next/font/google", () => {
   const police = () => ({ className: "", variable: "", style: { fontFamily: "" } });
-  return new Proxy({}, { get: () => police });
+  return { Space_Grotesk: police, DM_Sans: police, DM_Mono: police };
 });
 
 const DIGEST = "1f0c6a52-7b9e-4c1d-9a3e-5b8f2d4c6e10";
