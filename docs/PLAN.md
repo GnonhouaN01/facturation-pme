@@ -43,7 +43,7 @@ Aucun écran métier. Ce jalon construit ce dont toutes les fonctionnalités aur
 | 0.3 | Journal d'audit | Table en ajout seul, droits retirés au rôle de l'application, fonction d'écriture dans la transaction | S-70, S-71, T-20, T-21 | S |
 | 0.4 | Chaîne de contrôles et matrice | Fonction commune des actions : origine, session, rôle, validation. Matrice des droits dans un seul fichier, avec son test exhaustif | S-02, S-03, S-05, S-81, T-17, T-50 | L |
 | 0.5 | Limitation de débit | Compteurs en base, fonction réutilisable | S-11, S-22, S-55, S-84, T-40 à T-42 | S |
-| 0.6 | Socle d'interface | Gabarits des trois zones, navigation, pages « introuvable » et « erreur », textes, formatage des montants et des dates, en-têtes de sécurité | S-80, S-85, NF-01 à NF-04, T-34, T-35 | M |
+| 0.6 | Socle d'interface | Gabarits des trois zones, navigation, pages « introuvable » et « erreur », textes, formatage des montants et des dates, en-têtes de sécurité | S-80, S-85, NF-01 à NF-04, T-34, T-35 | L |
 | 0.7 | Envoi d'emails | Module interchangeable : interception en local et en test, envoi réel en production par un compte Gmail dédié à l'application. Choix et vérification de la dépendance d'envoi | S-51, S-55 | M |
 | 0.8 | Contrôle après déploiement | Vérification automatique que la production utilise le rôle restreint | T-53, T-74 | S |
 
@@ -276,7 +276,7 @@ Une fonctionnalité n'est terminée que si toutes ces conditions sont réunies.
 
 | Jalon | Séances estimées |
 |---|---|
-| 0. Fondations | 19 à 33 |
+| 0. Fondations | 22 à 38 |
 | 1. Comptes | 16 à 27 |
 | 2. Organisations | 16 à 27 |
 | 3. Clients et catalogue | 10 à 17 |
@@ -285,11 +285,11 @@ Une fonctionnalité n'est terminée que si toutes ces conditions sont réunies.
 | 6. Paiements et relances | 12 à 20 |
 | 7. Pilotage | 13 à 22 |
 | 8. Exploitation et vitrine | 11 à 19 |
-| **Total** | **140 à 237** |
+| **Total** | **143 à 242** |
 
 Chaque ligne additionne les tailles des fonctionnalités du jalon : 1 à 2 séances pour S, 3 à 5 pour M, 6 à 10 pour L.
 
-À raison de cinq séances par semaine, cela représente entre six et onze mois. Les jalons 0 à 5, qui forment un produit démontrable, demandent entre 104 et 176 séances, soit cinq à huit mois.
+À raison de cinq séances par semaine, cela représente entre six et onze mois. Les jalons 0 à 5, qui forment un produit démontrable, demandent entre 107 et 181 séances, soit cinq à huit mois.
 
 Cette estimation est une fourchette, pas un engagement. Elle repose sur le rythme observé pendant la configuration, où les imprévus ont représenté une part importante du temps.
 

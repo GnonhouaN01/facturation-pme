@@ -21,6 +21,10 @@ const EXPOSER = "src/server/actions/exposer.ts";
 const APP_ACTIONS = "src/app/**/actions.ts";
 const DEBIT = "src/server/debit/**";
 const DB_DEBIT = "src/server/db/debit.ts";
+// Écrans : pages et composants, où s'affiche le texte (règle R). Les
+// composants de ui/, générés par shadcn, ne portent pas de texte affiché.
+const ECRANS = ["src/app/**", "src/components/**"];
+const UI = "src/components/ui/**";
 
 // En configuration plate, une règle déclarée par un bloc postérieur remplace
 // entièrement celle d'un bloc antérieur pour un même fichier : les options ne
@@ -222,6 +226,137 @@ const SYNTAXE_N_DB = chargementsDynamiques(
   MESSAGE_N,
 );
 
+// O. Aucun point d'injection de HTML ni de script (S-51, T-34) : le texte
+// s'affiche par React, qui l'échappe. Les règles nommées (react/no-danger,
+// react/jsx-no-script-url, no-eval, no-new-func, no-implied-eval) sont
+// activées dans leur propre bloc ; les sélecteurs ci-dessous rejoignent chaque
+// bloc de syntaxe. write et writeln ne sont visés que sur document : un flux
+// Node a aussi une méthode write.
+const MESSAGE_O =
+  "Aucun point d'injection de HTML ni de script : afficher le texte par React, sans dangerouslySetInnerHTML, innerHTML, document.write, srcDoc, script ni next/script (docs/features/socle-interface.md, section 7, règle O).";
+const SYNTAXE_O = [
+  "JSXAttribute[name.name='dangerouslySetInnerHTML']",
+  "Property[key.name='dangerouslySetInnerHTML']",
+  "Property[key.value='dangerouslySetInnerHTML']",
+  "AssignmentExpression > MemberExpression.left[property.name=/^(inner|outer)HTML$/]",
+  "AssignmentExpression > MemberExpression.left[property.value=/^(inner|outer)HTML$/]",
+  "CallExpression > MemberExpression.callee[property.name='insertAdjacentHTML']",
+  "CallExpression > MemberExpression.callee[object.name='document'][property.name=/^(write|writeln)$/]",
+  "JSXAttribute[name.name=/^src[Dd]oc$/]",
+  "JSXOpeningElement[name.name='script']",
+  "ImportDeclaration[source.value=/^next\\u002Fscript(\\.js)?$/]",
+  "ExportNamedDeclaration[source.value=/^next\\u002Fscript(\\.js)?$/]",
+]
+  .map((selector) => ({ selector, message: MESSAGE_O }))
+  .concat(chargementsDynamiques("/^next\\u002Fscript(\\.js)?$/", MESSAGE_O));
+
+// P. Aucun attribut style : la politique de sécurité du contenu, sans
+// 'unsafe-inline', bloque un attribut style rendu par le serveur. Les styles
+// passent par les classes Tailwind. Rejoint chaque bloc de syntaxe.
+const MESSAGE_P =
+  "Aucun attribut style : la politique de sécurité du contenu le bloque ; utiliser les classes Tailwind (docs/features/socle-interface.md, section 7, règle P).";
+const SYNTAXE_P = [{ selector: "JSXAttribute[name.name='style']", message: MESSAGE_P }];
+
+// Q. Accessibilité (NF-04) : les 31 règles en erreur du jeu recommandé
+// d'eslint-plugin-jsx-a11y 6.10.2, avec ses options. Le module est enregistré
+// par eslint-config-next sous le préfixe jsx-a11y : il n'est pas importé ici.
+// Les trois règles que le jeu désactive (anchor-ambiguous-text,
+// control-has-associated-label, label-has-for) restent désactivées. alt-text
+// garde le composant Image de Next.js, que vise la configuration de Next.js.
+const REGLES_Q = {
+  "jsx-a11y/alt-text": ["error", { img: ["Image"] }],
+  "jsx-a11y/anchor-has-content": "error",
+  "jsx-a11y/anchor-is-valid": "error",
+  "jsx-a11y/aria-activedescendant-has-tabindex": "error",
+  "jsx-a11y/aria-props": "error",
+  "jsx-a11y/aria-proptypes": "error",
+  "jsx-a11y/aria-role": "error",
+  "jsx-a11y/aria-unsupported-elements": "error",
+  "jsx-a11y/autocomplete-valid": "error",
+  "jsx-a11y/click-events-have-key-events": "error",
+  "jsx-a11y/heading-has-content": "error",
+  "jsx-a11y/html-has-lang": "error",
+  "jsx-a11y/iframe-has-title": "error",
+  "jsx-a11y/img-redundant-alt": "error",
+  "jsx-a11y/interactive-supports-focus": [
+    "error",
+    { tabbable: ["button", "checkbox", "link", "searchbox", "spinbutton", "switch", "textbox"] },
+  ],
+  "jsx-a11y/label-has-associated-control": "error",
+  "jsx-a11y/media-has-caption": "error",
+  "jsx-a11y/mouse-events-have-key-events": "error",
+  "jsx-a11y/no-access-key": "error",
+  "jsx-a11y/no-autofocus": "error",
+  "jsx-a11y/no-distracting-elements": "error",
+  "jsx-a11y/no-interactive-element-to-noninteractive-role": [
+    "error",
+    { tr: ["none", "presentation"], canvas: ["img"] },
+  ],
+  "jsx-a11y/no-noninteractive-element-interactions": [
+    "error",
+    {
+      handlers: [
+        "onClick",
+        "onError",
+        "onLoad",
+        "onMouseDown",
+        "onMouseUp",
+        "onKeyPress",
+        "onKeyDown",
+        "onKeyUp",
+      ],
+      alert: ["onKeyUp", "onKeyDown", "onKeyPress"],
+      body: ["onError", "onLoad"],
+      dialog: ["onKeyUp", "onKeyDown", "onKeyPress"],
+      iframe: ["onError", "onLoad"],
+      img: ["onError", "onLoad"],
+    },
+  ],
+  "jsx-a11y/no-noninteractive-element-to-interactive-role": [
+    "error",
+    {
+      ul: ["listbox", "menu", "menubar", "radiogroup", "tablist", "tree", "treegrid"],
+      ol: ["listbox", "menu", "menubar", "radiogroup", "tablist", "tree", "treegrid"],
+      li: ["menuitem", "menuitemradio", "menuitemcheckbox", "option", "row", "tab", "treeitem"],
+      table: ["grid"],
+      td: ["gridcell"],
+      fieldset: ["radiogroup", "presentation"],
+    },
+  ],
+  "jsx-a11y/no-noninteractive-tabindex": [
+    "error",
+    { tags: [], roles: ["tabpanel"], allowExpressionValues: true },
+  ],
+  "jsx-a11y/no-redundant-roles": "error",
+  "jsx-a11y/no-static-element-interactions": [
+    "error",
+    {
+      allowExpressionValues: true,
+      handlers: ["onClick", "onMouseDown", "onMouseUp", "onKeyPress", "onKeyDown", "onKeyUp"],
+    },
+  ],
+  "jsx-a11y/role-has-required-aria-props": "error",
+  "jsx-a11y/role-supports-aria-props": "error",
+  "jsx-a11y/scope": "error",
+  "jsx-a11y/tabindex-no-positive": "error",
+};
+
+// R. Texte affiché écrit en dur (NF-01) : les textes vivent dans src/textes/.
+// Dans les écrans hors de ui/ : react/jsx-no-literals refuse une chaîne entre
+// les balises (sauf « : » et « · », seuls signes permis), et ces sélecteurs
+// refusent une chaîne écrite en dur dans les attributs qui portent un texte
+// lu. Les autres attributs (className, href, variant) restent permis.
+const MESSAGE_R =
+  "Texte affiché écrit en dur : le placer dans src/textes/ (NF-01, docs/features/socle-interface.md, section 7, règle R).";
+const ATTRIBUTS_TEXTE =
+  "JSXAttribute[name.name=/^(alt|title|placeholder|aria-label|aria-description)$/]";
+const SYNTAXE_R = [
+  `${ATTRIBUTS_TEXTE} > Literal`,
+  `${ATTRIBUTS_TEXTE} > TemplateLiteral`,
+  `${ATTRIBUTS_TEXTE} > JSXExpressionContainer > Literal[value=/./]`,
+  `${ATTRIBUTS_TEXTE} > JSXExpressionContainer > TemplateLiteral`,
+].map((selector) => ({ selector, message: MESSAGE_R }));
+
 const restreindreImports = (...listes) => [
   "error",
   {
@@ -231,6 +366,25 @@ const restreindreImports = (...listes) => [
 ];
 
 const restreindreSyntaxe = (...listes) => ["error", ...listes.flat()];
+
+// Restrictions de syntaxe du cas général de src/ : le bloc général et les
+// blocs des écrans.
+const SYNTAXE_GENERALE = [
+  SYNTAXE_O,
+  SYNTAXE_P,
+  SYNTAXE_A,
+  SYNTAXE_B,
+  SYNTAXE_C,
+  SYNTAXE_D,
+  SYNTAXE_F,
+  SYNTAXE_G,
+  SYNTAXE_H,
+  SYNTAXE_I,
+  SYNTAXE_J,
+  SYNTAXE_K,
+  SYNTAXE_M,
+  SYNTAXE_N,
+];
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -422,31 +576,28 @@ const eslintConfig = defineConfig([
     ignores: [ENV],
     rules: { "no-restricted-properties": ["error", ...PROPRIETES_B] },
   },
-  // Syntaxe interdite.
+  // Syntaxe interdite. Les écrans ont leurs blocs, à cause de la règle R.
   {
     files: [SRC],
-    ignores: [DB, ENV, TESTS, ACTIONS, APP_ACTIONS],
-    rules: {
-      "no-restricted-syntax": restreindreSyntaxe(
-        SYNTAXE_A,
-        SYNTAXE_B,
-        SYNTAXE_C,
-        SYNTAXE_D,
-        SYNTAXE_F,
-        SYNTAXE_G,
-        SYNTAXE_H,
-        SYNTAXE_I,
-        SYNTAXE_J,
-        SYNTAXE_K,
-        SYNTAXE_M,
-        SYNTAXE_N,
-      ),
-    },
+    ignores: [DB, ENV, TESTS, ACTIONS, APP_ACTIONS, ...ECRANS],
+    rules: { "no-restricted-syntax": restreindreSyntaxe(...SYNTAXE_GENERALE) },
+  },
+  {
+    files: ECRANS,
+    ignores: [TESTS, APP_ACTIONS, UI],
+    rules: { "no-restricted-syntax": restreindreSyntaxe(...SYNTAXE_GENERALE, SYNTAXE_R) },
+  },
+  {
+    files: [UI],
+    ignores: [TESTS],
+    rules: { "no-restricted-syntax": restreindreSyntaxe(...SYNTAXE_GENERALE) },
   },
   {
     files: [APP_ACTIONS],
     rules: {
       "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_O,
+        SYNTAXE_P,
         SYNTAXE_A,
         SYNTAXE_B,
         SYNTAXE_C,
@@ -467,6 +618,8 @@ const eslintConfig = defineConfig([
     ignores: [TESTS, ACTION, EXPOSER],
     rules: {
       "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_O,
+        SYNTAXE_P,
         SYNTAXE_A,
         SYNTAXE_B,
         SYNTAXE_C,
@@ -487,6 +640,8 @@ const eslintConfig = defineConfig([
     files: [ACTION],
     rules: {
       "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_O,
+        SYNTAXE_P,
         SYNTAXE_A,
         SYNTAXE_B,
         SYNTAXE_C,
@@ -504,6 +659,8 @@ const eslintConfig = defineConfig([
     files: [EXPOSER],
     rules: {
       "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_O,
+        SYNTAXE_P,
         SYNTAXE_A,
         SYNTAXE_B,
         SYNTAXE_C,
@@ -523,6 +680,8 @@ const eslintConfig = defineConfig([
     ignores: [DB],
     rules: {
       "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_O,
+        SYNTAXE_P,
         SYNTAXE_A,
         SYNTAXE_B,
         SYNTAXE_C,
@@ -535,6 +694,8 @@ const eslintConfig = defineConfig([
     files: [ENV],
     rules: {
       "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_O,
+        SYNTAXE_P,
         SYNTAXE_A,
         SYNTAXE_C,
         SYNTAXE_D,
@@ -553,6 +714,8 @@ const eslintConfig = defineConfig([
     ignores: [TESTS, OUTILS_TEST, CLIENT, ISOLATION],
     rules: {
       "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_O,
+        SYNTAXE_P,
         SYNTAXE_B,
         SYNTAXE_C,
         SYNTAXE_D,
@@ -570,6 +733,8 @@ const eslintConfig = defineConfig([
     files: [CLIENT, ISOLATION],
     rules: {
       "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_O,
+        SYNTAXE_P,
         SYNTAXE_B,
         SYNTAXE_C,
         SYNTAXE_D,
@@ -586,6 +751,8 @@ const eslintConfig = defineConfig([
     files: [OUTILS_TEST],
     rules: {
       "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_O,
+        SYNTAXE_P,
         SYNTAXE_B,
         SYNTAXE_C,
         SYNTAXE_G,
@@ -597,7 +764,41 @@ const eslintConfig = defineConfig([
   {
     files: [TESTS_DB],
     rules: {
-      "no-restricted-syntax": restreindreSyntaxe(SYNTAXE_B, SYNTAXE_C, SYNTAXE_G, SYNTAXE_H),
+      "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_O,
+        SYNTAXE_P,
+        SYNTAXE_B,
+        SYNTAXE_C,
+        SYNTAXE_G,
+        SYNTAXE_H,
+      ),
+    },
+  },
+  // O. Règles nommées : pour tout src/.
+  {
+    files: [SRC],
+    rules: {
+      "react/no-danger": "error",
+      "react/jsx-no-script-url": "error",
+      "no-eval": "error",
+      "no-new-func": "error",
+      "no-implied-eval": "error",
+    },
+  },
+  // Q. Accessibilité : pour tout src/.
+  {
+    files: [SRC],
+    rules: REGLES_Q,
+  },
+  // R. Chaînes entre les balises : écrans hors de ui/.
+  {
+    files: ECRANS,
+    ignores: [TESTS, UI],
+    rules: {
+      "react/jsx-no-literals": [
+        "error",
+        { noStrings: true, allowedStrings: [":", "·"], ignoreProps: true },
+      ],
     },
   },
   // Override default ignores of eslint-config-next.

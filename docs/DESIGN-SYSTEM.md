@@ -188,10 +188,12 @@ Les composants sont ceux de shadcn/ui, habillés par ces jetons. Aucun n'est enc
 | Situation | Règle d'interface |
 |---|---|
 | Émission d'une facture | Fenêtre de confirmation avec récapitulatif et bandeau `attention` : « Une facture émise ne peut plus être modifiée. » |
-| Document produit en mode simulateur | Bandeau `attention` permanent : « Simulation : document non certifié par la DGI, sans valeur fiscale. » |
+| Document produit en mode simulateur | Sur le document lui-même (page, PDF) : bandeau `attention` permanent : « Simulation : document non certifié par la DGI, sans valeur fiscale. » |
+| Application en mode simulateur | En haut du contenu de chaque page de l'application : bandeau `attention` permanent : « Simulation : les documents ne sont pas certifiés par la DGI et n'ont pas de valeur fiscale. » |
 | Action sensible | Nouvelle saisie du mot de passe dans la fenêtre, avant le bouton d'action |
 | Action destructrice | Bouton destructeur, jamais placé par défaut sous le curseur. L'annulation est le bouton par défaut |
 | Accès refusé ou ressource absente | Le même écran « Cette page est introuvable », sans distinction |
+| Action refusée dans un formulaire | « Cette action n'est pas disponible. », sans distinction entre droit refusé et ressource absente |
 | Erreur inattendue | « Une erreur est survenue. » suivi d'un identifiant d'incident. Aucun détail technique |
 | Connexion échouée | « Email ou mot de passe incorrect », que le compte existe ou non |
 | Page ouverte par un lien expiré | « Ce lien n'est plus valable », sans autre information |

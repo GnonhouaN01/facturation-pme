@@ -1,6 +1,6 @@
 # Fonctionnalité : limitation de débit
 
-Statut : en cours (implémentation faite sur `dev` ; CI à constater sur la PR)
+Statut : livrée (PR #32, fusionnée le 2026-10-11, CI verte)
 
 Jalon 0, fonctionnalité 0.5 de `docs/PLAN.md`. Taille S, à sa limite haute ; une seule PR (décision 9).
 
@@ -300,7 +300,7 @@ export const modifierRoleMembre = declarerAction({
 - [x] Le rôle `app_facturation` a `SELECT`, `INSERT`, `UPDATE`, `DELETE` et pas `TRUNCATE` sur `compteur_debit`, sur `dev`, `preview` et `production`. Sur `dev` : prouvé par le test d'inventaire. Sur `preview` et `production` : vérifié par le développeur, `SELECT` à `DELETE` à vrai (décision 10) et `TRUNCATE` à faux (2026-10-11).
 - [x] Tout nouveau fichier de `src/server/` commence par `import "server-only";`.
 - [x] Aucune dépendance ajoutée : `package-lock.json` inchangé.
-- [ ] `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:integration` (sur `dev` et en CI) passent. Sur `dev`, constaté le 2026-10-11 ; en CI, à constater sur la PR.
+- [x] `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:integration` (sur `dev` et en CI) passent. Sur `dev`, constaté le 2026-10-11 ; en CI, constaté sur la PR #32, fusionnée (commit `bf585df`).
 
 ## Tests à écrire
 

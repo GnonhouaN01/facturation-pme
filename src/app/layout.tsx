@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import { DM_Mono, DM_Sans, Space_Grotesk } from "next/font/google";
+
+import { TEXTES_COMMUNS } from "@/textes/commun";
+
 import "./globals.css";
 
 const spaceGrotesk = Space_Grotesk({
@@ -19,8 +22,8 @@ const dmMono = DM_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Facturation PME",
-  description: "Devis, factures et suivi des paiements pour petites structures.",
+  title: TEXTES_COMMUNS.produit,
+  description: TEXTES_COMMUNS.description,
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
