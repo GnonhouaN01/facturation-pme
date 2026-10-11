@@ -254,7 +254,7 @@ Ces règles seront vérifiées automatiquement par l'analyse du code, en phase 9
 
 | Dossier | Peut importer | Ne peut pas importer |
 |---|---|---|
-| `app/`, `components/` | `components/`, `schemas/`, `lib/`, `textes/`, et `server/` uniquement par les actions et les services | `server/db/` |
+| `app/`, `components/` | `components/`, `schemas/`, `lib/`, `textes/`, et `server/` uniquement par les actions, les services et `server/autorisation/navigation.ts` (entrées de navigation filtrées par la matrice, fonctionnalité 0.6) | `server/db/` |
 | `server/actions/` | `server/auth/`, `server/autorisation/`, `server/debit/` (`verifierDebit` et les types, dans `action.ts`), `server/db/client.ts` (`executerDansOrganisation`, dans `action.ts` seulement), `server/db/requetes/adhesions.ts`, `server/journal/` (`journaliser`, dans `action.ts` seulement), `server/services/`, `schemas/` ; `next/headers` dans `exposer.ts` seulement | Les autres fichiers de `server/db/requetes/` |
 | `server/services/` | `server/db/` (sauf `executerDansOrganisation`), `server/modules/`, `lib/`, `schemas/` | `app/`, `components/`, `server/journal/` (le journal s'écrit par `ctx.journaliser`) |
 | `server/journal/` | `server/db/` (le type `TransactionOrganisation` et `requetes/journal.ts`), `zod` | Tout le reste du projet |

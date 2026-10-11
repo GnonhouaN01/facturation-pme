@@ -24,7 +24,7 @@ Lis la section utile avant toute tâche. Ne les charge pas en entier.
 - `npm run dev`, `npm run build`, `npm run typecheck`, `npm run lint`, `npm run format`
 - `npm test` : Vitest, projet `unitaires`, fichiers `src/**/*.test.ts` sauf `*.integration.test.ts`. Sans base
 - `npm run test:integration` : Vitest, projet `integration`, fichiers `src/**/*.integration.test.ts`. Avec base : refuse toute base sans la marque de test
-- `npm run test:e2e` : Playwright, dossier `e2e/`
+- `npm run test:e2e` : Playwright, dossier `e2e/`, sur le site construit : lancer `npm run build` avant, port 3000 libre. La politique de sécurité du contenu diffère en développement (`docs/features/socle-interface.md`, section 6). `playwright.config.ts` passe à `npm run start` en local avec la PR 2 de la 0.6
 - `npm run db:generate` puis lecture du SQL généré, puis `npm run db:migrate`
 - `node scripts/verifier-connexion.mjs`, `verifier-tables.mjs`, `verifier-isolation.mjs`
 - `npm run verifier:auth` : vérifie que Better Auth lit la base (tsx avec la condition `react-server`, requise par `server-only`)
