@@ -27,6 +27,7 @@ function champs(): DeclarationAction<typeof SCHEMA, null, string> {
     journal: null,
     nouvelleAuthentification: false,
     debit: null,
+    emails: [],
     executer: async () => "fait",
   };
 }

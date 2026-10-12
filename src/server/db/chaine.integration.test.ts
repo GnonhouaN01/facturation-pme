@@ -58,6 +58,7 @@ function demoLire() {
     journal: null,
     nouvelleAuthentification: false,
     debit: null,
+    emails: [],
     executer: async (ctx) => ({
       utilisateurId: ctx.utilisateurId,
       organisationId: ctx.organisationId,
@@ -79,6 +80,7 @@ function demoEcrire() {
     journal: "organisation.parametres_modifies",
     nouvelleAuthentification: false,
     debit: null,
+    emails: [],
     executer: async (ctx, entree) => {
       const [ligne] = await ctx.tx
         .insert(temoinIsolation)
@@ -100,6 +102,7 @@ function demoOubliTrace() {
     journal: "organisation.parametres_modifies",
     nouvelleAuthentification: false,
     debit: null,
+    emails: [],
     executer: async (ctx, entree) => {
       await ctx.tx
         .insert(temoinIsolation)
@@ -209,6 +212,7 @@ describe("demo.sensible : nouvelle authentification fermée en 0.4", () => {
       journal: null,
       nouvelleAuthentification: true,
       debit: null,
+      emails: [],
       executer,
     });
 

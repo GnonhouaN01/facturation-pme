@@ -18,8 +18,10 @@ export type Verificateur = {
   cle: (nom: NomLimite, valeur: string) => string;
 };
 
+// limites : toutes celles de LIMITES, ou une partie (tests). Un nom absent
+// lève, comme un nom inconnu.
 export function creerVerificateur(options: {
-  limites: Readonly<Record<NomLimite, Limite>>;
+  limites: Readonly<Partial<Record<NomLimite, Limite>>>;
   compteur: Compteur;
   secret: Uint8Array;
 }): Verificateur {
@@ -28,8 +30,9 @@ export function creerVerificateur(options: {
   // Seules les clés propres comptent : un nom hérité (constructor) n'est pas
   // une limite.
   function limiteDe(nom: NomLimite): Limite {
-    if (!Object.hasOwn(limites, nom)) throw new Error("Limite de débit inconnue.");
-    return limites[nom];
+    const limite = Object.hasOwn(limites, nom) ? limites[nom] : undefined;
+    if (limite === undefined) throw new Error("Limite de débit inconnue.");
+    return limite;
   }
 
   function cle(nom: NomLimite, valeur: string): string {

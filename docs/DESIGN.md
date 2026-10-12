@@ -669,7 +669,7 @@ flowchart TB
 
     subgraph Z2[Services exterieurs]
         NEON[(Neon : PostgreSQL)]
-        RESEND[Resend]
+        GMAIL[Gmail : compte dédié]
         SENTRY[Sentry]
     end
 
@@ -685,7 +685,7 @@ flowchart TB
     CRON --> SM
     AZ --> AD
     AD -->|F3| NEON
-    MAIL -->|F4| RESEND
+    MAIL -->|F4| GMAIL
     PE -.->|erreurs| SENTRY
 ```
 
@@ -706,7 +706,7 @@ Le système est fait de trois zones, séparées par les frontières de confiance
 | Accès aux données | Parler à la base, fixer l'organisation active | Être appelé depuis une page |
 | Modules | Certifier, générer un PDF, envoyer un email | Accéder à la base directement |
 
-**Les services extérieurs** ne reçoivent que le nécessaire : Neon toutes les données, Resend les destinataires et le contenu des emails, Sentry les erreurs sans donnée personnelle.
+**Les services extérieurs** ne reçoivent que le nécessaire : Neon toutes les données, Gmail (compte dédié à l'application) les destinataires et le contenu des emails, en texte brut et sans donnée sensible, Sentry les erreurs sans donnée personnelle.
 
 ### 4.3 Les règles d'architecture
 
@@ -716,7 +716,7 @@ Ces règles seront inscrites dans CLAUDE.md et vérifiées automatiquement.
 2. **Un seul fichier contient la matrice des droits.** Les contrôles et les tests la lisent tous deux (T-50).
 3. **Toute action est déclarée à travers la fonction commune** qui enchaîne origine, identité, autorisation et validation.
 4. **Un service métier reçoit toujours un contexte** : utilisateur, organisation, rôle. Il ne peut pas être appelé sans.
-5. **Les modules sont interchangeables.** La certification, l'envoi d'emails et la génération de PDF sont définis par une interface. Le simulateur de certification et l'intercepteur d'emails en développement en sont des implémentations.
+5. **Les modules sont interchangeables.** La certification, l'envoi d'emails et la génération de PDF sont définis par une interface. Le simulateur de certification et les transports d'email `memoire` et `fichier` en sont des implémentations. L'envoi d'emails a une seule porte, `src/server/email/envoi.ts`, qui valide la demande, construit le message et choisit le transport ; un service demande un envoi par `ctx.preparerEmail`, et la chaîne envoie après la validation de la transaction (`docs/features/envoi-emails.md`, règle ESLint T).
 6. **Les schémas de validation sont partagés** entre les formulaires et le serveur, dans un seul dossier (S-50).
 7. **Aucun secret n'atteint le navigateur.** Les variables accessibles côté client sont listées explicitement.
 
@@ -724,10 +724,10 @@ Ces règles seront inscrites dans CLAUDE.md et vérifiées automatiquement.
 
 | Environnement | Hébergement | Base | Emails | Certification |
 |---|---|---|---|---|
-| Développement | Poste local | Branche Neon `dev` | Interceptés localement | Simulateur |
-| Test automatisé | GitHub Actions | À définir avec la CI | Interceptés | Simulateur |
-| Prévisualisation | Vercel, une adresse par PR, protégée par connexion | Branche Neon `preview`, commune aux PR | Interceptés | Simulateur |
-| Production | Vercel, région de Francfort | Branche Neon `production` | Service d'envoi, à configurer | Simulateur, avec mention visible |
+| Développement | Poste local | Branche Neon `dev` | Transport `fichier` (dossier `.emails/`) : rien ne part | Simulateur |
+| Test automatisé | GitHub Actions | PostgreSQL temporaire | Transport `memoire` (Vitest, avec garde réseau) ou `fichier` (Playwright) : rien ne part | Simulateur |
+| Prévisualisation | Vercel, une adresse par PR, protégée par connexion | Branche Neon `preview`, commune aux PR | Sans variable : `memoire`. À partir de la PR 2 de la 0.7, configurée : second compte Gmail, vers la liste `EMAIL_DESTINATAIRES_AUTORISES` seulement | Simulateur |
+| Production | Vercel, région de Francfort | Branche Neon `production` | Après la PR 1 de la 0.7 : `memoire` (aucune action n'envoie encore). À partir de la PR 2 : compte Gmail dédié, en SMTP | Simulateur, avec mention visible |
 
 Chaque environnement a ses propres secrets. Aucun environnement autre que la production n'accède aux données de production (S-83, T-74).
 

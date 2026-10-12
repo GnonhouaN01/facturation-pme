@@ -8,13 +8,25 @@ import "server-only";
 export type Limite = {
   maximum: number;
   fenetreSecondes: number;
-  // Ce que la clé désigne. En 0.5, l'utilisateur de la session seulement.
-  par: "utilisateur";
+  // Ce que la clé désigne : l'utilisateur de la session (étape 4 de la
+  // chaîne) ; pour les emails (0.7), l'application entière, l'organisation de
+  // la transaction ou l'adresse du destinataire, normalisée pour le compteur.
+  par: "utilisateur" | "application" | "organisation" | "destinataire";
 };
 
 export const LIMITES = {
   // Actions des membres, par la chaîne de contrôles (décision 4).
   "membre.action": { maximum: 60, fenetreSecondes: 60, par: "utilisateur" },
+  // Envoi d'emails (S-55, T-40), vérifiées par la chaîne après la validation
+  // de la transaction, dans cet ordre : destinataire, destinataire_jour,
+  // organisation, application. Un seul compte Gmail sert tout : 2 × 200 reste
+  // sous ses 500 par jour, même au bord de la fenêtre fixe. Valeurs de la
+  // décision 5, à revoir aux jalons 6 et 8. Fiche :
+  // docs/features/envoi-emails.md, section 5.2.
+  "email.destinataire": { maximum: 3, fenetreSecondes: 60 * 60, par: "destinataire" },
+  "email.destinataire_jour": { maximum: 10, fenetreSecondes: 24 * 60 * 60, par: "destinataire" },
+  "email.organisation": { maximum: 40, fenetreSecondes: 24 * 60 * 60, par: "organisation" },
+  "email.application": { maximum: 200, fenetreSecondes: 24 * 60 * 60, par: "application" },
 } as const satisfies Record<string, Limite>;
 
 export type NomLimite = keyof typeof LIMITES;

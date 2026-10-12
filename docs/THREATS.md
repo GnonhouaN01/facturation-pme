@@ -162,6 +162,8 @@ Le navigateur n'est **jamais** une zone de confiance : tout ce qui s'y trouve pe
 | T-61 | Injecter une formule dans un export CSV | P2, P5 | 2 | 2 | Moyenne | S-52 | Un nom commençant par `=` ressort neutralisé |
 | T-62 | Injecter du contenu dans un PDF ou un email par un champ saisi | P4, P5 | 2 | 2 | Moyenne | S-51, S-87 | Les balises saisies apparaissent comme du texte |
 | T-63 | Faire charger au serveur une ressource distante pendant la génération d'un PDF | P4 | 3 | 1 | Moyenne | S-87 | La génération ne fait aucune requête sortante |
+| T-64 | Injecter un en-tête dans un email (copie cachée vers des tiers, second corps) par un retour à la ligne dans une adresse, un sujet ou un nom | P4, P5 | 2 | 2 | Moyenne | S-50, S-51 | Une adresse avec un retour à la ligne, une virgule ou des chevrons est refusée avant tout envoi ; sujet et expéditeur fixes (`docs/features/envoi-emails.md`, section 3) |
+| T-65 | Faire envoyer par l'application un email contenant un lien vers un autre site | P2, P4 | 2 | 2 | Moyenne | S-51 | La porte d'envoi construit chaque lien depuis un jeton : origine de l'application et chemin `/lien/` seulement ; un jeton hors format est refusé |
 
 ### 5.8 Chaîne de développement
 
@@ -173,6 +175,7 @@ Le navigateur n'est **jamais** une zone de confiance : tout ce qui s'y trouve pe
 | T-73 | Laisser l'assistant de code lire des secrets ou exécuter une commande dangereuse | Développeur | 3 | 1 | Moyenne | S-83, S-89 | Les fichiers de secrets sont interdits de lecture à l'assistant |
 | T-74 | Exposer les données de production dans un déploiement de prévisualisation | Développeur | 3 | 2 | Haute | S-83 | Les prévisualisations utilisent une base distincte |
 | T-75 | Perdre les données sans pouvoir les restaurer | — | 3 | 1 | Moyenne | NF-07 | Une restauration a été réalisée et documentée |
+| T-76 | Faire fuiter le mot de passe d'application du compte Gmail d'envoi, qui donne l'envoi au nom de l'application et la lecture de sa boîte | Développeur | 3 | 1 | Moyenne | S-83, S-54 | Secret dans Vercel seulement, jamais dans `.env.local`, la CI ni le dépôt ; journalisation du client SMTP désactivée ; erreurs du transport réduites à un code (PR 2 de la 0.7) |
 
 ---
 
@@ -278,7 +281,8 @@ Les données ne quittent l'application que vers l'hébergeur, le fournisseur de 
 | Neon | Base de données | Allemagne (Francfort) |
 | Vercel | Serveur applicatif | Allemagne (Francfort) pour les fonctions. Les pages statiques sont distribuées par un réseau mondial |
 | GitHub | Code source, sans secret ni donnée réelle | États-Unis |
-| Resend, Sentry | Non encore configurés | À relever lors de leur mise en place |
+| Google (Gmail), compte d'envoi dédié | Adresses des destinataires et contenu des emails (texte brut, sans donnée sensible), copie dans « Messages envoyés », réponses des destinataires | États-Unis et réseau mondial de Google, à confirmer |
+| Sentry | Non encore configuré | À relever lors de sa mise en place |
 
 ---
 
@@ -296,6 +300,8 @@ Ce sont les situations que les parades ne couvrent pas, et qu'on choisit d'assum
 | RR-6 | Les documents produits en mode simulateur n'ont pas de valeur fiscale | L'accès réel à la plateforme dépend de démarches externes | Mention visible sur chaque document |
 | RR-7 | Un Comptable enregistre un faux paiement | Il faut bien faire confiance à celui qui saisit | Auteur tracé, aucune suppression possible |
 | RR-8 | Les tables de Better Auth (`member`, `user`, `session`, `organization`, `invitation`) n'ont pas de règle d'isolation : une requête écrite avec la transaction d'une organisation peut lire les lignes d'une autre | Un utilisateur n'appartient pas à une seule organisation, et Better Auth lit et écrit ces tables hors de toute organisation active, à la connexion par exemple (`DESIGN.md` section 2.5) | Traité au jalon 2 : toute requête de l'application sur ces tables filtre explicitement sur l'organisation du contexte, et reçoit un test d'attaque qui tente de lire l'autre organisation. Aujourd'hui, une seule requête : `lireAdhesion`, filtrée sur l'organisation de la transaction et l'utilisateur de la session |
+| RR-9 | Le compte Gmail d'envoi garde une copie de chaque email dans « Messages envoyés » (adresse du destinataire, lien), et reçoit dans sa boîte les réponses des destinataires, qui ne sont pas lues | Comportement de Gmail, sans réglage pour l'éviter ; un compte gratuit, sans nom de domaine | Chaque email demande de ne pas répondre et renvoie vers l'entreprise ; liens expirables et révocables (S-20) ; compte dédié, double authentification ; purge manuelle mensuelle des deux dossiers par le développeur (`docs/features/envoi-emails.md`, décision 9) |
+| RR-10 | Google peut ralentir ou suspendre le compte d'envoi sans préavis (volume, messages semblables, non-remises, ou première connexion d'un compte neuf depuis un serveur de Francfort jugée suspecte) : l'application n'envoie plus rien pendant 1 à 24 heures, ou plus, réinitialisations de mot de passe comprises | Un seul compte gratuit sert toutes les organisations | Nos limites restent sous celles de Google (200 par 24 heures pour l'application, 40 par organisation) ; toute alerte de Google est notée à la vérification manuelle (`docs/features/envoi-emails.md`, section 9) ; module interchangeable pour passer à un service spécialisé |
 
 ---
 

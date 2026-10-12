@@ -276,7 +276,7 @@ Ces points reposent sur des informations non confirmées auprès d'une source of
 1. **Règles FNE.** Mentions obligatoires, catégories de documents, dérogations : à vérifier sur dgi.gouv.ci et sur la plateforme FNE.
 2. **Taux de TVA.** Taux réduits et exonérations applicables : à vérifier auprès de la DGI.
 3. **Numérotation.** Le format et la remise à zéro annuelle de la référence interne sont une proposition : à confirmer.
-4. **Offres gratuites.** Limites de l'hébergement, de la base et de l'envoi d'emails : à vérifier en phase 4.
+4. **Offres gratuites.** Limites de l'hébergement et de la base : relevées dans `docs/STACK.md`. Envoi d'emails : un compte Gmail dédié, gratuit, sans nom de domaine ; Gmail bloque l'envoi au-delà de 500 emails par jour (Google, consulté le 2026-10-12), et l'application se limite à 200 par 24 heures, 40 par organisation (`docs/features/envoi-emails.md`, section 5).
 5. **Connexions sensibles (S-70).** Le terme n'est pas défini. Une connexion concerne un compte, sans organisation : elle ne peut pas aller dans le journal d'audit, qui exige une organisation. À définir dans les fiches du jalon 1, avec le lieu où ces évènements sont enregistrés (`docs/features/journal-audit.md`, décision 5).
 
 ---

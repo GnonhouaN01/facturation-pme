@@ -1,5 +1,7 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+
 import { z } from "zod";
 
 import { lireSession } from "../auth/session";
@@ -8,6 +10,14 @@ import { executerDansOrganisation, type TransactionOrganisation } from "../db/cl
 import { lireAdhesion } from "../db/requetes/adhesions";
 import { verifierDebit } from "../debit/debit";
 import { LIMITES, type NomLimite } from "../debit/limites";
+import { adressePourCompteur } from "../email/adresse";
+import {
+  envoyerEmail,
+  validerDemande,
+  type DemandeEmail,
+  type ResultatEnvoi,
+} from "../email/envoi";
+import { MODELES_EMAIL, type ModeleEmail } from "../email/modeles";
 import { env } from "../env";
 import { ACTIONS_JOURNAL, type ActionJournal } from "../journal/actions";
 import { journaliser, type EntreeJournal } from "../journal/audit";
@@ -36,7 +46,27 @@ export type Trace = {
   details?: Record<string, unknown>;
 };
 
-export type Contexte<J extends ActionJournal | null> = {
+// Les modèles d'email qu'une action peut envoyer. Fiche :
+// docs/features/envoi-emails.md, section 5.3.
+export type ModelesAction = readonly ModeleEmail[];
+
+// Demande d'email d'un service : un modèle de sa déclaration. Le destinataire
+// vient d'une ressource lue en base par le service, jamais de l'entrée.
+export type DemandeEmailAction<M extends ModelesAction> = {
+  modele: M[number];
+  destinataire: string;
+  parametres: Record<string, unknown>;
+};
+
+// ctx.preparerEmail n'existe que si la déclaration a au moins un modèle
+// (never sinon, comme journaliser). Synchrone : la demande est validée tout
+// de suite (une demande invalide annule la transaction), puis gardée
+// jusqu'après la validation.
+type PreparerEmail<M extends ModelesAction> = [M[number]] extends [never]
+  ? never
+  : (demande: DemandeEmailAction<M>) => void;
+
+export type Contexte<J extends ActionJournal | null, M extends ModelesAction = readonly []> = {
   utilisateurId: string;
   organisationId: string;
   role: Role;
@@ -44,9 +74,15 @@ export type Contexte<J extends ActionJournal | null> = {
   tx: TransactionOrganisation;
   journaliser: J extends ActionJournal ? (trace: Trace) => Promise<void> : never;
   introuvable: () => never;
+  preparerEmail: PreparerEmail<M>;
 };
 
-export type DeclarationAction<E extends SchemaEntree, J extends ActionJournal | null, T> = {
+export type DeclarationAction<
+  E extends SchemaEntree,
+  J extends ActionJournal | null,
+  T,
+  M extends ModelesAction = ModelesAction,
+> = {
   nom: string;
   droit: Droit;
   entree: E;
@@ -55,7 +91,13 @@ export type DeclarationAction<E extends SchemaEntree, J extends ActionJournal | 
   // Limite de débit de l'étape 4, ou null : champ obligatoire, sans défaut.
   // Fiche : docs/features/limitation-debit.md, section 10.
   debit: NomLimite | null;
-  executer: (ctx: Contexte<J>, entree: z.output<E>) => Promise<T>;
+  // Modèles d'email que l'action peut envoyer, ou [] : champ obligatoire,
+  // sans défaut. Fiche : docs/features/envoi-emails.md, section 5.3.
+  emails: M;
+  // Écrite en méthode : une déclaration sans modèle d'email (ctx sans
+  // preparerEmail) reste convertible en DeclarationQuelconque. Le contexte
+  // reste calculé depuis la déclaration elle-même.
+  executer(ctx: Contexte<J, M>, entree: z.output<E>): Promise<T>;
 };
 
 export type RequeteChaine = { entetes: Headers };
@@ -79,18 +121,28 @@ export type DependancesChaine = {
   ) => Promise<T>;
   lireAdhesion: (tx: TransactionOrganisation, utilisateurId: string) => Promise<AdhesionLue | null>;
   journaliser: (tx: TransactionOrganisation, entree: EntreeJournal) => Promise<void>;
-  verifierDebit: (nom: NomLimite, valeur: string) => Promise<boolean>;
+  // Écrite en méthode : ses paramètres restent bivariants, et une fonction
+  // de test limitée à « membre.action » (0.5) reste acceptée depuis l'ajout
+  // des limites d'envoi (0.7).
+  verifierDebit(nom: NomLimite, valeur: string): Promise<boolean>;
+  // Porte d'envoi, appelée après la validation de la transaction.
+  envoyerEmail: (demande: DemandeEmail) => Promise<ResultatEnvoi>;
 };
 
 // Contexte d'une lecture par une page : sans trace (section 3.2, décision 9).
-export type ContexteLecture = Omit<Contexte<null>, "journaliser">;
+export type ContexteLecture = Omit<Contexte<null>, "journaliser" | "preparerEmail">;
 
 // Une lecture n'a pas d'entrée à valider : jamais invalide.
 export type ResultatLecture<T> = Exclude<Resultat<T>, { raison: "invalide" }>;
 
 export type Chaine = {
-  executerChaine: <E extends SchemaEntree, J extends ActionJournal | null, T>(
-    declaration: DeclarationAction<E, J, T>,
+  executerChaine: <
+    E extends SchemaEntree,
+    J extends ActionJournal | null,
+    T,
+    M extends ModelesAction,
+  >(
+    declaration: DeclarationAction<E, J, T, M>,
     requete: RequeteChaine,
     entreeBrute: unknown,
   ) => Promise<Resultat<T>>;
@@ -107,6 +159,15 @@ export class TraceManquante extends Error {
   constructor() {
     super("Trace déclarée non écrite.");
     this.name = "TraceManquante";
+  }
+}
+
+// Un service a demandé un modèle absent de sa déclaration : l'action est
+// annulée. Message fixe.
+class ModeleNonDeclare extends Error {
+  constructor() {
+    super("Modèle d'email absent de la déclaration.");
+    this.name = "ModeleNonDeclare";
   }
 }
 
@@ -136,9 +197,12 @@ function estStrict(schema: unknown): boolean {
 // Vérifie la déclaration au chargement du module qui la fait : ce que le type
 // ne peut pas garantir (schéma strict, S-50), et ce qu'un appelant qui
 // contourne le type fournirait. Renvoie une copie figée.
-export function declarerAction<E extends SchemaEntree, J extends ActionJournal | null, T>(
-  declaration: DeclarationAction<E, J, T>,
-): DeclarationAction<E, J, T> {
+export function declarerAction<
+  E extends SchemaEntree,
+  J extends ActionJournal | null,
+  T,
+  M extends ModelesAction,
+>(declaration: DeclarationAction<E, J, T, M>): DeclarationAction<E, J, T, M> {
   const { nom, droit, entree, journal, nouvelleAuthentification, executer } = declaration;
   if (typeof nom !== "string" || nom === "") throw new DeclarationInvalide("nom absent");
   if (!Object.hasOwn(DROITS, droit)) throw new DeclarationInvalide(`droit inconnu (${nom})`);
@@ -154,14 +218,34 @@ export function declarerAction<E extends SchemaEntree, J extends ActionJournal |
   if (debit !== null && (typeof debit !== "string" || !Object.hasOwn(LIMITES, debit))) {
     throw new DeclarationInvalide(`limite de débit inconnue ou absente (${nom})`);
   }
+  // L'étape 4 compte l'utilisateur de la session : une limite qui compte
+  // autre chose (envoi d'emails) n'y a pas sa place.
+  if (debit !== null && LIMITES[debit].par !== "utilisateur") {
+    throw new DeclarationInvalide(`limite de débit hors de l'étape 4 (${nom})`);
+  }
+  // emails : une liste de modèles connus, sans doublon, ou [] ; jamais
+  // absent (docs/features/envoi-emails.md, section 5.3).
+  const { emails } = declaration as { emails: unknown };
+  if (
+    !Array.isArray(emails) ||
+    !emails.every((modele) => typeof modele === "string" && Object.hasOwn(MODELES_EMAIL, modele)) ||
+    new Set(emails).size !== emails.length
+  ) {
+    throw new DeclarationInvalide(`modèles d'email inconnus ou absents (${nom})`);
+  }
   if (typeof executer !== "function") throw new DeclarationInvalide(`executer absent (${nom})`);
-  const marquee = { ...declaration };
+  const marquee = { ...declaration, emails: Object.freeze([...emails]) as unknown as M };
   Object.defineProperty(marquee, MARQUE, { value: true });
   DECLARATIONS.add(marquee);
   return Object.freeze(marquee);
 }
 
-export type DeclarationQuelconque = DeclarationAction<SchemaEntree, ActionJournal | null, unknown>;
+export type DeclarationQuelconque = DeclarationAction<
+  SchemaEntree,
+  ActionJournal | null,
+  unknown,
+  ModelesAction
+>;
 
 // Vrai pour une déclaration renvoyée par declarerAction, faux pour toute
 // autre valeur, dont un objet écrit à la main ou une copie. Fiche : section 7,
@@ -187,7 +271,20 @@ function champsInvalides(erreur: z.ZodError): string[] {
   return [...new Set(chemins)];
 }
 
-type ContexteBase = Omit<Contexte<null>, "journaliser"> & { session: SessionLue };
+type ContexteBase = Omit<Contexte<null>, "journaliser" | "preparerEmail"> & {
+  session: SessionLue;
+};
+
+// Nom de classe d'une erreur, s'il a la forme d'un identifiant ; jamais son
+// message, qui peut citer une adresse (S-54).
+const CLASSE = /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/u;
+function classeErreur(erreur: unknown): string {
+  if (!(erreur instanceof Error)) return typeof erreur;
+  return CLASSE.test(erreur.name) ? erreur.name : "inconnue";
+}
+
+// Valeur de la clé du compteur « application » : un seul compte d'envoi.
+const VALEUR_APPLICATION = "gmail";
 
 export function creerChaine(dependances: DependancesChaine): Chaine {
   // Étapes 2 à 6 de la section 5, puis travail dans la transaction. Un refus
@@ -240,54 +337,143 @@ export function creerChaine(dependances: DependancesChaine): Chaine {
     });
   }
 
-  async function executerChaine<E extends SchemaEntree, J extends ActionJournal | null, T>(
-    declaration: DeclarationAction<E, J, T>,
+  // Après la validation de la transaction, hors de toute transaction (règle
+  // 15) : pour chaque demande, les quatre limites dans l'ordre, arrêt au
+  // premier refus, puis la porte d'envoi. Un échec ne remonte jamais :
+  // l'action est faite, l'email compte comme non envoyé (décision 2, option
+  // A). Fiche : docs/features/envoi-emails.md, sections 5.2, 5.3 et 6.2.
+  async function envoyerDemandes(
+    nomAction: string,
+    organisationId: string,
+    demandes: readonly DemandeEmail[],
+  ): Promise<{ envoyes: number; nonEnvoyes: number }> {
+    let envoyes = 0;
+    let nonEnvoyes = 0;
+    for (const demande of demandes) {
+      try {
+        const destinataire = adressePourCompteur(demande.destinataire);
+        const limites: readonly (readonly [NomLimite, string])[] = [
+          ["email.destinataire", destinataire],
+          ["email.destinataire_jour", destinataire],
+          ["email.organisation", organisationId],
+          ["email.application", VALEUR_APPLICATION],
+        ];
+        let permis = true;
+        for (const [nom, valeur] of limites) {
+          if (!(await dependances.verifierDebit(nom, valeur))) {
+            permis = false;
+            break;
+          }
+        }
+        if (!permis) {
+          nonEnvoyes += 1;
+          continue;
+        }
+        const resultat = await dependances.envoyerEmail(demande);
+        if (resultat.envoye) envoyes += 1;
+        else nonEnvoyes += 1;
+      } catch (erreur) {
+        // Compteur indisponible ou porte qui lève : fermé par défaut, rien ne
+        // part. Journal technique : ni adresse, ni message.
+        nonEnvoyes += 1;
+        console.error(
+          "[chaine-controles]",
+          JSON.stringify({
+            action: nomAction,
+            etape: "envoi_email",
+            classe: classeErreur(erreur),
+            incident: randomUUID(),
+          }),
+        );
+      }
+    }
+    return { envoyes, nonEnvoyes };
+  }
+
+  async function executerChaine<
+    E extends SchemaEntree,
+    J extends ActionJournal | null,
+    T,
+    M extends ModelesAction,
+  >(
+    declaration: DeclarationAction<E, J, T, M>,
     requete: RequeteChaine,
     entreeBrute: unknown,
   ): Promise<Resultat<T>> {
+    // Demandes d'email du service, gardées jusqu'après la validation.
+    const demandes: DemandeEmail[] = [];
+    let organisationVerifiee: string | undefined;
     try {
       // 1. Origine.
       if (!verifierOrigine(requete.entetes, dependances.origineAttendue)) return refus();
 
-      return await dansContexte(requete, declaration.droit, declaration.debit, async (base) => {
-        // 8. Nouvelle authentification : fermée tant que la 1.6 n'est pas
-        // livrée (décision 10).
-        if (declaration.nouvelleAuthentification) throw new RefusUniforme();
+      const resultat = await dansContexte(
+        requete,
+        declaration.droit,
+        declaration.debit,
+        async (base) => {
+          // 8. Nouvelle authentification : fermée tant que la 1.6 n'est pas
+          // livrée (décision 10).
+          if (declaration.nouvelleAuthentification) throw new RefusUniforme();
 
-        // 9. Validation de l'entrée, par un membre autorisé seulement.
-        const lue = declaration.entree.safeParse(entreeBrute);
-        if (!lue.success) {
-          return { ok: false, raison: "invalide", champs: champsInvalides(lue.error) } as const;
-        }
+          // 9. Validation de l'entrée, par un membre autorisé seulement.
+          const lue = declaration.entree.safeParse(entreeBrute);
+          if (!lue.success) {
+            return { ok: false, raison: "invalide", champs: champsInvalides(lue.error) } as const;
+          }
 
-        // 10. Le service, dans la transaction. L'action et l'auteur de la
-        // trace sont ceux de la déclaration et de la session, jamais du
-        // service.
-        let tracee = false;
-        const { session, ...contexte } = base;
-        const action = declaration.journal;
-        const journaliser =
-          action === null
-            ? undefined
-            : async (trace: Trace) => {
-                await dependances.journaliser(contexte.tx, {
-                  action,
-                  auteurId: session.utilisateurId,
-                  ressourceId: trace.ressourceId,
-                  ...(trace.details === undefined ? {} : { details: trace.details }),
-                });
-                tracee = true;
-              };
-        const ctx = Object.freeze(
-          journaliser === undefined ? contexte : { ...contexte, journaliser },
-        ) as Contexte<J>;
-        const donnees = await declaration.executer(ctx, lue.data);
+          // 10. Le service, dans la transaction. L'action et l'auteur de la
+          // trace sont ceux de la déclaration et de la session, jamais du
+          // service.
+          let tracee = false;
+          const { session, ...contexte } = base;
+          const action = declaration.journal;
+          const journaliser =
+            action === null
+              ? undefined
+              : async (trace: Trace) => {
+                  await dependances.journaliser(contexte.tx, {
+                    action,
+                    auteurId: session.utilisateurId,
+                    ressourceId: trace.ressourceId,
+                    ...(trace.details === undefined ? {} : { details: trace.details }),
+                  });
+                  tracee = true;
+                };
+          // Emails : la demande est validée tout de suite, gardée pour après
+          // la validation. Absent quand la déclaration n'a aucun modèle.
+          const modeles: readonly string[] = declaration.emails;
+          const preparerEmail =
+            modeles.length === 0
+              ? undefined
+              : (demande: unknown) => {
+                  const valide = validerDemande(demande);
+                  if (!modeles.includes(valide.modele)) throw new ModeleNonDeclare();
+                  demandes.push(valide);
+                };
+          organisationVerifiee = contexte.organisationId;
+          const ctx = Object.freeze({
+            ...contexte,
+            ...(journaliser === undefined ? {} : { journaliser }),
+            ...(preparerEmail === undefined ? {} : { preparerEmail }),
+          }) as unknown as Contexte<J, M>;
+          const donnees = await declaration.executer(ctx, lue.data);
 
-        // 11. Trace déclarée : obligatoire, sinon l'action est annulée.
-        if (action !== null && !tracee) throw new TraceManquante();
+          // 11. Trace déclarée : obligatoire, sinon l'action est annulée.
+          if (action !== null && !tracee) throw new TraceManquante();
 
-        return { ok: true, donnees } as const;
-      });
+          return { ok: true, donnees } as const;
+        },
+      );
+
+      // 12. Transaction validée : les emails partent maintenant, jamais avant.
+      if (!resultat.ok || declaration.emails.length === 0) return resultat;
+      const emails = await envoyerDemandes(
+        declaration.nom,
+        organisationVerifiee as string,
+        demandes,
+      );
+      return { ...resultat, emails };
     } catch (erreur) {
       return traduireErreur(erreur, declaration.nom);
     }
@@ -322,6 +508,7 @@ const chaine = creerChaine({
   lireAdhesion,
   journaliser,
   verifierDebit,
+  envoyerEmail,
 });
 
 // Chaîne liée aux vraies dépendances : seul chemin d'une action vers un

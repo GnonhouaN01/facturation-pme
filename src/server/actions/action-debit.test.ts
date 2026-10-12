@@ -82,6 +82,7 @@ function dependances() {
       etapes.push("journal");
     },
     verifierDebit,
+    envoyerEmail: async () => ({ envoye: false, raison: "non_autorise" }),
   };
   return { deps, verifierDebit, executerDansOrganisation };
 }
@@ -101,6 +102,7 @@ function declaration(
     journal: null,
     nouvelleAuthentification: false,
     debit,
+    emails: [],
     executer: vi.fn(async () => {
       etapes.push("service");
       return "fait";
@@ -325,6 +327,7 @@ describe("declarerAction : champ debit", () => {
         journal: null,
         nouvelleAuthentification: false,
         debit: debit as NomLimite | null,
+        emails: [],
         executer: async () => "fait",
       });
   }
@@ -350,6 +353,7 @@ describe("declarerAction : champ debit", () => {
       entree: SCHEMA_VIDE,
       journal: null,
       nouvelleAuthentification: false,
+      emails: [],
       executer: async () => "fait",
     } as unknown as Parameters<typeof declarerAction>[0];
 
@@ -372,6 +376,7 @@ describe("declarerAction : debit absent ou inconnu ne compile pas", () => {
           entree: SCHEMA_VIDE,
           journal: null,
           nouvelleAuthentification: false,
+          emails: [],
           executer,
         }),
       () =>
@@ -383,6 +388,7 @@ describe("declarerAction : debit absent ou inconnu ne compile pas", () => {
           nouvelleAuthentification: false,
           // @ts-expect-error limite hors de LIMITES
           debit: "inconnu",
+          emails: [],
           executer,
         }),
     ];

@@ -51,6 +51,7 @@ function chaine() {
     lireAdhesion,
     journaliser,
     verifierDebit,
+    envoyerEmail: async () => ({ envoye: false, raison: "non_autorise" }),
   });
   return { c, verifierDebit };
 }
@@ -101,6 +102,7 @@ function demoLimitee() {
     journal: null,
     nouvelleAuthentification: false,
     debit: "membre.action",
+    emails: [],
     executer: async () => "fait",
   });
 }
@@ -114,6 +116,7 @@ function demoReservee() {
     journal: null,
     nouvelleAuthentification: false,
     debit: "membre.action",
+    emails: [],
     executer: async () => "fait",
   });
 }
@@ -188,6 +191,7 @@ describe("T-41 : épuiser par des requêtes répétées", () => {
       journal: null,
       nouvelleAuthentification: false,
       debit: "membre.action",
+      emails: [],
       executer,
     });
     const { c } = chaine();

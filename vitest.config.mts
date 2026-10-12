@@ -10,6 +10,10 @@ const variablesLocales = config({ path: ".env.local", processEnv: {}, quiet: tru
 
 const INTEGRATION = "src/**/*.integration.test.ts";
 
+// Garde réseau des deux projets : aucune connexion vers un port de
+// messagerie (docs/features/envoi-emails.md, section 2.3).
+const GARDE_RESEAU = "tests/garde-reseau.ts";
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -26,6 +30,7 @@ export default defineConfig({
           name: "unitaires",
           include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
           exclude: [...configDefaults.exclude, INTEGRATION],
+          setupFiles: [GARDE_RESEAU],
         },
       },
       {
@@ -34,7 +39,7 @@ export default defineConfig({
           name: "integration",
           include: [INTEGRATION],
           // Garde-fou : refuse toute base non marquée, avant chaque fichier.
-          setupFiles: ["src/server/db/outils-test/preparation.ts"],
+          setupFiles: [GARDE_RESEAU, "src/server/db/outils-test/preparation.ts"],
           env: variablesLocales,
           // Sur dev, chaque requête traverse le réseau jusqu'à Neon : les tests
           // qui en enchaînent plusieurs dizaines dépassent les 5 s par défaut.

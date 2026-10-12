@@ -51,6 +51,7 @@ function champsDeclaration(): DeclarationAction<ReturnType<typeof schema>, null,
     journal: null,
     nouvelleAuthentification: false,
     debit: null,
+    emails: [],
     executer: async () => "fait",
   };
 }
