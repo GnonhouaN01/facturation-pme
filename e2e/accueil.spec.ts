@@ -6,10 +6,16 @@ import { TEXTES_COMMUNS } from "../src/textes/commun";
 // « introuvable » : l'accueil perd son bouton en PR 3.
 // Fiche : docs/features/socle-interface.md, section 3.
 
-test("la page d'accueil affiche le bouton", async ({ page }) => {
+// PR 3 (modifié, signalé) : l'accueil, déplacé dans la zone publique, n'a
+// plus de bouton (section 1) ; le titre est le nom du produit, la phrase sa
+// description (décision 30).
+test("la page d'accueil affiche le titre et la présentation, sans bouton", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("button", { name: "Facturation PME" })).toBeVisible();
+  const contenu = page.getByRole("main");
+  await expect(contenu.getByRole("heading", { level: 1 })).toHaveText(TEXTES_COMMUNS.produit);
+  await expect(contenu.getByText(TEXTES_COMMUNS.description, { exact: true })).toBeVisible();
+  await expect(page.getByRole("button")).toHaveCount(0);
 });
 
 test("la page d'accueil porte le titre et la langue française", async ({ page }) => {

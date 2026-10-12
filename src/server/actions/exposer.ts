@@ -1,15 +1,22 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+
 import { headers } from "next/headers";
+import { notFound } from "next/navigation";
 import type { z } from "zod";
 
+import type { Droit } from "../autorisation/matrice";
 import type { ActionJournal } from "../journal/actions";
 
 import {
   estDeclaration,
+  etablirContexte,
   executerChaine,
+  type ContexteLecture,
   type DeclarationAction,
   type DeclarationQuelconque,
+  type ResultatLecture,
   type SchemaEntree,
 } from "./action";
 import type { Resultat } from "./refus";
@@ -51,4 +58,42 @@ export function exposer<E extends SchemaEntree, J extends ActionJournal | null, 
 export function declarationExposee(valeur: unknown): DeclarationQuelconque | undefined {
   if (typeof valeur !== "function" || !Object.hasOwn(valeur, MARQUE)) return undefined;
   return (valeur as unknown as Record<typeof MARQUE, DeclarationQuelconque>)[MARQUE];
+}
+
+// Lecture par une page (fonctionnalité 0.6) : même noyau que les actions,
+// etablirContexte, sans contrôle d'origine. Chaque page.tsx de (app)/ l'appelle
+// elle-même : le gabarit ne protège pas. Fiche :
+// docs/features/socle-interface.md, sections 2.1, 2.3 et 4.2.
+export async function lirePourPage<T>(
+  droit: Droit,
+  lire: (ctx: ContexteLecture) => Promise<T>,
+): Promise<T> {
+  const entetes = new Headers(await headers());
+  return traduireLecture(await etablirContexte({ entetes }, droit, lire));
+}
+
+// Message fixe : ni l'incident, ni la cause, ni la raison (S-85, T-35).
+const MESSAGE_ERREUR_PAGE = "Lecture de la page impossible.";
+
+// Erreur d'une lecture par une page. Son digest est l'incident : Next.js garde
+// un digest déjà posé, et la page « erreur » l'affiche. Aucune cause.
+export class ErreurPage extends Error {
+  readonly digest: string;
+
+  constructor(incident: string) {
+    super(MESSAGE_ERREUR_PAGE);
+    this.name = "ErreurPage";
+    this.digest = incident;
+  }
+}
+
+// Traduction pure du résultat d'une lecture pour une page. refuse et
+// connexion_requise donnent la même page « introuvable » (S-02, décision 1) ;
+// trop_de_requetes, inatteignable en 0.6, est traité comme une erreur avec un
+// nouvel incident (section 9).
+export function traduireLecture<T>(resultat: ResultatLecture<T>): T {
+  if (resultat.ok) return resultat.donnees;
+  if (resultat.raison === "refuse" || resultat.raison === "connexion_requise") notFound();
+  if (resultat.raison === "erreur") throw new ErreurPage(resultat.incident);
+  throw new ErreurPage(randomUUID());
 }

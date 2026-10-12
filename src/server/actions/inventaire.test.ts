@@ -1,4 +1,4 @@
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -114,7 +114,9 @@ describe("inventaire du dépôt", () => {
     const { parcourus, problemes } = await inventorier(APP, REGISTRE);
 
     expect(parcourus).toContain("layout.tsx");
-    expect(parcourus).toContain("page.tsx");
+    // 0.6, PR 3 (modifié, signalé) : l'accueil est déplacé dans la zone
+    // publique (docs/features/socle-interface.md, section 1).
+    expect(parcourus).toContain("(public)/page.tsx");
     expect(problemes).toEqual([]);
   });
 
@@ -277,5 +279,107 @@ describe("fichier de proxy", () => {
     ],
   ])("démonstration, %s", (_nom, chemins, attendus) => {
     expect(problemesDeProxy(chemins)).toEqual(attendus);
+  });
+});
+
+// Chaque page de la zone application se protège elle-même : son page.tsx
+// appelle lirePourPage. Le gabarit ne protège pas (il n'est pas réexécuté à
+// chaque navigation). Contrôle textuel, contournable à dessein (« Limites
+// connues ») : un appel dont le résultat n'est pas utilisé passe. Les
+// commentaires sont retirés avant la recherche : une mention ne suffit pas.
+// Fiche : docs/features/socle-interface.md, sections 2.3 et 7.
+const ZONE_APPLICATION = "(app)/";
+const PAGE = /^page\.(ts|tsx|js|jsx|mjs|mts)$/;
+const APPEL_LIRE_POUR_PAGE = /\blirePourPage\s*(<[^>]*>)?\s*\(/;
+
+type Source = { chemin: string; contenu: string };
+
+function sansCommentaires(contenu: string): string {
+  return contenu.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
+// chemins : relatifs à src/app/, séparés par des « / ».
+function problemesDesPages(sources: readonly Source[]): string[] {
+  return sources
+    .filter(({ chemin }) => chemin.startsWith(ZONE_APPLICATION))
+    .filter(({ chemin }) => PAGE.test(chemin.split("/").at(-1) ?? ""))
+    .filter(({ contenu }) => !APPEL_LIRE_POUR_PAGE.test(sansCommentaires(contenu)))
+    .map(({ chemin }) => `${chemin} : page de la zone application sans lirePourPage`);
+}
+
+function sourcesDeApp(): Source[] {
+  return fichiers(APP).map((chemin) => ({
+    chemin: versPosix(relative(APP, chemin)),
+    contenu: readFileSync(chemin, "utf8"),
+  }));
+}
+
+describe("pages de la zone application", () => {
+  test("dépôt : le tableau de bord existe, et chaque page de (app)/ appelle lirePourPage", () => {
+    const sources = sourcesDeApp();
+
+    expect(sources.map(({ chemin }) => chemin)).toContain("(app)/tableau-de-bord/page.tsx");
+    expect(problemesDesPages(sources)).toEqual([]);
+  });
+
+  const APPEL = `export default async function Page() {
+  const donnees = await lirePourPage("clients.voir", async (ctx) => ctx.role);
+  return <h1>{donnees}</h1>;
+}`;
+
+  test.each<[string, Source[], string[]]>([
+    ["page qui appelle lirePourPage", [{ chemin: "(app)/clients/page.tsx", contenu: APPEL }], []],
+    [
+      "appel avec un paramètre de type",
+      [
+        {
+          chemin: "(app)/clients/page.tsx",
+          contenu: `const d = await lirePourPage<string>("clients.voir", lire);`,
+        },
+      ],
+      [],
+    ],
+    [
+      "page sans lirePourPage",
+      [{ chemin: "(app)/clients/page.tsx", contenu: "export default function Page() {}" }],
+      ["(app)/clients/page.tsx : page de la zone application sans lirePourPage"],
+    ],
+    [
+      "lirePourPage importé mais jamais appelé",
+      [
+        {
+          chemin: "(app)/clients/page.tsx",
+          contenu: `import { lirePourPage } from "@/server/actions/exposer";\nexport default function Page() {}`,
+        },
+      ],
+      ["(app)/clients/page.tsx : page de la zone application sans lirePourPage"],
+    ],
+    [
+      "appel seulement dans un commentaire",
+      [
+        {
+          chemin: "(app)/clients/page.tsx",
+          contenu: `// lirePourPage("clients.voir", lire)\n/* lirePourPage(\"x\") */\nexport default function Page() {}`,
+        },
+      ],
+      ["(app)/clients/page.tsx : page de la zone application sans lirePourPage"],
+    ],
+    [
+      "page imbriquée, en .jsx",
+      [{ chemin: "(app)/clients/[id]/modifier/page.jsx", contenu: "export default () => null;" }],
+      ["(app)/clients/[id]/modifier/page.jsx : page de la zone application sans lirePourPage"],
+    ],
+    [
+      "le gabarit, un composant et les pages hors de la zone : non concernés",
+      [
+        { chemin: "(app)/layout.tsx", contenu: "export default function L() {}" },
+        { chemin: "(app)/clients/tableau.tsx", contenu: "export function T() {}" },
+        { chemin: "(public)/page.tsx", contenu: "export default function P() {}" },
+        { chemin: "lien/devis/[jeton]/page.tsx", contenu: "export default function P() {}" },
+      ],
+      [],
+    ],
+  ])("démonstration, %s", (_nom, sources, attendus) => {
+    expect(problemesDesPages(sources)).toEqual(attendus);
   });
 });

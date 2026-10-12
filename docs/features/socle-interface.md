@@ -1,6 +1,6 @@
 # Fonctionnalité : socle d'interface
 
-Statut : en cours. PR 1 livrée (#33). PR 2 implémentée le 2026-10-12 (non commitée) ; PR 3 à faire.
+Statut : en cours. PR 1 livrée (#33). PR 2 livrée (#34). PR 3 : tests commités (1bb2ec2), implémentation faite le 2026-10-12 (non commitée).
 
 Jalon 0, fonctionnalité 0.6 de `docs/PLAN.md`. Taille L (décision 12), en trois PR.
 
@@ -132,7 +132,30 @@ Décision 2 (option Z1) : construire le gabarit, l'adaptateur, la navigation et 
 
 Options écartées : une préparation globale de Playwright qui créerait des membres par `outils-test/membres.ts` (fait sortir l'outillage de test de Vitest, demande la base en local, rendue inutile par la 1.2) ; ne rien construire avant le jalon 1 (laisse l'adaptateur sans usage).
 
+**Réexaminé le 2026-10-12 (décision 27).** Aucun moyen propre ne donne une session au navigateur avant la 1.2 : sur le site construit, une session demande une ligne en base et un cookie signé avec le vrai `BETTER_AUTH_SECRET`, et aucun écran de connexion n'existe. Deux voies ont été pesées :
+
+- **Voie A, écartée** (la préparation globale ci-dessus) : l'outillage de test sortirait de Vitest, les modules `server-only` devraient se charger dans le processus de Playwright, et la base deviendrait nécessaire en local pour toute la suite de bout en bout. La 1.2 apporte la connexion réelle, qui rend ce montage inutile.
+- **Voie B, retenue** : les composants de `src/components/gabarits/` sont rendus en chaîne par `react-dom/server` sous Vitest (`gabarits.test.tsx`), comme les pages d'erreur (section 4.3, niveau 1). Ce rendu vérifie le balisage : bandeau, entrées par rôle et dans l'ordre, `aria-current`, libellé du rôle, lien d'évitement, échappement du nom de l'organisation. Ce qui demande un navigateur connecté passe à la 1.2 (« Limites connues »).
+
 Le test d'intégration appelle `etablirContexte` avec la fonction de lecture du gabarit (exportée pour le test) et une vraie session de chaque rôle : il vérifie les entrées obtenues et le libellé de rôle, puis le refus d'un membre dont l'organisation active n'est pas la sienne, et d'un rôle inconnu. La partie Next.js de `lirePourPage` (lecture de `headers()`) n'est éprouvée qu'en bout en bout, sans session.
+
+#### 2.6 Noms retenus (décision 29)
+
+Fixés par les tests de la PR 3, acceptés le 2026-10-12 :
+
+| Fichier | Export | Forme |
+|---|---|---|
+| `src/server/actions/exposer.ts` | `lirePourPage` | Section 2.1 |
+| | `traduireLecture` | `(resultat: ResultatLecture<T>) => T` ; lève `notFound()` ou une `ErreurPage` |
+| | `ErreurPage` | Classe d'erreur, `digest` égal à l'incident, message fixe, sans `cause` |
+| `src/server/autorisation/navigation.ts` | `EntreeNavigation` | `{ chemin: string; cle: string; droit: Droit \| null }` ; `cle` désigne un libellé de `TEXTES_NAVIGATION.entrees` |
+| | `ENTREES_NAVIGATION` | La liste livrée (section 2.4) |
+| | `entreesVisibles` | `(role: string, entrees = ENTREES_NAVIGATION) => EntreeNavigation[]`, les entrées elles-mêmes, dans l'ordre |
+| | `DROIT_GABARIT` | `"organisation.membres.voir"` (décision 3) |
+| | `lireGabarit` | `(ctx: ContexteLecture) => Promise<{ role: Role; entrees: EntreeNavigation[] }>`, la lecture du gabarit passée à `lirePourPage` ; dans `navigation.ts` et non dans `(app)/layout.tsx`, qui n'exporte que ce que Next.js admet |
+| `src/components/gabarits/bandeau-simulation.tsx` | `BandeauSimulation` | Sans propriété ; `TEXTES_SIMULATION.bandeauApplication` |
+| `src/components/gabarits/navigation.tsx` | `Navigation` | `{ entrees: readonly EntreeNavigation[] }` ; composant client, l'entrée active est lue par `usePathname()` (égalité exacte du chemin) |
+| `src/components/gabarits/gabarit-application.tsx` | `GabaritApplication` | `{ role; entrees; organisation?: string; children }` : lien d'évitement, barre latérale, bandeau, `main` |
 
 ### 3. La page « introuvable »
 
@@ -182,7 +205,11 @@ Trois niveaux :
 
 1. **Rendu des composants, sans navigateur.** `error.tsx` et `global-error.tsx` sont rendus en chaîne par `react-dom/server` (déjà installé) dans Vitest, avec une erreur dont le message, le nom, la pile et la cause contiennent des marqueurs (`SELECT`, `postgresql://`, `/home/`, `DATABASE_URL`, une adresse email) : aucun marqueur dans la sortie. Ces tests sont des `.test.tsx` : l'inclusion de Vitest (`src/**/*.test.ts`) est étendue en PR 2.
 2. **Traduction.** `traduireLecture` sur `erreur` lève une `ErreurPage` dont le message est fixe, sans `cause`, et dont le `digest` est l'incident.
-3. **Bout en bout, sur le site construit, avec une vraie panne (PR 3, décision 17).** Un second serveur Playwright (`next start`, port 3101) est lancé avec une configuration **valide** pour `env-schema.ts` (rôle `app_facturation`) et une base injoignable : `DATABASE_URL` vise un port fermé sur `127.0.0.1`. `register` passe ; le proxy, qui ne dépend pas d'`env.ts` (section 5.5), répond normalement ; la panne est observée sur `/tableau-de-bord`, dont la lecture échoue à la connexion. Le test ouvre `/tableau-de-bord` et vérifie : la page « Une erreur est survenue. » avec un identifiant ; ni dans le HTML ni dans la charge utile RSC les chaînes `DATABASE_URL`, `Variables d'environnement`, `postgres`, `node_modules`, `.next`, `at ` suivi d'un chemin, ni le nom d'une classe d'erreur. Aucun code de test n'existe dans l'application : la panne vient de la configuration du serveur de test.
+3. **Bout en bout, sur le site construit, avec une vraie panne (PR 3, décisions 17, 28 et 32).** Un second serveur Playwright (`next start`, port 3101) est lancé avec une configuration **valide** pour `env-schema.ts` (rôle `app_facturation`) et une base injoignable : `DATABASE_URL` vise un port fermé sur `127.0.0.1` (valeurs factices, `e2e/serveur-panne.ts`). `register` passe ; le proxy, qui ne dépend pas d'`env.ts` (section 5.5), répond normalement. Les tests posent un cookie au jeton aléatoire, signé avec le secret factice (décision 28) : Better Auth cherche le jeton en base, la lecture de la session échoue à la connexion, `etablirContexte` renvoie `erreur` avec un incident, et `(app)/layout.tsx` lève une `ErreurPage` dont le `digest` est cet incident. Aucun code de test n'existe dans l'application : la panne vient de la configuration du serveur de test.
+
+   **Ce que Next.js renvoie** (constaté le 2026-10-12, Next.js 16.3.8, site construit). L'erreur est levée hors de toute frontière Suspense : le squelette de la page échoue au rendu serveur, et Next.js renvoie son **document d'erreur**, `<html id="__next_error__">`, **statut 500**, au corps vide, avec la politique de sécurité du contenu et les en-têtes de la section 6. La charge utile RSC incluse n'y porte que `E{"digest":"<incident>"}`, une entrée par segment en erreur (gabarit et page). **La page « erreur » (`error.tsx`) n'est rendue que dans le navigateur**, après hydratation, à partir de ce `digest` (`node_modules/next/dist/server/app-render/app-render.js`, document `__next_error__`). Une frontière Suspense n'y changerait rien : le serveur y rendrait la page de secours, jamais `error.tsx`. Les attributs `data-next-error-message`, `data-next-error-digest` et `data-next-error-stack`, que ce document peut porter, sont absents en production : le test le vérifie. Sans JavaScript, la panne donne donc une page blanche (« Limites connues »).
+
+   Les tests vérifient : sur la réponse, le document d'erreur, le statut 500, la politique et les en-têtes, et des `digest` au format UUID ; dans le navigateur, « Une erreur est survenue. », l'identifiant (l'incident de la chaîne), les deux actions, aucune violation de la politique, et le bouton « Recharger la page », qui relance le rendu par le serveur (nouvel identifiant) ; ni dans le HTML, ni dans les en-têtes, ni dans la charge utile RSC, ni dans la page affichée, ni dans la console : `DATABASE_URL`, `BETTER_AUTH`, `Variables d'environnement`, `postgres`, `app_facturation`, `ECONNREFUSED`, `node_modules`, `.next/`, une ligne de pile, un nom de classe d'erreur, ni aucune valeur factice de la configuration.
 
    **Une configuration refusée ne convient pas** (constaté le 2026-10-12, Next.js 16.3.8, `next start` sur le port 3101, site construit sans la PR 2, `DATABASE_URL` au rôle factice sur `localhost`). Le serveur annonce « Ready », puis `register` (`src/instrumentation.ts`) lève : `Failed to prepare server Error: An error occurred while loading instrumentation hook`, suivi du message d'`env-schema.ts` et de la pile, puis un `unhandledRejection`. Ensuite **chaque requête** échoue, `/` comprise, et non seulement les modules qui importent `env.ts` : statut 500, corps `Internal Server Error` (21 caractères), en-têtes `connection`, `date`, `keep-alive` et `transfer-encoding` seuls. Ni le corps ni les en-têtes ne contiennent le message, la pile, le nom de la variable, une adresse ou un chemin de fichier ; tout cela n'apparaît que dans le journal du serveur. Playwright attend un statut accepté (2xx, 3xx, 400 à 403), ne l'obtient jamais, et arrête toute la suite au bout de 120 s, avant le premier test. `register` n'attrape pas cette erreur : une configuration refusée doit empêcher le service (décision 17).
 
@@ -317,13 +344,13 @@ Ce que la 3.1 aura à peser : une étape 4 dans `etablirContexte` coûterait une
 
 - **Barre latérale gauche** de 240 px, fond `surface` (blanc), bordure droite `ligne`. De haut en bas :
   - « Facturation PME », en `display`, graisse 600.
-  - Le bloc « Organisation active » (libellé en `libelle`) et le nom de l'organisation. **Absent en 0.6** : le nom se lit dans `organization`, table sans règle d'isolation, avec le filtre explicite exigé par RR-8 ; il arrive avec la 2.1 (changement d'organisation).
+  - Le bloc « Organisation active » (libellé en `libelle`) et le nom de l'organisation. **Absent en 0.6** : le nom se lit dans `organization`, table sans règle d'isolation, avec le filtre explicite exigé par RR-8 ; il arrive avec la 2.1 (changement d'organisation). `GabaritApplication` accepte le nom en propriété facultative, pour que son échappement soit testé dès maintenant (S-51) ; le gabarit de la 0.6 ne la passe pas, et le bloc n'est alors pas rendu.
   - La navigation, dans l'ordre de la section 2.4. Entrée active : fond `accent-clair` (`bg-accent`), texte `accent` (`text-primary`), et `aria-current="page"`. En 0.6 : « Tableau de bord » seul.
   - En bas : le nom de l'utilisateur et son rôle. **En 0.6, le rôle seul** (« Propriétaire », « Comptable », « Commercial », « Lecteur », lu dans le contexte). Le nom demande une lecture de `user` : 1.2, avec la déconnexion.
 - **Contenu à droite**, fond `fond`. En tête de page : titre (`titre-1`) à gauche, actions à droite. Marges `espace-12`.
 - **Bandeau de simulation**, `attention` sur `attention-fond`, permanent en haut du contenu : la production utilise le simulateur de certification (`DESIGN.md`, section 4.4). Texte : voir « Écart à trancher » ci-dessous.
 
-**Sous 768 px :** la barre passe au-dessus du contenu, sur toute la largeur. La navigation s'y replie dans un `<details>` natif (« Menu »), cible de 44 px. Marges `espace-4`.
+**Sous 768 px :** la barre passe au-dessus du contenu, sur toute la largeur. La navigation s'y replie dans un `<details>` natif (« Menu »), cible de 44 px. Marges `espace-4`. Dès 768 px, le résumé n'est masqué que si le navigateur prend en charge `::details-content` (décision 36, « Limites connues »).
 
 **Pages « introuvable » et « erreur » :** mise en page sobre (sections 3 et 4).
 
@@ -379,8 +406,9 @@ Un test vérifie : les messages de sécurité sont identiques, au caractère pr�
 
 ### 12. Accessibilité, et affichage à 390 et 1280 pixels (NF-03, NF-04)
 
-- Playwright reçoit deux projets, `mobile-390` (390 × 844) et `ordinateur-1280` (1280 × 800). Les tests des gabarits et des pages d'erreur passent dans les deux.
-- Vérifié automatiquement : aucun défilement horizontal de la page à 390 px, et à 360 px (`document.documentElement.scrollWidth <= innerWidth`) ; cibles tactiles d'au moins 44 px pour les liens de navigation et les actions ; lien d'évitement atteint en premier au clavier ; anneau de focus de 2 px en `accent`, décalé de 2 px ; un seul `h1` par page ; `lang="fr"` ; libellé de lien actif annoncé (`aria-current`) ; à 1280 px, barre latérale de 240 px ; sous 768 px, barre au-dessus du contenu.
+- Playwright reçoit deux projets, `mobile-390` (390 × 844) et `ordinateur-1280` (1280 × 800), tous deux Chrome de bureau à la largeur imposée (décision 31). `accueil.spec.ts` et `affichage.spec.ts` tournent dans les deux ; les fichiers d'en-têtes et d'attaque (`entetes.attaque`, `erreurs.attaque`, `zones.attaque`), qui ne dépendent pas de la largeur, dans `ordinateur-1280` seul ; `affichage-360.spec.ts` (largeur imposée à 360 px) dans `mobile-390` seul. Aucun test sauté.
+- Captures : `test-results/captures/<page>-<largeur>.png`, à 360, 390 et 1280 px, dossier ignoré par git et vidé par Playwright à chaque lancement.
+- Vérifié automatiquement : aucun défilement horizontal de la page à 390 px, et à 360 px (`document.documentElement.scrollWidth <= innerWidth`) ; cibles tactiles d'au moins 44 px pour les liens de navigation et les actions ; lien d'évitement atteint en premier au clavier ; anneau de focus de 2 px en `accent`, décalé de 2 px ; un seul `h1` par page ; `lang="fr"` ; libellé de lien actif annoncé (`aria-current`) ; à 1280 px, barre latérale de 240 px ; sous 768 px, barre au-dessus du contenu. Pour le gabarit de l'application, ce qui demande un navigateur connecté (240 px, empilement, cibles et focus de la navigation) passe à la 1.2 ; son balisage (lien d'évitement, `aria-current`, bandeau, libellé du rôle) est vérifié par rendu en chaîne (décision 27).
 - Captures à 390 et 1280 px de chaque page livrée, jointes à la PR (consigne du skill `interface`), comparées à la description de la section 10. Pas de comparaison automatique de captures : le rendu des polices diffère entre Windows et la CI sous Linux.
 - Pas d'`@axe-core/playwright` en 0.6 (décision 7), à revoir en 1.1 avec les premiers formulaires. Les contrastes reposent sur les jetons de Signal, conformes AA d'après `DESIGN-SYSTEM.md`, et la règle Q vérifie le balisage.
 
@@ -432,6 +460,10 @@ Un test vérifie : les messages de sécurité sont identiques, au caractère pr�
 - **`'strict-dynamic'`** : un script ajouté au DOM par un script autorisé s'exécute, même en ligne et sans nonce (section 5.4). Un test l'atteste comme limite connue (décision 23).
 - Erreur d'un composant client : aucun identifiant, aucune consignation avant la 8.1 (décision 6).
 - La navigation par rôle n'est éprouvée dans un navigateur qu'à la 1.2.
+- **Sans JavaScript, une panne donne une page blanche** (constaté le 2026-10-12, décision 32). Une erreur levée pendant le rendu serveur hors d'une frontière Suspense donne le document d'erreur de Next.js, statut 500, au corps vide ; « Une erreur est survenue. » et l'identifiant ne s'affichent qu'après hydratation. Rien ne fuit pour autant : ni le HTML ni la charge utile ne portent de détail (section 4.3).
+- **Une sous-page n'active pas son entrée de navigation** (décision 34). L'entrée active est celle dont le chemin est exactement l'adresse courante : `/clients/123` n'activera pas « Clients ». À revoir à la première fonctionnalité qui a des sous-pages.
+- **Le menu replié repose sur `::details-content`, avec un repli utilisable** (décision 36). Dès 768 px, si le navigateur prend en charge `::details-content` (Chrome 131 et suivants ; versions de Safari et de Firefox non éprouvées ici), la navigation reste affichée et le résumé « Menu » est masqué. **Ce masquage n'existe que sous `@supports selector(::details-content)`** : sans cette prise en charge (Chrome 109, dernière version pour Windows 7 et 8, encore courants chez les PME visées), le résumé reste visible à toutes les largeurs, la navigation est repliée par défaut, et un clic sur « Menu » l'ouvre. Sur ordinateur, ces navigateurs ont donc un clic de plus, jamais une navigation inaccessible. Vérifié le 2026-10-12 : la feuille construite ne contient la règle de masquage que sous `@supports` (`e2e/menu-replie.spec.ts`) ; dans Chromium, par un essai jetable, avec la feuille construite puis la même feuille privée de tout ce qui dépend de `::details-content` : à 1280 px, résumé masqué et lien visible dans le premier cas ; résumé visible, lien caché puis visible après un clic dans le second ; à 390 px, comportement natif d'un `<details>` dans les deux.
+- **Gabarit de l'application connecté, non vérifié dans un navigateur avant la 1.2** (constaté le 2026-10-12, décision 27) : barre latérale de 240 px à 1280 px, empilement de la barre au-dessus du contenu sous 768 px, cibles de 44 px de la navigation et du menu replié, anneau de focus de ses liens, captures du tableau de bord connecté. Aucune session n'existe dans un navigateur avant la 1.2. Le balisage du gabarit est vérifié par rendu en chaîne (voie B, section 2.5) ; ces vérifications passent à la 1.2 (`PLAN.md`).
 - Le gabarit et la page appellent chacun `etablirContexte` : deux lectures de session et d'adhésion par affichage. Dédoublonnage par requête (`cache` de React) à étudier quand une page lira des données.
 
 ## Dépendances nouvelles
@@ -469,20 +501,21 @@ Aucune.
 
 ### PR 3
 
-- [ ] Une adresse inexistante, `/tableau-de-bord` sans cookie et `/tableau-de-bord` avec un cookie de session forgé donnent le même statut (404) et le même texte visible, « Cette page est introuvable ».
-- [ ] Les trois zones portent la politique et les en-têtes ; aucune violation sur aucune page, à 390 et 1280 px.
-- [ ] `traduireLecture` : `ok` renvoie les données ; `refuse` et `connexion_requise` appellent `notFound()` ; `erreur` lève une `ErreurPage` au `digest` égal à l'incident, sans message variable ni cause.
-- [ ] Chaque `page.tsx` de `(app)/` appelle `lirePourPage` (inventaire).
-- [ ] `entreesVisibles` suit `peut` pour chaque rôle et chaque entrée de la liste de test ; un rôle inconnu ne voit que les entrées sans droit ; la liste livrée ne contient que « Tableau de bord ».
-- [ ] Avec une vraie session de chacun des quatre rôles, la lecture du gabarit renvoie les entrées et le rôle attendus ; un membre dont l'organisation active n'est pas la sienne reçoit `refuse`.
-- [ ] Disposition de la section 10 à 1280 px et sous 768 px ; bandeau de simulation présent.
-- [ ] À 360, 390 et 1280 px : aucun défilement horizontal ; cibles de 44 px ; lien d'évitement ; focus visible. Captures jointes à la PR.
-- [ ] Sur le second serveur (configuration valide, base injoignable), `/tableau-de-bord` affiche « Une erreur est survenue. » et un identifiant, sans aucun des marqueurs de la section 4.3, ni dans le HTML ni dans la charge utile RSC.
+- [x] Une adresse inexistante, `/tableau-de-bord` sans cookie et `/tableau-de-bord` avec un cookie de session forgé donnent le même statut (404) et le même texte visible, « Cette page est introuvable ».
+- [x] Les trois zones portent la politique et les en-têtes ; aucune violation sur aucune page, à 390 et 1280 px.
+- [x] `traduireLecture` : `ok` renvoie les données ; `refuse` et `connexion_requise` appellent `notFound()` ; `erreur` lève une `ErreurPage` au `digest` égal à l'incident, sans message variable ni cause.
+- [x] Chaque `page.tsx` de `(app)/` appelle `lirePourPage` (inventaire).
+- [x] `entreesVisibles` suit `peut` pour chaque rôle et chaque entrée de la liste de test ; un rôle inconnu ne voit que les entrées sans droit ; la liste livrée ne contient que « Tableau de bord ».
+- [x] Avec une vraie session de chacun des quatre rôles, la lecture du gabarit renvoie les entrées et le rôle attendus ; un membre dont l'organisation active n'est pas la sienne reçoit `refuse`.
+- [x] Rendu en chaîne du gabarit de l'application (décision 27) : bandeau de simulation au texte exact ; entrées de navigation dans l'ordre pour chaque rôle ; `aria-current` sur l'entrée active et sur elle seule ; libellé du rôle ; lien d'évitement en premier élément focalisable ; nom de l'organisation échappé.
+- [x] Pages joignables sans session (publique, introuvable, tableau de bord sans session, erreur), à 360, 390 et 1280 px : aucun défilement horizontal ; cibles de 44 px ; focus visible. Captures produites dans `test-results/captures/`, à joindre à l'ouverture de la PR. L'accueil affiche `TEXTES_COMMUNS.produit` en titre et `TEXTES_COMMUNS.description` en phrase (décision 30).
+- Reportés à la 1.2 (« Limites connues ») : disposition de la section 10 dans un navigateur connecté (240 px, empilement sous 768 px), cibles de 44 px et focus du gabarit connecté, captures du tableau de bord connecté.
+- [x] Sur le second serveur (configuration valide, base injoignable), `/tableau-de-bord` répond par le document d'erreur de Next.js (statut 500, politique et en-têtes, `digest` UUID) et affiche dans le navigateur « Une erreur est survenue. » et un identifiant, sans aucun des marqueurs de la section 4.3, ni dans le HTML, ni dans la charge utile RSC, ni dans la page affichée (décision 32).
 
 ### Toutes
 
-- [ ] Aucune dépendance ajoutée : `package-lock.json` inchangé.
-- [ ] `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:integration` et `npm run test:e2e` passent, sur le poste et en CI.
+- [x] Aucune dépendance ajoutée : `package-lock.json` inchangé (PR 3, vérifié le 2026-10-12).
+- [ ] `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:integration` et `npm run test:e2e` passent, sur le poste et en CI. PR 3, sur le poste, le 2026-10-12 : oui. En CI : à constater sur la PR.
 
 ## Tests à écrire
 
@@ -507,22 +540,24 @@ PR 2 :
 
 PR 3 :
 
-- [ ] `src/server/autorisation/navigation.test.ts` : `entreesVisibles` pour chaque rôle et chaque type de droit ; rôle inconnu ; `__proto__` ; liste livrée.
-- [ ] `src/server/actions/exposer.test.ts` (complété, modification signalée) : `traduireLecture` pour chaque raison ; `ErreurPage` sans message variable ni cause.
-- [ ] `src/server/actions/inventaire.test.ts` (complété) : page de `(app)/` sans `lirePourPage` refusée.
+- [x] `src/server/autorisation/navigation.test.ts` : `entreesVisibles` pour chaque rôle et chaque type de droit ; rôle inconnu ; `__proto__` ; liste livrée.
+- [x] `src/server/actions/exposer.test.ts` (complété, modification signalée) : `traduireLecture` pour chaque raison ; `ErreurPage` sans message variable ni cause.
+- [x] `src/server/actions/inventaire.test.ts` (complété) : page de `(app)/` sans `lirePourPage` refusée.
+- [x] `src/components/gabarits/menu-replie.test.tsx` (décision 36) : le résumé « Menu » porte la classe `md:supports-[selector(::details-content)]:hidden`, et aucune autre classe qui le masque.
+- [x] `src/components/gabarits/gabarits.test.tsx`- [x] `src/components/gabarits/gabarits.test.tsx` (décision 27, voie B) : rendu en chaîne de `BandeauSimulation`, `Navigation` et `GabaritApplication` ; `usePathname` remplacé par un simulacre, libellés de démonstration ajoutés à `TEXTES_NAVIGATION.entrees` par simulacre.
 
 ### Tests d'intégration
 
-- [ ] PR 3, `src/server/db/gabarit.integration.test.ts` : lecture du gabarit par `etablirContexte`, avec une vraie session de chaque rôle (`creerMembre`) ; organisation active étrangère ; rôle inconnu ; sans cookie.
+- [x] PR 3, `src/server/db/gabarit.integration.test.ts` : lecture du gabarit par `etablirContexte`, avec une vraie session de chaque rôle (`creerMembre`) ; organisation active étrangère ; rôle inconnu ; sans cookie.
 
 ### Tests d'attaque
 
 Les quatre tests obligatoires (`PLAN.md`, section 4.3), appliqués à ce que la 0.6 expose, c'est-à-dire la page vide du tableau de bord (PR 3) :
 
-- [ ] Accès sans session : « introuvable », comme une adresse inexistante (`e2e/zones.attaque.spec.ts`).
-- [ ] Accès aux données d'une autre organisation : organisation active étrangère, `refuse` (intégration). Aucune donnée n'est lue en 0.6.
-- [ ] Rôle non autorisé : sans objet, la page est ouverte aux quatre rôles ; un rôle inconnu reçoit `refuse` (intégration).
-- [ ] Entrée invalide ou falsifiée : cookie de session forgé (`e2e/zones.attaque.spec.ts`).
+- [x] Accès sans session : « introuvable », comme une adresse inexistante (`e2e/zones.attaque.spec.ts`).
+- [x] Accès aux données d'une autre organisation : organisation active étrangère, `refuse` (intégration). Aucune donnée n'est lue en 0.6.
+- [x] Rôle non autorisé : sans objet, la page est ouverte aux quatre rôles ; un rôle inconnu reçoit `refuse` (intégration).
+- [x] Entrée invalide ou falsifiée : cookie de session forgé (`e2e/zones.attaque.spec.ts`).
 
 Propres à cette fiche, PR 2, `e2e/entetes.attaque.spec.ts` et `e2e/erreurs.attaque.spec.ts`, sur le site construit :
 
@@ -536,16 +571,23 @@ Propres à cette fiche, PR 2, `e2e/entetes.attaque.spec.ts` et `e2e/erreurs.atta
 
 Propres à cette fiche, PR 3, `e2e/erreurs.attaque.spec.ts`, second serveur (section 4.3, niveau 3). Retirés de la PR 2 (décision 17). En PR 3, le second serveur a une configuration **valide** (rôle `app_facturation`) et une base injoignable (port fermé sur `127.0.0.1`) ; la panne est observée sur `/tableau-de-bord` :
 
-- [ ] « le proxy ne dépend pas d'env.ts : l'accueil répond, avec la politique »
-- [ ] « la page affiche le texte fixe, un identifiant et les deux actions »
-- [ ] « aucun détail dans le HTML »
-- [ ] « aucun détail dans la charge utile RSC »
-- [ ] « aucun détail dans la page affichée, après hydratation »
+- [x] « le proxy ne dépend pas d'env.ts : l'accueil répond, avec la politique »
+- [x] « la page affiche le texte fixe, un identifiant et les deux actions »
+- [x] « aucun détail dans le HTML » (corrigé à la PR 3, décision 32 : la réponse est le document d'erreur de Next.js, statut 500, avec la politique, les en-têtes et des `digest` UUID ; marqueurs absents)
+- [x] « aucun détail dans la charge utile RSC »
+- [x] « aucun détail dans la page affichée, après hydratation »
+- [x] « « Recharger la page » relance l'affichage par le serveur » (ajouté à la demande du relecteur, le 2026-10-12 ; aucun test ne cliquait sur ce bouton) : un clic envoie une nouvelle requête de `/tableau-de-bord`, et la page « erreur » revient avec un identifiant différent, chaque rendu en panne recevant un nouvel incident. Un identifiant inchangé trahirait un bouton qui réaffiche l'erreur gardée par le navigateur sans relancer le rendu.
+- [x] Condition préalable : « la base du second serveur est injoignable : port fermé sur 127.0.0.1 » (`ECONNREFUSED` sur le port 1).
+
+Constaté le 2026-10-12, en écrivant ces tests : **sans cookie, ou avec un cookie dont la signature est fausse, Better Auth répond « pas de session » sans lire la base** (`better-call/dist/context.mjs`, `getSignedCookie`) ; `/tableau-de-bord` répondrait « introuvable », et la panne ne serait jamais observée. Les tests posent donc un cookie au jeton aléatoire, **signé avec le secret factice** du second serveur (HMAC-SHA256, `e2e/serveur-panne.ts`) : Better Auth cherche le jeton en base, et la lecture échoue à la connexion. Ce n'est pas une session (aucune ligne n'existe), et rien n'est ajouté dans `src/`. Configuration du second serveur, valeurs factices : `e2e/serveur-panne.ts`, lue par `playwright.config.ts`. Essai du 2026-10-12, site construit sans la PR 3 : le serveur annonce « Ready », `register` passe, `/` répond 200 avec la politique ; `/tableau-de-bord` répond 404 (page absente).
 
 ### Tests de bout en bout
 
 - [x] PR 2, `e2e/accueil.spec.ts` (modifié, signalé) : titre, langue, contenu de l'accueil ; les tests du thème Signal passent sur l'action de la page « introuvable ».
-- [ ] PR 3, `e2e/affichage.spec.ts` : projets 390 et 1280, plus 360 pour le défilement : pages publique, introuvable, erreur, tableau de bord (sans session : introuvable).
+- [x] PR 3, `e2e/affichage.spec.ts` : projets 390 et 1280 : pages publique, introuvable, erreur, tableau de bord (sans session : introuvable) ; disposition de la zone publique, titre et phrase exacts (décision 30).
+- [x] PR 3, `e2e/menu-replie.spec.ts` (décision 36, projet `ordinateur-1280`) : la feuille de style servie par le site construit est découpée en règles avec leurs at-règles englobantes ; chaque règle qui vise la classe de masquage du résumé est sous `@supports selector(::details-content)` et sous une requête de 48rem, et nulle part ailleurs. Le découpage est éprouvé sur un exemple (échappements, chaînes, at-règles imbriquées).
+- [x] PR 3, `e2e/affichage-360.spec.ts`- [x] PR 3, `e2e/affichage-360.spec.ts` : les mêmes pages à 360 px, projet `mobile-390` seul (décision 31).
+- [x] PR 3, `e2e/accueil.spec.ts` (modifié, signalé) : le test « affiche le bouton » devient « le titre et la présentation, sans bouton ».
 
 ## Fichiers concernés
 
@@ -561,8 +603,8 @@ PR 2 :
 
 PR 3 :
 
-- Créés : `src/app/(public)/layout.tsx`, `(public)/page.tsx` (déplacé de `src/app/page.tsx`) ; `src/app/(app)/layout.tsx`, `(app)/tableau-de-bord/page.tsx` ; `src/app/lien/layout.tsx` ; `src/components/gabarits/` (barre latérale, navigation, bandeau, en-tête de page, lien d'évitement) ; `src/server/autorisation/navigation.ts`, `navigation.test.ts` ; `src/server/db/gabarit.integration.test.ts` ; `e2e/zones.attaque.spec.ts`, `e2e/affichage.spec.ts`.
-- Modifiés : `src/server/actions/exposer.ts` (`lirePourPage`, `traduireLecture`, `ErreurPage`), `exposer.test.ts` ; `src/server/actions/inventaire.test.ts` ; `playwright.config.ts` (projets 390 et 1280 ; second serveur, configuration valide et base injoignable) ; `e2e/erreurs.attaque.spec.ts` (tests du second serveur) ; `CLAUDE.md` (règle : chaque page de `(app)/` passe par `lirePourPage`) ; `docs/STRUCTURE.md` (sections 2 et 4) ; `docs/features/chaine-controles.md` et `docs/features/limitation-debit.md` (« Reporté » à la 0.6, soldé).
+- Créés : `src/app/(public)/layout.tsx`, `(public)/page.tsx` (déplacé de `src/app/page.tsx`) ; `src/app/(app)/layout.tsx`, `(app)/tableau-de-bord/page.tsx` ; `src/app/lien/layout.tsx` ; `src/components/gabarits/` (barre latérale, navigation, bandeau, en-tête de page, lien d'évitement) ; `src/server/autorisation/navigation.ts`, `navigation.test.ts` ; `src/components/gabarits/gabarits.test.tsx` ; `src/server/db/gabarit.integration.test.ts` ; `e2e/zones.attaque.spec.ts`, `e2e/affichage.spec.ts`, `e2e/affichage-360.spec.ts`, `e2e/pages-livrees.ts`, `e2e/serveur-panne.ts` ; `src/components/gabarits/menu-replie.test.tsx`, `e2e/menu-replie.spec.ts` (décision 36).
+- Modifiés : `src/server/actions/exposer.ts` (`lirePourPage`, `traduireLecture`, `ErreurPage`), `exposer.test.ts` ; `src/server/actions/inventaire.test.ts` ; `playwright.config.ts` (projets 390 et 1280 ; second serveur, configuration valide et base injoignable) ; `e2e/erreurs.attaque.spec.ts` (tests du second serveur ; test « aucun détail dans le HTML » corrigé à l'implémentation, décision 32) ; `CLAUDE.md` (règle : chaque page de `(app)/` passe par `lirePourPage`) ; `docs/STRUCTURE.md` (sections 2 et 4) ; `docs/features/chaine-controles.md` et `docs/features/limitation-debit.md` (« Reporté » à la 0.6, soldé) ; `e2e/accueil.spec.ts` (premier test, signalé) ; `docs/PLAN.md` (ligne de la 1.2, décision 27).
 
 Faits à la validation : `docs/DESIGN-SYSTEM.md` (ligne « Action refusée dans un formulaire »), `docs/PLAN.md` (taille L, estimations), `CLAUDE.md` (« Commandes » : tests de bout en bout sur le site construit), `docs/STRUCTURE.md` (section 7 : `server/autorisation/navigation.ts`).
 
@@ -573,7 +615,7 @@ Inchangés : `drizzle/`, `scripts/`, `.github/workflows/` (la CI construit déj�
 ### Au jalon 1
 
 - 1.1 : confirmer par un test, sur la première action exposée, que `Referrer-Policy: same-origin` laisse passer `Origin` (section 6) ; revoir `@axe-core/playwright` (décision 7).
-- 1.2 : `connexion_requise` devient une redirection vers `/connexion`, avec une adresse de retour limitée à un chemin relatif ; nom de l'utilisateur et déconnexion dans la barre latérale ; parcours connecté dans un navigateur, dont la navigation par rôle ; erreur « base injoignable » avec une session valide (section 4.3).
+- 1.2 : `connexion_requise` devient une redirection vers `/connexion`, avec une adresse de retour limitée à un chemin relatif ; nom de l'utilisateur et déconnexion dans la barre latérale ; parcours connecté dans un navigateur, dont la navigation par rôle ; erreur « base injoignable » avec une session valide (section 4.3) ; gabarit de l'application connecté vérifié dans un navigateur, à 390 et 1280 px : barre latérale de 240 px, empilement sous 768 px, cibles de 44 px, focus, captures du tableau de bord connecté (décision 27).
 - 1.5 : format de l'heure.
 
 ### Au jalon 2
@@ -630,3 +672,20 @@ Prises pendant la PR 2, le 2026-10-12 :
 24. **`consignerErreurRequete` ne lève jamais.** Tout le calcul passe dans un `try` ; en cas d'échec (accesseur ou `Proxy` qui lève), la ligne fixe `{"echec":"consignation"}` est consignée, sans donnée de la valeur levée.
 25. **Propriétés interdites de `src/proxy.ts`.** Dérivées de `PROPRIETES_GENERALES` dans `eslint.config.mjs`, moins `process.env`. Un test compare les deux configurations effectives.
 26. **Code PostgreSQL.** Une seule fonction, `codePostgres`, dans `src/server/erreurs/code-postgres.ts`, importée par `refus.ts` et `consigner.ts`. Pas dans `refus.ts` : celui-ci importe `db/client.ts`, qui charge `env.ts`, et la consignation ne doit pas dépendre de la configuration. Aucune règle d'import ne s'y oppose.
+
+Prises pendant la phase rouge de la PR 3, le 2026-10-12 :
+
+27. **Session dans les tests de bout en bout : voie B.** Aucun moyen propre ne donne une session au navigateur avant la 1.2 (section 2.5). Le gabarit de l'application est vérifié par rendu en chaîne sous Vitest (`src/components/gabarits/gabarits.test.tsx`). Les vérifications qui demandent un navigateur connecté passent à la 1.2, en limite connue datée et dans la ligne de la 1.2 de `PLAN.md`. La voie A (préparation globale de Playwright) reste écartée.
+28. **Second serveur : jeton signé avec le secret factice.** Accepté. Sans signature valide, Better Auth ne lit pas la base et la panne ne s'observe pas (« Tests d'attaque », PR 3). Toutes les valeurs de `e2e/serveur-panne.ts` sont factices et le disent en commentaire.
+29. **Noms d'API.** Ceux de la section 2.6, acceptés.
+30. **Accueil.** Titre : `TEXTES_COMMUNS.produit` ; phrase : `TEXTES_COMMUNS.description`. Les tests comparent le texte exact.
+31. **Projets Playwright.** `accueil` et `affichage` dans `mobile-390` et `ordinateur-1280` ; `entetes.attaque`, `erreurs.attaque` et `zones.attaque` dans `ordinateur-1280` seul ; `affichage-360` dans `mobile-390` seul. Aucun test sauté.
+
+Prises pendant l'implémentation de la PR 3, le 2026-10-12 :
+
+32. **Test « aucun détail dans le HTML ».** Écrit en phase rouge, il exigeait le texte de la page « erreur » dans le HTML. Next.js 16.3.8 renvoie à la place son document d'erreur, au corps vide (section 4.3). Corrigé avec l'accord du relecteur, lui seul : il vérifie le document `__next_error__`, le statut 500 constaté, la politique et les en-têtes de sécurité, des `digest` au format UUID, et garde toutes les vérifications de marqueurs.
+33. **Écarts d'implémentation acceptés.** Bandeau de simulation en haut du contenu, au-dessus de l'en-tête de page (la maquette le place dessous ; la fiche et `DESIGN-SYSTEM.md` disent « en haut du contenu ») ; texte du bandeau en `corps` (15 px), graisse 500, au lieu des 14 px de la maquette, hors de l'échelle ; pied de page public au nom du produit (aucun autre texte n'est prévu) ; menu replié par `<details>` et `::details-content` ; aucune métadonnée propre à la page du tableau de bord (son titre fuirait sur la réponse « introuvable », S-02).
+34. **Entrée active par égalité exacte du chemin.** Acceptée ; une sous-page n'active pas son entrée (« Limites connues »), à revoir à la première fonctionnalité qui a des sous-pages.
+35. **Nom de l'organisation et accueil.** La propriété facultative `organisation` de `GabaritApplication` est acceptée (section 10). La phrase d'accueil reste `TEXTES_COMMUNS.description`, inchangée.
+
+36. **Repli du menu sans `::details-content`.** Le premier repli (résumé masqué dès 768 px sans condition) n'est pas acceptable : sur Chrome 109, la navigation serait inaccessible sur ordinateur. Le résumé n'est masqué dès 768 px que sous `@supports selector(::details-content)` (classe `md:supports-[selector(::details-content)]:hidden`) ; sans cette prise en charge, il reste visible et un clic ouvre la navigation. Preuve : un test d'unité (la classe portée par le résumé, et aucune autre qui le masque) et un test de bout en bout qui lit la feuille servie (la règle n'existe que sous `@supports`), vus en échec avant la correction et en succès après.

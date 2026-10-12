@@ -654,10 +654,10 @@ Inchangés : `drizzle/`, `scripts/`, `.github/workflows/` (la CI fournit déjà 
 
 - Le contrôle de débit à l'étape 4, et le champ de déclaration correspondant.
 
-### À la fonctionnalité 0.6 (socle d'interface)
+### À la fonctionnalité 0.6 (socle d'interface) : soldé
 
-- L'adaptateur des pages et de `(app)/layout.tsx` sur `etablirContexte`.
-- Les libellés français des codes `connexion_requise`, `refuse`, `invalide`, `erreur`, et l'affichage de l'incident.
+- ~~L'adaptateur des pages et de `(app)/layout.tsx` sur `etablirContexte`.~~ Livré par la 0.6, PR 3 : `lirePourPage` et `traduireLecture` (`src/server/actions/exposer.ts`), appelés par `(app)/layout.tsx` et par chaque page de `(app)/` (`docs/features/socle-interface.md`, section 2).
+- ~~Les libellés français des codes `connexion_requise`, `refuse`, `invalide`, `erreur`, et l'affichage de l'incident.~~ Livrés par la 0.6 : libellés dans `src/textes/resultats.ts` (PR 1), utilisés par les formulaires à partir du jalon 1 ; incident affiché par la page « erreur » (PR 2, section 4).
 
 ### Au jalon 1
 

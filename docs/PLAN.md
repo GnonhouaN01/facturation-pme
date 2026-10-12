@@ -54,7 +54,7 @@ Aucun écran métier. Ce jalon construit ce dont toutes les fonctionnalités aur
 | # | Fonctionnalité | Cas d'utilisation | Exigences et menaces | Taille |
 |---|---|---|---|---|
 | 1.1 | Inscription et vérification de l'email. Avant toute exposition de `/api/auth` : fermeture des points d'entrée natifs du module organisation de Better Auth (`/organization/*`), qui contournent la chaîne de contrôles. Origine acceptée sur `preview` (adresse de branche de Vercel) et réglage équivalent de Better Auth. Limitation de débit de Better Auth branchée sur le compteur de la 0.5 (`customStorage`), activée explicitement ; lecture de l'adresse IP selon la règle de `docs/features/limitation-debit.md` (section 9), vérifiée sur `preview` avec un en-tête forgé | UC-01 | F-001, S-10, S-11, S-15, T-07, T-55 | M |
-| 1.2 | Connexion et déconnexion | UC-02 | F-002, S-11, S-82, T-01, T-03 | M |
+| 1.2 | Connexion et déconnexion. Reprend de la 0.6 les vérifications du gabarit de l'application dans un navigateur connecté, à 390 et 1280 px : barre latérale de 240 px, empilement sous 768 px, cibles de 44 px, focus, captures du tableau de bord connecté (`docs/features/socle-interface.md`, « Limites connues », décision 27) | UC-02 | F-002, S-11, S-82, T-01, T-03 | M |
 | 1.3 | Réinitialisation du mot de passe | UC-03 | F-002, S-15, S-17, T-04 | M |
 | 1.4 | Double authentification et codes de secours | UC-04 | F-003, S-12, S-13, T-02, T-06 | M |
 | 1.5 | Sessions actives | UC-05 | F-004, S-17 | S |

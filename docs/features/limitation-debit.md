@@ -454,8 +454,8 @@ CREATE TABLE "compteur_debit" (
 
 ### À la 0.6 (socle d'interface)
 
-- Le libellé de `trop_de_requetes`.
-- Une limite sur les lectures des pages (`etablirContexte`) : à revoir (décision 5).
+- ~~Le libellé de `trop_de_requetes`.~~ Livré par la 0.6, PR 1 : `src/textes/resultats.ts`. Une page qui recevrait `trop_de_requetes` le traite comme une erreur, avec un nouvel incident (`traduireLecture`, PR 3).
+- Une limite sur les lectures des pages (`etablirContexte`) : revue par la 0.6, **non retenue en 0.6, reportée à la 3.1**, première page qui lit des données métier (`docs/features/socle-interface.md`, section 9). Toujours à faire.
 
 ### À la 0.7 et aux fonctionnalités d'envoi (2.2, 4.x, 5.x, 6.x)
 

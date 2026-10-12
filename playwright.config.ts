@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+import { ADRESSE_PANNE, CONFIGURATION_PANNE, PORT_PANNE } from "./e2e/serveur-panne";
+
 // Les tests tournent sur le site construit, en CI comme en local : lancer
 // npm run build avant. Les en-têtes de next dev diffèrent (politique de
 // développement). Aucun serveur existant n'est réutilisé : un next dev
@@ -17,11 +19,38 @@ export default defineConfig({
     baseURL: ADRESSE,
     trace: "on-first-retry",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
-  webServer: {
-    command: "npm run start",
-    url: ADRESSE,
-    reuseExistingServer: false,
-    timeout: 120_000,
-  },
+  // Deux largeurs (NF-03, NF-04), décision 31. L'affichage (accueil,
+  // affichage) tourne dans les deux ; les en-têtes et les attaques, qui ne
+  // dépendent pas de la largeur, dans ordinateur-1280 seul ; 360 px
+  // (affichage-360) dans mobile-390 seul. Aucun test sauté. Fiche : section 12.
+  projects: [
+    {
+      name: "mobile-390",
+      testMatch: [/(^|\W)accueil\.spec\.ts$/, /(^|\W)affichage(-360)?\.spec\.ts$/],
+      use: { ...devices["Desktop Chrome"], viewport: { width: 390, height: 844 } },
+    },
+    {
+      name: "ordinateur-1280",
+      testIgnore: [/(^|\W)affichage-360\.spec\.ts$/],
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
+    },
+  ],
+  webServer: [
+    {
+      command: "npm run start",
+      url: ADRESSE,
+      reuseExistingServer: false,
+      timeout: 120_000,
+    },
+    // Second serveur : configuration valide, base injoignable (section 4.3,
+    // décision 17). Les variables passées ici l'emportent sur .env.local et
+    // sur l'environnement du job de CI.
+    {
+      command: `npm run start -- -p ${PORT_PANNE}`,
+      url: ADRESSE_PANNE,
+      reuseExistingServer: false,
+      timeout: 120_000,
+      env: { ...CONFIGURATION_PANNE },
+    },
+  ],
 });
