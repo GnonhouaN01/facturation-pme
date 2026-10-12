@@ -46,6 +46,7 @@ function chaine(): Chaine {
     lireAdhesion,
     journaliser,
     verifierDebit: (nom, valeur) => verificateur().verifierDebit(nom, valeur),
+    envoyerEmail: async () => ({ envoye: false, raison: "non_autorise" }),
   });
 }
 
@@ -92,6 +93,7 @@ function demoLimitee() {
     journal: null,
     nouvelleAuthentification: false,
     debit: "membre.action",
+    emails: [],
     executer: async () => "fait",
   });
 }
@@ -105,6 +107,7 @@ function demoEchec(valeur: string) {
     journal: null,
     nouvelleAuthentification: false,
     debit: "membre.action",
+    emails: [],
     executer: async (ctx) => {
       await ctx.tx.insert(temoinIsolation).values({ organisationId: ctx.organisationId, valeur });
       throw new Error("échec du service");

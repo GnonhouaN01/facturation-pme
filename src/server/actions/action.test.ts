@@ -93,6 +93,7 @@ function dependances() {
     lireAdhesion,
     journaliser,
     verifierDebit: vi.fn(async () => true),
+    envoyerEmail: async () => ({ envoye: false, raison: "non_autorise" }),
   };
   return { deps, lireSession, executerDansOrganisation, lireAdhesion, journaliser };
 }
@@ -115,6 +116,7 @@ function declaration<
     journal: null as J,
     nouvelleAuthentification: false,
     debit: null,
+    emails: [],
     executer: vi.fn(async () => {
       etapes.push("service");
       return "fait" as T;
@@ -706,6 +708,7 @@ describe("declarerAction : déclarations incomplètes refusées à la compilatio
           journal: null,
           nouvelleAuthentification: false,
           debit: null,
+          emails: [],
           executer,
         }),
       () =>
@@ -716,6 +719,7 @@ describe("declarerAction : déclarations incomplètes refusées à la compilatio
           journal: null,
           nouvelleAuthentification: false,
           debit: null,
+          emails: [],
           executer,
         }),
       () =>
@@ -726,6 +730,7 @@ describe("declarerAction : déclarations incomplètes refusées à la compilatio
           entree: SCHEMA_VIDE,
           nouvelleAuthentification: false,
           debit: null,
+          emails: [],
           executer,
         }),
       () =>
@@ -737,6 +742,7 @@ describe("declarerAction : déclarations incomplètes refusées à la compilatio
           journal: "facture.emise",
           nouvelleAuthentification: false,
           debit: null,
+          emails: [],
           executer,
         }),
       () =>
@@ -747,6 +753,7 @@ describe("declarerAction : déclarations incomplètes refusées à la compilatio
           entree: SCHEMA_VIDE,
           journal: null,
           debit: null,
+          emails: [],
           executer,
         }),
       () =>
@@ -757,6 +764,7 @@ describe("declarerAction : déclarations incomplètes refusées à la compilatio
           journal: null,
           nouvelleAuthentification: false,
           debit: null,
+          emails: [],
           executer: async (ctx) => {
             // @ts-expect-error ctx.journaliser n'existe que si journal est déclaré
             await ctx.journaliser({ ressourceId: randomUUID() });
@@ -782,6 +790,7 @@ describe("declarerAction : schéma d'entrée non strict refusé à l'exécution"
         journal: null,
         nouvelleAuthentification: false,
         debit: null,
+        emails: [],
         executer: async () => "fait",
       });
   }

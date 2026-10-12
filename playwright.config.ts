@@ -1,3 +1,6 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { defineConfig, devices } from "@playwright/test";
 
 import { ADRESSE_PANNE, CONFIGURATION_PANNE, PORT_PANNE } from "./e2e/serveur-panne";
@@ -8,6 +11,16 @@ import { ADRESSE_PANNE, CONFIGURATION_PANNE, PORT_PANNE } from "./e2e/serveur-pa
 // oublié sur le port 3000 ferait passer ou échouer les tests pour une autre
 // raison. Fiche : docs/features/socle-interface.md, section 6.
 const ADRESSE = "http://localhost:3000";
+
+// next start charge .env.local (NODE_ENV=production). Chaque serveur impose
+// le transport fichier, dans un dossier propre aux tests : aucun ne peut
+// envoyer un vrai email, même si une variable d'envoi se trouvait par erreur
+// dans .env.local. Les variables passées par env l'emportent. Fiche :
+// docs/features/envoi-emails.md, section 2.1.
+const EMAILS_E2E = {
+  EMAIL_TRANSPORT: "fichier",
+  EMAIL_DOSSIER: join(tmpdir(), "facturation-pme-e2e-emails"),
+};
 
 export default defineConfig({
   testDir: "./e2e",
@@ -41,6 +54,7 @@ export default defineConfig({
       url: ADRESSE,
       reuseExistingServer: false,
       timeout: 120_000,
+      env: { ...EMAILS_E2E },
     },
     // Second serveur : configuration valide, base injoignable (section 4.3,
     // décision 17). Les variables passées ici l'emportent sur .env.local et
@@ -50,7 +64,7 @@ export default defineConfig({
       url: ADRESSE_PANNE,
       reuseExistingServer: false,
       timeout: 120_000,
-      env: { ...CONFIGURATION_PANNE },
+      env: { ...CONFIGURATION_PANNE, ...EMAILS_E2E },
     },
   ],
 });

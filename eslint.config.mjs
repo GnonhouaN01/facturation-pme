@@ -22,6 +22,8 @@ const APP_ACTIONS = "src/app/**/actions.ts";
 const DEBIT = "src/server/debit/**";
 const DB_DEBIT = "src/server/db/debit.ts";
 const PROXY = "src/proxy.ts";
+const PORTE = "src/server/email/envoi.ts";
+const SMTP = "src/server/modules/email/smtp.ts";
 // Écrans : pages et composants, où s'affiche le texte (règle R). Les
 // composants de ui/, générés par shadcn, ne portent pas de texte affiché.
 const ECRANS = ["src/app/**", "src/components/**"];
@@ -384,6 +386,52 @@ const IMPORTS_S = {
 };
 const SYNTAXE_S = chargementsDynamiques("/(^|\\u002F)server\\u002Fenv(\\.ts)?$/", MESSAGE_S);
 
+// T. Envoi d'emails : une seule porte, src/server/email/envoi.ts. nodemailer
+// ne s'importe que dans modules/email/smtp.ts ; modules/email/ que dans la
+// porte, son propre dossier, l'outillage de test et les tests ; envoyerEmail
+// que dans actions/action.ts et les tests (un service demande un envoi par
+// ctx.preparerEmail) ; la chaîne smtp.gmail.com n'apparaît que dans
+// modules/email/smtp.ts et les tests. Chargement dynamique compris. Fiche :
+// docs/features/envoi-emails.md, section 1.2.
+const MESSAGE_T_NODEMAILER =
+  "nodemailer ne s'importe que dans src/server/modules/email/smtp.ts (docs/features/envoi-emails.md, section 1.2, règle T).";
+const MESSAGE_T_MODULES =
+  "src/server/modules/email/ ne s'importe que dans src/server/email/envoi.ts : envoyer par la porte d'envoi (docs/features/envoi-emails.md, section 1.2, règle T).";
+const MESSAGE_T_ENVOYER =
+  "envoyerEmail ne s'importe que dans src/server/actions/action.ts et les tests : un service demande un envoi par ctx.preparerEmail (docs/features/envoi-emails.md, section 1.2, règle T).";
+const MESSAGE_T_HOTE =
+  "smtp.gmail.com n'apparaît que dans src/server/modules/email/smtp.ts et les tests (docs/features/envoi-emails.md, section 1.2, règle T).";
+const IMPORTS_T_NODEMAILER = {
+  patterns: [{ regex: "^nodemailer(/|$)", message: MESSAGE_T_NODEMAILER }],
+};
+const IMPORTS_T_MODULES = {
+  patterns: [{ regex: "(^|/)modules/email(/|$)", message: MESSAGE_T_MODULES }],
+};
+const IMPORTS_T_ENVOYER = {
+  patterns: [
+    { regex: "(^|/)email/envoi$", importNames: ["envoyerEmail"], message: MESSAGE_T_ENVOYER },
+    { regex: "^\\./envoi$", importNames: ["envoyerEmail"], message: MESSAGE_T_ENVOYER },
+  ],
+};
+const SYNTAXE_T_NODEMAILER = chargementsDynamiques(
+  "/^nodemailer(\\u002F.*)?$/",
+  MESSAGE_T_NODEMAILER,
+);
+const SYNTAXE_T_MODULES = chargementsDynamiques(
+  "/(^|\\u002F)modules\\u002Femail(\\u002F|$)/",
+  MESSAGE_T_MODULES,
+);
+const SYNTAXE_T_ENVOYER = chargementsDynamiques(
+  "/((^|\\u002F)email|^\\.)\\u002Fenvoi$/",
+  MESSAGE_T_ENVOYER,
+);
+const SYNTAXE_T_HOTE = [
+  "Literal[value=/smtp\\.gmail\\.com/]",
+  "TemplateElement[value.raw=/smtp\\.gmail\\.com/]",
+].map((selector) => ({ selector, message: MESSAGE_T_HOTE }));
+const IMPORTS_T = [IMPORTS_T_NODEMAILER, IMPORTS_T_MODULES, IMPORTS_T_ENVOYER];
+const SYNTAXE_T = [SYNTAXE_T_NODEMAILER, SYNTAXE_T_MODULES, SYNTAXE_T_ENVOYER, SYNTAXE_T_HOTE];
+
 const restreindreImports = (...listes) => [
   "error",
   {
@@ -407,6 +455,7 @@ const IMPORTS_GENERAUX = [
   IMPORTS_M,
   IMPORTS_N_TABLE,
   IMPORTS_N_COMPTEUR,
+  ...IMPORTS_T,
 ];
 
 // Propriétés interdites du cas général de src/. Celles de src/proxy.ts en
@@ -434,6 +483,7 @@ const SYNTAXE_GENERALE = [
   SYNTAXE_K,
   SYNTAXE_M,
   SYNTAXE_N,
+  ...SYNTAXE_T,
 ];
 
 const eslintConfig = defineConfig([
@@ -449,9 +499,27 @@ const eslintConfig = defineConfig([
   // Imports statiques.
   {
     files: [SRC],
-    ignores: [DB, ENV, TESTS, CONFIG_AUTH, JOURNAL_AUDIT, ACTIONS, DEBIT, PROXY],
+    ignores: [DB, ENV, TESTS, CONFIG_AUTH, JOURNAL_AUDIT, ACTIONS, DEBIT, PROXY, PORTE, SMTP],
     rules: {
       "no-restricted-imports": restreindreImports(...IMPORTS_GENERAUX),
+    },
+  },
+  // La porte d'envoi : le cas général, sauf modules/email/ (règle T).
+  {
+    files: [PORTE],
+    rules: {
+      "no-restricted-imports": restreindreImports(
+        ...IMPORTS_GENERAUX.filter((liste) => liste !== IMPORTS_T_MODULES),
+      ),
+    },
+  },
+  // Le transport SMTP (PR 2) : le cas général, sauf nodemailer (règle T).
+  {
+    files: [SMTP],
+    rules: {
+      "no-restricted-imports": restreindreImports(
+        ...IMPORTS_GENERAUX.filter((liste) => liste !== IMPORTS_T_NODEMAILER),
+      ),
     },
   },
   // src/proxy.ts : les listes du bloc général (IMPORTS_GENERAUX), plus S. Un
@@ -476,6 +544,7 @@ const eslintConfig = defineConfig([
         IMPORTS_J,
         IMPORTS_M,
         IMPORTS_N_TABLE,
+        ...IMPORTS_T,
       ),
     },
   },
@@ -495,6 +564,7 @@ const eslintConfig = defineConfig([
         IMPORTS_M,
         IMPORTS_N_TABLE,
         IMPORTS_N_COMPTEUR,
+        ...IMPORTS_T,
       ),
     },
   },
@@ -510,6 +580,8 @@ const eslintConfig = defineConfig([
         IMPORTS_L,
         IMPORTS_N_TABLE,
         IMPORTS_N_COMPTEUR,
+        IMPORTS_T_NODEMAILER,
+        IMPORTS_T_MODULES,
       ),
     },
   },
@@ -527,6 +599,7 @@ const eslintConfig = defineConfig([
         IMPORTS_M_FABRIQUE,
         IMPORTS_N_TABLE,
         IMPORTS_N_COMPTEUR,
+        ...IMPORTS_T,
       ),
     },
   },
@@ -543,6 +616,7 @@ const eslintConfig = defineConfig([
         IMPORTS_M,
         IMPORTS_N_TABLE,
         IMPORTS_N_COMPTEUR,
+        ...IMPORTS_T,
       ),
     },
   },
@@ -559,6 +633,7 @@ const eslintConfig = defineConfig([
         IMPORTS_M,
         IMPORTS_N_TABLE,
         IMPORTS_N_COMPTEUR,
+        ...IMPORTS_T,
       ),
     },
   },
@@ -580,6 +655,7 @@ const eslintConfig = defineConfig([
         IMPORTS_M,
         IMPORTS_N_TABLE,
         IMPORTS_N_COMPTEUR,
+        ...IMPORTS_T,
       ),
     },
   },
@@ -597,6 +673,7 @@ const eslintConfig = defineConfig([
         IMPORTS_N_TABLE,
         IMPORTS_N_COMPTEUR,
         IMPORTS_N_COMPTEUR_DB,
+        ...IMPORTS_T,
       ),
     },
   },
@@ -610,6 +687,7 @@ const eslintConfig = defineConfig([
         IMPORTS_F_REQUETES,
         IMPORTS_J,
         IMPORTS_M,
+        ...IMPORTS_T,
       ),
     },
   },
@@ -631,8 +709,20 @@ const eslintConfig = defineConfig([
   // Syntaxe interdite. Les écrans ont leurs blocs, à cause de la règle R.
   {
     files: [SRC],
-    ignores: [DB, ENV, TESTS, ACTIONS, APP_ACTIONS, PROXY, ...ECRANS],
+    ignores: [DB, ENV, TESTS, ACTIONS, APP_ACTIONS, PROXY, SMTP, ...ECRANS],
     rules: { "no-restricted-syntax": restreindreSyntaxe(...SYNTAXE_GENERALE) },
+  },
+  // Le transport SMTP (PR 2) : la syntaxe générale, sauf nodemailer et
+  // smtp.gmail.com (règle T).
+  {
+    files: [SMTP],
+    rules: {
+      "no-restricted-syntax": restreindreSyntaxe(
+        ...SYNTAXE_GENERALE.filter(
+          (liste) => liste !== SYNTAXE_T_NODEMAILER && liste !== SYNTAXE_T_HOTE,
+        ),
+      ),
+    },
   },
   // src/proxy.ts : la syntaxe générale, l'exception de B et S.
   {
@@ -669,6 +759,7 @@ const eslintConfig = defineConfig([
         SYNTAXE_K,
         SYNTAXE_M,
         SYNTAXE_N,
+        ...SYNTAXE_T,
       ),
     },
   },
@@ -692,6 +783,7 @@ const eslintConfig = defineConfig([
         SYNTAXE_L,
         SYNTAXE_M,
         SYNTAXE_N,
+        ...SYNTAXE_T,
       ),
     },
   },
@@ -711,6 +803,9 @@ const eslintConfig = defineConfig([
         SYNTAXE_K,
         SYNTAXE_L,
         SYNTAXE_N,
+        SYNTAXE_T_NODEMAILER,
+        SYNTAXE_T_MODULES,
+        SYNTAXE_T_HOTE,
       ),
     },
   },
@@ -731,6 +826,7 @@ const eslintConfig = defineConfig([
         SYNTAXE_J,
         SYNTAXE_K,
         SYNTAXE_N,
+        ...SYNTAXE_T,
       ),
     },
   },
@@ -765,6 +861,7 @@ const eslintConfig = defineConfig([
         SYNTAXE_K,
         SYNTAXE_M,
         SYNTAXE_N,
+        ...SYNTAXE_T,
       ),
     },
   },
@@ -785,6 +882,7 @@ const eslintConfig = defineConfig([
         SYNTAXE_K,
         SYNTAXE_M,
         SYNTAXE_N_DB,
+        ...SYNTAXE_T,
       ),
     },
   },
@@ -803,6 +901,7 @@ const eslintConfig = defineConfig([
         SYNTAXE_J,
         SYNTAXE_M,
         SYNTAXE_N_DB,
+        ...SYNTAXE_T,
       ),
     },
   },

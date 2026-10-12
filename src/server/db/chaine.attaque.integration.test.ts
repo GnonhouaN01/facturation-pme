@@ -50,6 +50,7 @@ function demoLire() {
     journal: null,
     nouvelleAuthentification: false,
     debit: null,
+    emails: [],
     executer: async (ctx) => ({ organisationId: ctx.organisationId, role: ctx.role }),
   });
 }
@@ -64,6 +65,7 @@ function demoEcrire() {
     journal: "organisation.parametres_modifies",
     nouvelleAuthentification: false,
     debit: null,
+    emails: [],
     executer: async (ctx, entree) => {
       const [ligne] = await ctx.tx
         .insert(temoinIsolation)
@@ -86,6 +88,7 @@ function demoReservee() {
     journal: null,
     nouvelleAuthentification: false,
     debit: null,
+    emails: [],
     executer: async (ctx) => ctx.role,
   });
 }
@@ -99,6 +102,7 @@ function demoRessource() {
     journal: null,
     nouvelleAuthentification: false,
     debit: null,
+    emails: [],
     executer: async (ctx, entree) => {
       const [ligne] = await ctx.tx
         .select({ valeur: temoinIsolation.valeur })
@@ -387,6 +391,7 @@ describe("T-52 : membre retiré ou rétrogradé", () => {
       journal: null,
       nouvelleAuthentification: false,
       debit: null,
+      emails: [],
       executer: async () => {
         signalerEntree();
         await liberation;

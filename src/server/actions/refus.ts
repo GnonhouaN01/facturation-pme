@@ -12,7 +12,11 @@ import { codePostgres } from "../erreurs/code-postgres";
 // docs/features/chaine-controles.md, section 6.
 
 export type Resultat<T> =
-  | { ok: true; donnees: T }
+  // emails : présent seulement pour une action qui déclare des modèles
+  // d'email ; ce qui est parti après la validation, et ce qui n'est pas parti
+  // (limite, porte en échec). Fiche : docs/features/envoi-emails.md,
+  // section 6.2.
+  | { ok: true; donnees: T; emails?: { envoyes: number; nonEnvoyes: number } }
   | { ok: false; raison: "connexion_requise" }
   | { ok: false; raison: "refuse" }
   | { ok: false; raison: "trop_de_requetes" }

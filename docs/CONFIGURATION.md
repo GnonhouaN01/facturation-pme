@@ -322,7 +322,14 @@ En prévisualisation, `BETTER_AUTH_URL` n'est pas saisie : quand elle est absent
 
 ## Étape 11 — Emails et suivi des erreurs
 
-Reportés au moment où une fonctionnalité en aura besoin. L'envoi d'emails passera par un compte Gmail dédié à l'application, gratuit et sans nom de domaine.
+**Emails.** Un compte Gmail dédié à l'application, gratuit et sans nom de domaine (fonctionnalité 0.7, `docs/features/envoi-emails.md`).
+
+- En local, rien à régler : sans variable, les emails sont écrits dans `.emails/` (transport `fichier`, dossier ignoré par git) et rien ne part. Variables facultatives : `EMAIL_TRANSPORT` (`memoire` ou `fichier`), `EMAIL_DOSSIER`, `EMAIL_DESTINATAIRES_AUTORISES` (`.env.example`). Une variable présente mais vide est refusée au démarrage.
+- **Jamais de variable Gmail dans `.env.local`** : `npm run test:e2e` lance `next start`, qui charge ce fichier ; `playwright.config.ts` impose le transport `fichier` à ses serveurs, mais le mot de passe d'application ne doit exister que dans Vercel.
+- Sur Vercel, sans variable d'envoi, la configuration donne `memoire`, en production comme en prévisualisation : rien ne part, et le site ne tombe pas.
+- L'envoi réel (PR 2 de la 0.7) se prépare à la main, dans l'ordre de la section 9 de la fiche : compte de production et compte de prévisualisation, validation en deux étapes (pas uniquement par clé de sécurité, sans Protection avancée), mot de passe d'application collé directement dans Vercel en type Sensitive, variables posées avant la fusion de la PR 2, envoi d'essai et relevé de toute alerte de Google. Changer le mot de passe du compte Google révoque ses mots de passe d'application.
+
+**Suivi des erreurs.** Reporté à la première fonctionnalité mise en production.
 
 ## Étape 12 — Claude Code
 

@@ -1,6 +1,6 @@
 # Fonctionnalité : envoi d'emails
 
-Statut : validée le 2026-10-12 (décisions en fin de fiche)
+Statut : en cours. Validée le 2026-10-12 (décisions en fin de fiche) ; PR 1 implémentée le 2026-10-12, non commitée ; PR 2 à faire
 
 Jalon 0, fonctionnalité 0.7 de `docs/PLAN.md`. Taille M. Deux PR (« Découpage en PR », décision 11).
 
@@ -385,21 +385,24 @@ Conséquences :
 
 PR 1 :
 
-- [ ] `envoyerEmail` est la seule fonction qui remet un message à un transport ; la règle T refuse tout autre import de `src/server/modules/email/` et de `nodemailer` (`regles-import.test.ts`).
-- [ ] Une adresse avec `\r`, `\n`, `\0`, tabulation, virgule, `<`, `>`, guillemet, parenthèse, espace, caractère non ASCII, ou de plus de 254 caractères est refusée ; rien n'atteint le transport.
-- [ ] La demande refuse toute clé hors de `modele`, `destinataire`, `parametres` (dont `cc`, `bcc`, `replyTo`, `from`, `headers`, `attachments`).
-- [ ] Hors production, un destinataire hors de la liste autorisée donne `non_autorise` ; en production, la liste est ignorée.
-- [ ] `EMAIL_TRANSPORT=smtp` est refusé sous `NODE_ENV=test` ; en production, toute autre valeur, ou une variable Gmail absente ou mal formée, est refusée ; aucun message d'erreur ne contient de valeur.
-- [ ] Sous Vitest, une connexion vers les ports 25, 465, 587 ou 2525 lève une exception.
-- [ ] Un lien produit commence toujours par l'origine de `BETTER_AUTH_URL` suivie de `/lien/` ; un jeton hors alphabet ou hors longueur est refusé.
-- [ ] Les emails d'une action ne partent qu'après la validation de sa transaction ; une transaction annulée n'envoie et ne compte rien.
-- [ ] **T-40** : au-delà de `email.organisation`, les envois de cette organisation sont refusés (`limite`) sans rien remettre au transport, et une autre organisation envoie toujours ; même chose pour `email.destinataire` et `email.application`.
-- [ ] Une déclaration sans `emails` ne compile pas ; un modèle hors de sa liste est refusé par `ctx.preparerEmail`.
-- [ ] Le corps produit ne contient aucune balise HTML générée, et un paramètre `<script>` y figure tel quel.
-- [ ] Aucune dépendance ajoutée (`package-lock.json` inchangé).
+- [x] `envoyerEmail` est la seule fonction qui remet un message à un transport ; la règle T refuse tout autre import de `src/server/modules/email/` et de `nodemailer` (`src/server/email/regles-email.test.ts`).
+- [x] Une adresse avec `\r`, `\n`, `\0`, tabulation, virgule, `<`, `>`, guillemet, parenthèse, espace, caractère non ASCII, ou de plus de 254 caractères est refusée ; rien n'atteint le transport.
+- [x] La demande refuse toute clé hors de `modele`, `destinataire`, `parametres` (dont `cc`, `bcc`, `replyTo`, `from`, `headers`, `attachments`).
+- [x] Hors production, un destinataire hors de la liste autorisée donne `non_autorise` ; en production, la liste est ignorée.
+- [x] Configuration de la PR 1 : `EMAIL_TRANSPORT` vaut `memoire` ou `fichier`, toute autre valeur (vide comprise) est refusée, `fichier` est refusé sur Vercel ; sur Vercel sans aucune variable d'envoi, `memoire`, en production comme en prévisualisation ; une configuration invalide fait échouer le chargement de `env.ts` ; aucun message d'erreur ne contient de valeur.
+- [x] Sous Vitest, une connexion vers les ports 25, 465, 587 ou 2525 lève une exception.
+- [x] Un lien produit commence toujours par l'origine de `BETTER_AUTH_URL` suivie de `/lien/` ; un jeton hors alphabet ou hors longueur est refusé.
+- [x] Les emails d'une action ne partent qu'après la validation de sa transaction ; une transaction annulée n'envoie et ne compte rien.
+- [x] **T-40** : au-delà de `email.organisation`, les envois de cette organisation sont refusés sans rien remettre au transport (comptés dans `nonEnvoyes`), et une autre organisation envoie toujours ; même chose pour `email.destinataire` et `email.application`.
+- [x] Une déclaration sans `emails` ne compile pas ; un modèle hors de sa liste est refusé par `ctx.preparerEmail`.
+- [x] Le corps produit ne contient aucune balise HTML générée, et un paramètre `<script>` est gardé tel quel (brique `texteAffichable` ; aucun modèle de la 0.7 n'a de paramètre texte).
+- [x] Aucune dépendance ajoutée (`package-lock.json` inchangé).
+- [x] Tout nouveau fichier de `src/server/` commence par `import "server-only";`.
+- [x] `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:integration` (sur `dev`), `npm run build`, `npm run test:e2e` passent (2026-10-12). En CI : à constater sur la PR.
 
 PR 2 :
 
+- [ ] `EMAIL_TRANSPORT=smtp` est refusé sous `NODE_ENV=test` ; en production, toute autre valeur que `smtp`, ou une variable Gmail absente ou mal formée, est refusée ; aucun message d'erreur ne contient de valeur.
 - [ ] `nodemailer` installé en version exacte, après accord, `npm audit --omit=dev` sans faille ouverte.
 - [ ] Le transport `smtp` se connecte en TLS sur 465, vérifie le certificat, avec `logger` et `debug` à `false` et des délais courts ; ces options sont figées par un test.
 - [ ] Contre le serveur factice : un seul `RCPT TO`, aucun en-tête injecté même si la validation est contournée ; ni le mot de passe, ni sa forme base64, ni l'adresse n'apparaissent sur `stdout` ou `stderr`.
@@ -706,3 +709,27 @@ Décisions du relecteur sur la phase rouge :
 **Tests renforcés** : les 14 cas de refus de `lienPublic` passaient avec la fonction vide (`toThrow()` accepte « non implémenté »). Chacun vérifie d'abord, dans le même test, qu'un jeton valide produit le lien attendu.
 
 **Tests nouveaux qui passent encore (30)** : les justifications de la première phase rouge restent valables (15 témoins de la règle T, 2 témoins de la garde réseau, 2 de `configuration-e2e.test.ts`, 10 de la chaîne). S'y ajoutent : `env.test.ts`, « DATABASE_URL invalide, le chargement échoue » (le cas de référence, déjà vrai, auquel les cas d'envoi sont comparés) ; `modeles.test.ts`, « le contrôle refuse les formes interdites » (il éprouve la fonction de contrôle du test elle-même, sur des schémas Zod écrits dans le test).
+
+### Implémentation de la PR 1, le 2026-10-12
+
+Code : `src/server/email/adresse.ts`, `modeles.ts`, `envoi.ts` ; `src/server/modules/email/transport.ts`, `memoire.ts`, `fichier.ts` ; `src/textes/emails.ts` ; `validerConfigurationEmail` dans `src/server/env-schema.ts`, `configurationEmail` dans `src/server/env.ts` ; quatre limites `email.*` dans `src/server/debit/limites.ts` ; champ `emails`, `ctx.preparerEmail`, dépendance `envoyerEmail` et envoi après la validation dans `src/server/actions/action.ts` ; variante `emails` du résultat dans `refus.ts` ; règle T dans `eslint.config.mjs` ; garde réseau `tests/garde-reseau.ts`, branchée dans les deux projets de `vitest.config.mts` ; transport `fichier` imposé par `playwright.config.ts`.
+
+**Tests existants complétés (décision 4 de la phase rouge)** : 33 lignes `emails: [],` et 4 dépendances factices `envoyerEmail: async () => ({ envoye: false, raison: "non_autorise" }),`, que des ajouts, dans `action.test.ts`, `action-debit.test.ts`, `exposer.test.ts`, `marque.test.ts`, `registre.integration.test.ts`, `chaine-debit.integration.test.ts`, `chaine-debit.attaque.integration.test.ts`, `chaine.integration.test.ts`, `chaine.attaque.integration.test.ts` et `tests/fixtures/inventaire/declarations.ts`. Aucun autre test modifié.
+
+**Écarts d'implémentation, et pourquoi** :
+
+1. **Porte liée à la configuration, construite au premier envoi.** `envoyerEmail` (instance liée) ne lit `configurationEmail` qu'au premier appel. Cinq fichiers de test existants simulent `../env` sans `configurationEmail` ; une lecture au chargement de `envoi.ts`, importé par la chaîne, les ferait tous échouer. La configuration reste validée au démarrage, par `env.ts`.
+2. **`verifierDebit` et `executer` écrits en méthodes** dans `DependancesChaine` et `DeclarationAction`. Leurs paramètres deviennent bivariants. Sans cela, deux tests existants ne compilaient plus : `chaine-debit.attaque.integration.test.ts` passe un `verifierDebit` typé pour `membre.action` seule ; `registre.integration.test.ts` convertit une déclaration sans email en `DeclarationQuelconque`. Le contexte d'une action reste calculé depuis sa propre déclaration : `ctx.journaliser` et `ctx.preparerEmail` restent de type `never` quand le journal ou les modèles sont absents (tests `@ts-expect-error`).
+3. **`creerVerificateur` accepte une partie des limites** (`Partial<Record<NomLimite, Limite>>`) : les tests de la 0.5 ne passent que `membre.action`. Une limite absente lève, comme un nom inconnu.
+4. **Expéditeur de la PR 1** : `ne-pas-repondre@facturation.invalid`, constant, pour les transports `memoire` et `fichier`, qui n'envoient rien. La PR 2 prendra `GMAIL_UTILISATEUR`.
+5. **Refus d'une limite** : l'email compte dans `nonEnvoyes` ; la raison n'est pas transmise dans le résultat de l'action (ni `limite`, ni le nom de la limite), comme pour `trop_de_requetes`.
+6. **Journal technique** : un échec du transport donne une ligne `[email]` (modèle, raison, `code`, `responseCode`, incident) ; un échec après la validation (compteur ou porte qui lève) une ligne `[chaine-controles]` (action, étape `envoi_email`, classe, incident). Un refus de limite n'est pas consigné (signalement : 8.1).
+7. **`.env.example`** : les trois variables `EMAIL_*` y sont en commentaire. Une variable présente mais vide est refusée : recopier le modèle tel quel ferait échouer le démarrage.
+8. **Construction de la règle T** : deux blocs nouveaux, `src/server/email/envoi.ts` (cas général sans la restriction de `modules/email/`) et `src/server/modules/email/smtp.ts` (sans celle de `nodemailer` ni de `smtp.gmail.com`), retirés du bloc général ; les autres blocs reçoivent les restrictions T qui les concernent (`action.ts` : toutes sauf `envoyerEmail`). Écrite par un script Python (`chr(92)`), barres inverses comptées sans expression régulière : toutes doublées sur les lignes nouvelles ; les trois barres isolées du fichier sont les guillemets échappés existants des messages G et H. Constaté : un premier script de comptage par expression régulière a échoué, réduit par l'outil, comme le décrit `CLAUDE.md`.
+
+**Constats du 2026-10-12** :
+
+- `npm run lint` : vert. `npm run typecheck` : vert.
+- `npm test` : 1 417 tests réussis, aucun échec.
+- `npm run test:integration` sur `dev` : 18 fichiers ; 171 réussis, 1 échec attendu existant.
+- `npm run build` : réussi. `npm run test:e2e` : 104 réussis. Ports 3000 et 3101 libres avant et après.

@@ -30,7 +30,7 @@ Ce document liste les outils et services retenus, leur rôle, la raison du choix
 |---|---|---|---|
 | Hébergement | Vercel, fonctions à Francfort (fra1) | Usage personnel et non commercial. Environ 100 Go de transfert et un million d'appels de fonctions par mois | Imposé. Déploiement automatique et prévisualisation de chaque PR |
 | Base managée | Neon, région de Francfort, trois branches : `production`, `preview`, `dev` | 0,5 Go de stockage et 100 heures de calcul par projet et par mois. Mise en veille après 5 minutes d'inactivité, réveil automatique. 10 branches. Restauration sur 6 heures | Pas de mise en pause prolongée. Une branche de base par prévisualisation (T-74) |
-| Emails | Resend, **à configurer avec la fonctionnalité de vérification d'email** | 3 000 emails par mois, 100 par jour, un domaine vérifié | Suffisant avec notre propre limitation de débit (S-55) |
+| Emails | Compte Gmail dédié à l'application, en SMTP (port 465) avec un mot de passe d'application. Branché en production par la PR 2 de la fonctionnalité 0.7 (`docs/features/envoi-emails.md`) | 500 emails par jour et 500 destinataires par email pour un compte personnel ; au-delà, envoi bloqué de 1 à 24 heures (Google, `support.google.com/mail/answer/22839`, consulté le 2026-10-12). Nos limites restent en dessous : 200 par 24 heures pour toute l'application, 40 par organisation | Gratuit, sans nom de domaine. Port 465 ouvert depuis les fonctions de Vercel (port 25 bloqué) |
 | Tâches planifiées | Vercel Cron | Une exécution par jour au plus, précision d'une heure | Aucun service en plus |
 | Suivi des erreurs | Sentry, **à configurer avec la première fonctionnalité mise en production** | À vérifier à ce moment-là | Identifiant d'incident (S-85) |
 | Dépôt et intégration continue | GitHub | Gratuit pour un dépôt public | Imposé |
@@ -41,13 +41,13 @@ Ce document liste les outils et services retenus, leur rôle, la raison du choix
 |---|---|---|
 | Limitation de débit | Extension de Better Auth pour les connexions, table de compteurs dans PostgreSQL pour le reste | Un service, un compte et un secret en moins |
 | Stockage du logo | Dans PostgreSQL, 200 Ko maximum | Même isolation par organisation que les autres données, pas d'adresse publique |
-| Emails en développement | Interception locale, rien n'est envoyé | Aucun email réel pendant les tests |
+| Emails en développement et en test | Transport `fichier` en local (dossier `.emails/`, ignoré par git) et pour les tests de bout en bout, transport `memoire` sous Vitest et sur Vercel tant que l'envoi réel n'est pas branché ; garde réseau sous Vitest | Aucun email réel pendant les tests (`docs/features/envoi-emails.md`, section 2) |
 | Statuts « expiré » et « en retard » | Calculés à la lecture à partir des dates | Exacts même si la tâche quotidienne échoue |
 | Certification FNE | Module interne avec simulateur | Voir SPEC.md, section 1.3 |
 
 ## 4. Coût
 
-Zéro, à l'exception d'un nom de domaine (quelques euros par an), nécessaire pour envoyer des emails à de vrais destinataires. Ce point sera confirmé dans la documentation de Resend en phase 6.
+Zéro. L'envoi d'emails passe par un compte Gmail gratuit, sans nom de domaine (section 12). Un nom de domaine (quelques euros par an) ne deviendrait utile que pour passer à un service d'envoi spécialisé : le module d'envoi est interchangeable.
 
 ## 5. Destinataires de données
 
@@ -55,7 +55,7 @@ Zéro, à l'exception d'un nom de domaine (quelques euros par an), nécessaire p
 |---|---|---|
 | Neon | Toutes les données | Connexion chiffrée, secrets distincts par environnement |
 | Vercel | Le code, les secrets d'exécution, le trafic | Secrets saisis dans son interface, jamais dans le dépôt |
-| Resend | Adresses des destinataires et contenu des emails | Contenu limité au nécessaire, liens plutôt que pièces jointes |
+| Google (Gmail) | Adresses des destinataires et contenu des emails, avec une copie dans « Messages envoyés » ; les réponses des destinataires | Texte brut, aucune donnée sensible, liens expirables plutôt que pièces jointes ; purge manuelle mensuelle de la boîte (`THREATS.md`, RR-9) |
 | Sentry | Erreurs et leur contexte technique | Réglé pour ne recevoir aucune donnée personnelle ni secret (S-54) |
 | GitHub | Le code source | Dépôt public : aucun secret, aucune donnée réelle |
 
@@ -80,6 +80,7 @@ Le pays d'hébergement de chaque service sera relevé en phase 6 et reporté dan
 | Navigateur sans interface pour les PDF | @react-pdf/renderer | Lourd sur Vercel, risque de chargement de ressources distantes |
 | Service Redis externe | Compteurs dans PostgreSQL | Un service de moins |
 | Vercel Blob | Logo en base | Adresse publique à protéger, un service de moins |
+| Resend | Compte Gmail dédié | Exige un nom de domaine vérifié (section 12, `docs/features/envoi-emails.md`) |
 | Tests de composants en navigateur simulé (jsdom, Testing Library) | Vitest côté serveur et Playwright pour l'interface | Conflit de dépendances à l'installation, et l'essentiel des tests porte sur la logique serveur |
 
 ## 8. Écarts constatés pendant la configuration
@@ -87,7 +88,7 @@ Le pays d'hébergement de chaque service sera relevé en phase 6 et reporté dan
 | Sujet | Prévu | Réalisé | Raison |
 |---|---|---|---|
 | Tests de composants | Vitest avec navigateur simulé | Abandonnés. Vitest pour la logique serveur, Playwright pour l'interface | Conflit de dépendances entre deux outils tiers, et besoin réel situé côté serveur |
-| Resend | Configuré en phase 6 | Reporté à la fonctionnalité de vérification d'email | Aucun email envoyé pour l'instant, nom de domaine requis |
+| Service d'emails | Resend, configuré en phase 6 | Compte Gmail dédié (section 12), fonctionnalité 0.7 | Resend exige un nom de domaine vérifié |
 | Sentry | Configuré en phase 6 | Reporté à la première fonctionnalité en production | Pas de secret dormant |
 | Base de prévisualisation | Une branche Neon par PR | Une branche `preview` commune | L'organisation Neon est indépendante de Vercel. À réévaluer avec la CI |
 | Outil `shadcn` | Dépendance de l'application | Outil de développement | N'est utilisé qu'à la construction |

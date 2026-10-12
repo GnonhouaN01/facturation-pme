@@ -2,9 +2,8 @@ import "server-only";
 
 import type { MessageEmail, Transport } from "./transport";
 
-// Phase rouge de la 0.7 (PR 1) : interface fixée par les tests, sans
-// implémentation. Fiche : docs/features/envoi-emails.md, « Notes de
-// l'implémentation ».
+// Transport des tests : garde une copie de chaque message, n'ouvre aucune
+// connexion. Fiche : docs/features/envoi-emails.md, section 2.
 
 export type TransportMemoire = Transport & {
   readonly messages: readonly MessageEmail[];
@@ -12,5 +11,16 @@ export type TransportMemoire = Transport & {
 };
 
 export function creerTransportMemoire(): TransportMemoire {
-  throw new Error("non implémenté");
+  const messages: MessageEmail[] = [];
+  return {
+    remettre: async (message) => {
+      messages.push({ ...message });
+    },
+    get messages() {
+      return messages;
+    },
+    vider: () => {
+      messages.length = 0;
+    },
+  };
 }

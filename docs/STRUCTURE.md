@@ -136,7 +136,11 @@ src/server/
 ├── modules/                 Composants interchangeables
 │   ├── certification/       Interface, simulateur
 │   ├── pdf/                 Génération des documents
-│   └── email/               Interface, envoi réel, interception locale
+│   └── email/               Transports : interface (transport.ts), memoire.ts, fichier.ts, smtp.ts (PR 2 de la 0.7)
+├── email/                   L'envoi d'emails, hors transport
+│   ├── envoi.ts             La porte d'envoi : seule à remettre un message à un transport (règle T)
+│   ├── modeles.ts           Liste fermée des modèles, briques des paramètres, liens /lien/
+│   └── adresse.ts           Adresse du destinataire, normalisation pour le compteur
 ├── debit/
 │   ├── limites.ts           Les limites de débit, source unique
 │   ├── cle.ts               Clé d'un compteur : nom de la limite et empreinte HMAC
@@ -175,6 +179,8 @@ Un service applique les règles de SPEC.md : calcul des totaux, cycle de vie d'u
 ### 3.5 `modules/` : ce qui peut être remplacé
 
 Chaque module est défini par une interface, avec plusieurs implémentations. La certification a son simulateur, l'envoi d'emails a sa version réelle et sa version qui intercepte. Brancher la vraie plateforme FNE reviendra à ajouter un fichier dans `certification/`, sans toucher aux services.
+
+Pour l'envoi d'emails, seuls les transports sont dans `modules/email/` (`memoire`, `fichier`, et `smtp` vers Gmail à la PR 2 de la 0.7). Les règles qui ne changent pas avec le transport (validation de l'adresse, modèles, liens, liste autorisée hors production) sont dans `server/email/`, derrière une seule porte, `envoi.ts`. Fiche : `docs/features/envoi-emails.md`.
 
 ### 3.6 `env.ts` : les variables d'environnement
 
@@ -270,6 +276,8 @@ Ces règles seront vérifiées automatiquement par l'analyse du code, en phase 9
 | `server/services/` | `server/db/` (sauf `executerDansOrganisation`), `server/modules/`, `lib/`, `schemas/` | `app/`, `components/`, `server/journal/` (le journal s'écrit par `ctx.journaliser`) |
 | `server/journal/` | `server/db/` (le type `TransactionOrganisation` et `requetes/journal.ts`), `zod` | Tout le reste du projet |
 | `server/debit/` | `server/db/debit.ts`, `server/env.ts` | Tout le reste du projet |
+| `server/email/` | `server/modules/email/` (`envoi.ts` seulement), `server/env.ts`, `textes/`, `zod` | `nodemailer`, `server/db/` |
+| `server/modules/email/` | Son propre dossier ; `nodemailer` (`smtp.ts` seulement, PR 2) | Tout le reste du projet |
 | `server/db/` | `drizzle-orm`, `pg`, `server/env.ts` | Tout le reste de `server/` |
 | `server/erreurs/` | Rien du projet, sauf entre eux (fonctionnalité 0.6 : `onRequestError` ne charge pas `env.ts`) | Tout le reste du projet |
 | `schemas/`, `lib/`, `textes/` | Rien du projet, sauf entre eux | `server/`, `app/`, `components/` |
@@ -285,6 +293,8 @@ Règles de la chaîne de contrôles (fonctionnalité 0.4, vérifiées par ESLint
 - `creerChaine` ne s'importe que dans les tests.
 
 Règle du compteur de débit (fonctionnalité 0.5, règle N de `docs/features/limitation-debit.md`, section 7) : `compteurDebit` ne s'importe que dans `server/db/debit.ts` et les tests, et `server/db/debit.ts` ne s'importe que dans `server/debit/` et les tests. Le chargement dynamique de `db/debit` et de `schema/technique` est refusé.
+
+Règle de l'envoi d'emails (fonctionnalité 0.7, règle T de `docs/features/envoi-emails.md`, section 1.2), chargement dynamique compris : `nodemailer` ne s'importe que dans `server/modules/email/smtp.ts` ; `server/modules/email/` ne s'importe que dans `server/email/envoi.ts`, son propre dossier, `server/db/outils-test/` et les tests ; `envoyerEmail` ne s'importe que dans `server/actions/action.ts` et les tests (un service demande un envoi par `ctx.preparerEmail`) ; la chaîne `smtp.gmail.com` n'apparaît que dans `server/modules/email/smtp.ts` et les tests.
 - Aucun commentaire `eslint-disable` n'a d'effet dans `src/` : une exception passe par `eslint.config.mjs`.
 
 Le test d'inventaire (`src/server/actions/inventaire.test.ts`) vérifie en plus, à l'exécution, que chaque export de `src/app/**/actions.ts` vient d'`exposer`, avec une déclaration marquée par `declarerAction` et inscrite dans `registre.ts`, et que chaque `route.ts` figure sur la liste admise.
@@ -324,6 +334,7 @@ Les dossiers et fichiers de ce document se créent au fur et à mesure, avec la 
 | Une table | `src/server/db/schema/<domaine>.ts`, puis une migration générée |
 | Un droit | `src/server/autorisation/matrice.ts`, après mise à jour de THREATS.md |
 | Une limite de débit | `src/server/debit/limites.ts`, puis `debit` dans la déclaration de l'action |
+| Un email | Un modèle dans `src/server/email/modeles.ts` et ses textes dans `src/textes/emails.ts`, puis le modèle dans `emails` de la déclaration de l'action, et `ctx.preparerEmail` dans le service |
 | Une règle de validation | `src/schemas/<domaine>.ts` |
 | Un calcul réutilisable | `src/lib/` |
 | Un texte affiché | `src/textes/` |

@@ -109,6 +109,7 @@ function demo(nom: string, droit: DeclarationQuelconque["droit"], introuvable = 
     journal: null,
     nouvelleAuthentification: false,
     debit: null,
+    emails: [],
     executer: async (ctx) => (introuvable ? ctx.introuvable() : ctx.role),
   }) as DeclarationQuelconque;
 }
