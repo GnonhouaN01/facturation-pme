@@ -131,4 +131,79 @@ describe("env.ts : chargement", () => {
       });
     },
   );
+
+  // Configuration de Vercel au 2026-10-13 : variables Gmail posées en
+  // production seulement, EMAIL_TRANSPORT absente. Le prochain déploiement de
+  // production exécute le code de la PR 1 avec elles. Remplacé par la PR 2.
+  test("après la PR 1 : production avec les variables Gmail, sans EMAIL_TRANSPORT, env.ts se charge (memoire)", async () => {
+    poser({
+      ...BASE,
+      NODE_ENV: "production",
+      VERCEL: "1",
+      VERCEL_ENV: "production",
+      VERCEL_URL: "facturation-abc123.vercel.app",
+      GMAIL_UTILISATEUR: "facturation.factice@gmail.com",
+      GMAIL_MOT_DE_PASSE_APPLICATION: "abcdefghijklmnop",
+    });
+
+    const charge = await charger();
+
+    expect(charge.configurationEmail).toStrictEqual({
+      transport: "memoire",
+      dossier: null,
+      destinatairesAutorises: [],
+      estProduction: true,
+    });
+  });
+});
+
+// PR 2 : chargement réel de env.ts avec la règle corrigée (section 2.2).
+describe("env.ts : chargement, PR 2", () => {
+  const GMAIL = {
+    GMAIL_UTILISATEUR: "facturation.factice@gmail.com",
+    GMAIL_MOT_DE_PASSE_APPLICATION: "abcdefghijklmnop",
+  } as const;
+  const PRODUCTION = {
+    ...BASE,
+    NODE_ENV: "production",
+    VERCEL: "1",
+    VERCEL_ENV: "production",
+    VERCEL_URL: "facturation-abc123.vercel.app",
+  } as const;
+
+  test("production, variables Gmail, EMAIL_TRANSPORT absente : se charge, smtp", async () => {
+    poser({ ...PRODUCTION, ...GMAIL });
+
+    const charge = await charger();
+
+    expect(charge.configurationEmail.transport).toBe("smtp");
+    expect(charge.configurationEmail.estProduction).toBe(true);
+  });
+
+  test("production sans variable Gmail : le chargement échoue, variables nommées", async () => {
+    poser({ ...PRODUCTION });
+
+    const erreur = await erreurDeChargement();
+
+    expect(erreur.message).toMatch(/^- GMAIL_UTILISATEUR : /mu);
+    expect(erreur.message).toMatch(/^- GMAIL_MOT_DE_PASSE_APPLICATION : /mu);
+  });
+
+  test("production, mot de passe mal formé : le chargement échoue, sans la valeur", async () => {
+    poser({ ...PRODUCTION, ...GMAIL, GMAIL_MOT_DE_PASSE_APPLICATION: "valeur-piege-42" });
+
+    const erreur = await erreurDeChargement();
+
+    expect(erreur.message).toMatch(/^- GMAIL_MOT_DE_PASSE_APPLICATION : /mu);
+    expect(erreur.message).not.toContain("valeur-piege-42");
+    expect(erreur.message).not.toContain(GMAIL.GMAIL_UTILISATEUR);
+  });
+
+  test("prévisualisation sans aucune variable d'envoi : se charge, memoire", async () => {
+    poser({ ...PRODUCTION, VERCEL_ENV: "preview" });
+
+    const charge = await charger();
+
+    expect(charge.configurationEmail.transport).toBe("memoire");
+  });
 });

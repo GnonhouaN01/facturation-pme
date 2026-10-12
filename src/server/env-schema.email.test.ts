@@ -135,6 +135,28 @@ describe("après la PR 1 : Vercel sans aucune variable d'envoi", () => {
     });
   });
 
+  // Configuration de Vercel au 2026-10-13 : GMAIL_UTILISATEUR et
+  // GMAIL_MOT_DE_PASSE_APPLICATION posées en production, EMAIL_TRANSPORT
+  // absente. Le code de la PR 1 ne lit aucune variable GMAIL_* : ignorées,
+  // memoire, aucun refus. Valeurs factices. Remplacé par la PR 2 (section 9).
+  test("production avec les variables Gmail, sans EMAIL_TRANSPORT : ignorées, memoire, aucun refus", () => {
+    expect(
+      validerConfigurationEmail({
+        NODE_ENV: "production",
+        VERCEL: "1",
+        VERCEL_ENV: "production",
+        VERCEL_URL: "facturation-abc123.vercel.app",
+        GMAIL_UTILISATEUR: "facturation.factice@gmail.com",
+        GMAIL_MOT_DE_PASSE_APPLICATION: "abcdefghijklmnop",
+      }),
+    ).toStrictEqual({
+      transport: "memoire",
+      dossier: null,
+      destinatairesAutorises: [],
+      estProduction: true,
+    });
+  });
+
   test("prévisualisation : memoire, estProduction faux, aucun refus", () => {
     expect(
       validerConfigurationEmail({
@@ -185,5 +207,227 @@ describe("forme du résultat", () => {
     expect(messageErreur({ NODE_ENV: "development", EMAIL_TRANSPORT: "x" })).toMatch(
       /^Variables d'environnement invalides :\n/u,
     );
+  });
+});
+
+// PR 2 : transport smtp et variables Gmail. Règle corrigée par le relecteur
+// (section 2.2) : en production, EMAIL_TRANSPORT est facultatif et vaut smtp
+// s'il est absent ; toute autre valeur est refusée ; les deux variables Gmail
+// sont obligatoires. En prévisualisation sans variable : memoire, inchangé.
+// Interface attendue : transport « smtp » de plus, et une cinquième
+// propriété, gmail ({ utilisateur, motDePasse } ou null). Valeurs factices.
+describe("PR 2 : smtp et variables Gmail", () => {
+  const UTILISATEUR = "facturation.factice@gmail.com";
+  const MOT_DE_PASSE = "abcdefghijklmnop";
+  const GMAIL = {
+    GMAIL_UTILISATEUR: UTILISATEUR,
+    GMAIL_MOT_DE_PASSE_APPLICATION: MOT_DE_PASSE,
+  } as const;
+  const PRODUCTION = {
+    NODE_ENV: "production",
+    VERCEL: "1",
+    VERCEL_ENV: "production",
+    VERCEL_URL: "facturation-abc123.vercel.app",
+  } as const;
+  const PREVISUALISATION = {
+    NODE_ENV: "production",
+    VERCEL: "1",
+    VERCEL_ENV: "preview",
+    VERCEL_URL: "facturation-git-feat-envoi-emails-2.vercel.app",
+  } as const;
+  const LISTE = "moi@exemple.invalid";
+
+  function sansValeur(message: string): void {
+    expect(message).not.toContain(MOT_DE_PASSE);
+    expect(message).not.toContain(UTILISATEUR);
+  }
+
+  describe("production", () => {
+    test("variables Gmail, EMAIL_TRANSPORT absente : smtp (configuration de Vercel)", () => {
+      const configuration = validerConfigurationEmail({ ...PRODUCTION, ...GMAIL });
+      expect(configuration.transport).toBe("smtp");
+      expect(configuration.estProduction).toBe(true);
+      expect(configuration.dossier).toBeNull();
+      expect(configuration.gmail).toStrictEqual({
+        utilisateur: UTILISATEUR,
+        motDePasse: MOT_DE_PASSE,
+      });
+      expect(Object.isFrozen(configuration.gmail)).toBe(true);
+    });
+
+    test("EMAIL_TRANSPORT=smtp : smtp", () => {
+      expect(
+        validerConfigurationEmail({ ...PRODUCTION, ...GMAIL, EMAIL_TRANSPORT: "smtp" }).transport,
+      ).toBe("smtp");
+    });
+
+    test.each(["memoire", "fichier", "", "SMTP", " smtp"])(
+      "EMAIL_TRANSPORT=%j : refusée",
+      (valeur) => {
+        // Témoin dans le même test : les mêmes variables, sans EMAIL_TRANSPORT,
+        // sont acceptées. Sans lui, le refus de tout smtp par la PR 1 suffirait.
+        expect(validerConfigurationEmail({ ...PRODUCTION, ...GMAIL }).transport).toBe("smtp");
+        const message = messageErreur({ ...PRODUCTION, ...GMAIL, EMAIL_TRANSPORT: valeur });
+        expect(message).toMatch(/^- EMAIL_TRANSPORT : /mu);
+        sansValeur(message);
+      },
+    );
+
+    test("aucune variable d'envoi : refusée, les deux variables Gmail nommées", () => {
+      const message = messageErreur({ ...PRODUCTION });
+      expect(message).toMatch(/^- GMAIL_UTILISATEUR : /mu);
+      expect(message).toMatch(/^- GMAIL_MOT_DE_PASSE_APPLICATION : /mu);
+    });
+
+    test.each([
+      ["GMAIL_UTILISATEUR absente", { GMAIL_UTILISATEUR: undefined }, "GMAIL_UTILISATEUR"],
+      ["GMAIL_UTILISATEUR vide", { GMAIL_UTILISATEUR: "" }, "GMAIL_UTILISATEUR"],
+      [
+        "GMAIL_MOT_DE_PASSE_APPLICATION absente",
+        { GMAIL_MOT_DE_PASSE_APPLICATION: undefined },
+        "GMAIL_MOT_DE_PASSE_APPLICATION",
+      ],
+      [
+        "GMAIL_MOT_DE_PASSE_APPLICATION vide",
+        { GMAIL_MOT_DE_PASSE_APPLICATION: "" },
+        "GMAIL_MOT_DE_PASSE_APPLICATION",
+      ],
+    ] as const)("%s : refusée", (_nom, variables, variable) => {
+      const message = messageErreur({ ...PRODUCTION, ...GMAIL, ...variables });
+      expect(message).toMatch(new RegExp(`^- ${variable} : `, "mu"));
+      sansValeur(message);
+    });
+
+    test.each([
+      ["pas une adresse", "valeur-piege-42"],
+      ["autre domaine que gmail.com", "valeur-piege-42@exemple.invalid"],
+      ["retour à la ligne", "valeur-piege-42@gmail.com\r\nBcc: x@gmail.com"],
+      ["nom affiché", "Facturation <valeur-piege-42@gmail.com>"],
+    ])("GMAIL_UTILISATEUR, %s : refusée, sans la valeur", (_nom, valeur) => {
+      const message = messageErreur({ ...PRODUCTION, ...GMAIL, GMAIL_UTILISATEUR: valeur });
+      expect(message).toMatch(/^- GMAIL_UTILISATEUR : /mu);
+      expect(message).not.toContain("valeur-piege-42");
+      sansValeur(message);
+    });
+
+    test.each([
+      ["15 lettres", "abcdefghijklmno"],
+      ["17 lettres", "abcdefghijklmnopq"],
+      ["majuscules", "ABCDEFGHIJKLMNOP"],
+      ["chiffres", "abcdefgh12345678"],
+      ["retour à la ligne", "abcdefgh\r\nijklmnop"],
+    ])("GMAIL_MOT_DE_PASSE_APPLICATION, %s : refusée, sans la valeur", (_nom, valeur) => {
+      const message = messageErreur({
+        ...PRODUCTION,
+        ...GMAIL,
+        GMAIL_MOT_DE_PASSE_APPLICATION: valeur,
+      });
+      expect(message).toMatch(/^- GMAIL_MOT_DE_PASSE_APPLICATION : /mu);
+      expect(message).not.toContain(valeur.slice(0, 8));
+      sansValeur(message);
+    });
+
+    test("EMAIL_DESTINATAIRES_AUTORISES présente : ignorée, aucun refus", () => {
+      expect(
+        validerConfigurationEmail({
+          ...PRODUCTION,
+          ...GMAIL,
+          EMAIL_DESTINATAIRES_AUTORISES: LISTE,
+        }).transport,
+      ).toBe("smtp");
+    });
+  });
+
+  describe("prévisualisation", () => {
+    test("sans aucune variable : memoire, gmail null (inchangé)", () => {
+      const configuration = validerConfigurationEmail({ ...PREVISUALISATION });
+      expect(configuration.transport).toBe("memoire");
+      expect(configuration.gmail).toBeNull();
+    });
+
+    test("smtp, variables Gmail et liste autorisée (branche feat/envoi-emails-2) : smtp", () => {
+      const configuration = validerConfigurationEmail({
+        ...PREVISUALISATION,
+        ...GMAIL,
+        EMAIL_TRANSPORT: "smtp",
+        EMAIL_DESTINATAIRES_AUTORISES: LISTE,
+      });
+      expect(configuration.transport).toBe("smtp");
+      expect(configuration.estProduction).toBe(false);
+      expect(configuration.destinatairesAutorises).toStrictEqual([LISTE]);
+      expect(configuration.gmail).toStrictEqual({
+        utilisateur: UTILISATEUR,
+        motDePasse: MOT_DE_PASSE,
+      });
+    });
+
+    test("smtp sans liste autorisée : refusée", () => {
+      const message = messageErreur({ ...PREVISUALISATION, ...GMAIL, EMAIL_TRANSPORT: "smtp" });
+      expect(message).toMatch(/^- EMAIL_DESTINATAIRES_AUTORISES : /mu);
+      sansValeur(message);
+    });
+
+    test("smtp sans variable Gmail : refusée", () => {
+      const message = messageErreur({
+        ...PREVISUALISATION,
+        EMAIL_TRANSPORT: "smtp",
+        EMAIL_DESTINATAIRES_AUTORISES: LISTE,
+      });
+      expect(message).toMatch(/^- GMAIL_UTILISATEUR : /mu);
+      expect(message).toMatch(/^- GMAIL_MOT_DE_PASSE_APPLICATION : /mu);
+    });
+  });
+
+  describe("sous NODE_ENV=test", () => {
+    test("smtp refusé, même complet", () => {
+      // Témoin : la même configuration hors NODE_ENV=test est acceptée.
+      expect(
+        validerConfigurationEmail({
+          NODE_ENV: "development",
+          ...GMAIL,
+          EMAIL_TRANSPORT: "smtp",
+          EMAIL_DESTINATAIRES_AUTORISES: LISTE,
+        }).transport,
+      ).toBe("smtp");
+      const message = messageErreur({
+        NODE_ENV: "test",
+        ...GMAIL,
+        EMAIL_TRANSPORT: "smtp",
+        EMAIL_DESTINATAIRES_AUTORISES: LISTE,
+      });
+      expect(message).toMatch(/^- EMAIL_TRANSPORT : /mu);
+      sansValeur(message);
+    });
+  });
+
+  describe("poste local (essai réel par le terminal, section 9)", () => {
+    test("smtp, variables Gmail et liste : smtp, estProduction faux", () => {
+      const configuration = validerConfigurationEmail({
+        NODE_ENV: "development",
+        ...GMAIL,
+        EMAIL_TRANSPORT: "smtp",
+        EMAIL_DESTINATAIRES_AUTORISES: LISTE,
+      });
+      expect(configuration.transport).toBe("smtp");
+      expect(configuration.estProduction).toBe(false);
+    });
+
+    test("smtp sans liste autorisée : refusée", () => {
+      const message = messageErreur({
+        NODE_ENV: "development",
+        ...GMAIL,
+        EMAIL_TRANSPORT: "smtp",
+      });
+      expect(message).toMatch(/^- EMAIL_DESTINATAIRES_AUTORISES : /mu);
+    });
+  });
+
+  describe("transports memoire et fichier", () => {
+    test.each([
+      ["memoire", { NODE_ENV: "test" }],
+      ["fichier", { NODE_ENV: "development" }],
+    ] as const)("%s : gmail null", (_nom, source) => {
+      expect(validerConfigurationEmail(source).gmail).toBeNull();
+    });
   });
 });

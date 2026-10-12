@@ -1,6 +1,6 @@
 # Fonctionnalité : envoi d'emails
 
-Statut : en cours. Validée le 2026-10-12 (décisions en fin de fiche) ; PR 1 implémentée le 2026-10-12, non commitée ; PR 2 à faire
+Statut : en cours. Validée le 2026-10-12 (décisions en fin de fiche) ; PR 1 fusionnée (#41) ; PR 2 en phase rouge (règle de configuration de production corrigée par le relecteur, sections 2.2 et 9)
 
 Jalon 0, fonctionnalité 0.7 de `docs/PLAN.md`. Taille M. Deux PR (« Découpage en PR », décision 11).
 
@@ -97,7 +97,7 @@ Un service n'appelle donc jamais `envoyerEmail` : il demande un envoi par le con
 
 | Environnement | Transport | Envoi réel | Comment c'est garanti |
 |---|---|---|---|
-| Production (`VERCEL_ENV=production`) | Après la PR 1 : `memoire`. À partir de la PR 2 : `smtp` | PR 1 : non. PR 2 : oui, à toute adresse valide | PR 1 : sans variable, `memoire`, aucun refus. À partir de la PR 2 : configuration refusée si le transport n'est pas `smtp` ou si une variable Gmail manque (décision 4) ; les variables sont donc posées dans Vercel avant la fusion de la PR 2 (section 9, étape 8) |
+| Production (`VERCEL_ENV=production`) | Après la PR 1 : `memoire`. À partir de la PR 2 : `smtp` | PR 1 : non. PR 2 : oui, à toute adresse valide | PR 1 : sans `EMAIL_TRANSPORT`, `memoire`, aucun refus ; les variables Gmail sont ignorées. À partir de la PR 2 : `EMAIL_TRANSPORT` absent vaut `smtp` ; toute autre valeur que `smtp` est refusée, comme une variable Gmail absente ou mal formée (décision 4, corrigée) ; les variables Gmail sont posées dans Vercel depuis le 2026-10-13 (section 9) |
 | Prévisualisation (`VERCEL_ENV=preview`) | Sans variable : `memoire`, en PR 1 comme en PR 2. Configurée : `smtp`, par un second compte Gmail, vers la liste autorisée (décision 3, PR 2). `fichier` est refusé : système de fichiers en lecture seule sur Vercel | Seulement aux adresses de la liste | La porte refuse tout destinataire hors liste dès que `VERCEL_ENV` n'est pas `production` |
 | Poste local, `next dev` | `fichier` | Non | Valeur par défaut hors Vercel. Un essai réel demande `smtp` **et** une liste autorisée |
 | Vitest, projets `unitaires` et `integration` | `memoire` | **Jamais** | Configuration refusée si `smtp` sous `NODE_ENV=test` ; garde réseau (section 2.3) |
@@ -114,9 +114,9 @@ Ajoutées à `src/server/env-schema.ts` (fonction pure, règle 12), lues par `en
 
 | Variable | Valeurs | Règle |
 |---|---|---|
-| `EMAIL_TRANSPORT` | PR 1 : `fichier`, `memoire`. PR 2 : et `smtp` | Absente : `memoire` sous `NODE_ENV=test` ; `memoire` sur Vercel (`VERCEL_ENV` présent, prévisualisation comme production) ; `fichier` sinon. Vide ou inconnue : refusée. `fichier` sur Vercel : refusé. **À partir de la PR 2 seulement** : en production, obligatoire et égale à `smtp` (décision 4) ; sous `NODE_ENV=test`, `smtp` refusé. Jamais de refus en PR 1 pour une variable absente : la production et la prévisualisation n'en ont aucune à la fusion de la PR 1 |
-| `GMAIL_UTILISATEUR` | Adresse `@gmail.com` | Obligatoire si `smtp`. Sert d'expéditeur : Gmail remplace de toute façon l'expéditeur par le compte authentifié |
-| `GMAIL_MOT_DE_PASSE_APPLICATION` | 16 lettres minuscules, espaces retirés | Obligatoire si `smtp`. Secret. Le message d'erreur nomme la variable et la raison, jamais la valeur (`env-schema.ts`, comme les autres) |
+| `EMAIL_TRANSPORT` | PR 1 : `fichier`, `memoire`. PR 2 : et `smtp` | Absente : `memoire` sous `NODE_ENV=test` ; `memoire` sur Vercel (`VERCEL_ENV` présent, prévisualisation comme production) ; `fichier` sinon. Vide ou inconnue : refusée. `fichier` sur Vercel : refusé. **À partir de la PR 2 seulement** : en production, facultative, `smtp` si elle est absente, toute autre valeur refusée (décision 4, corrigée : section 9) ; sous `NODE_ENV=test`, `smtp` refusé. Jamais de refus en PR 1 pour une variable absente : la production et la prévisualisation n'en ont aucune à la fusion de la PR 1. **En PR 1, `smtp` est refusé partout**, production comprise |
+| `GMAIL_UTILISATEUR` | Adresse `@gmail.com` | Obligatoire si `smtp`, donc toujours en production à partir de la PR 2 ; ignorée par le code de la PR 1. Sert d'expéditeur : Gmail remplace de toute façon l'expéditeur par le compte authentifié |
+| `GMAIL_MOT_DE_PASSE_APPLICATION` | 16 lettres minuscules, espaces retirés | Obligatoire si `smtp`, donc toujours en production à partir de la PR 2 ; ignorée par le code de la PR 1. Secret. Le message d'erreur nomme la variable et la raison, jamais la valeur (`env-schema.ts`, comme les autres) |
 | `EMAIL_DESTINATAIRES_AUTORISES` | Liste d'adresses séparées par des virgules | Obligatoire si `smtp` hors production ; ignorée en production |
 | `EMAIL_DOSSIER` | Chemin d'un dossier | Pour `fichier` seulement. Par défaut `.emails/` à la racine, ajouté à `.gitignore` |
 
@@ -168,7 +168,7 @@ Un retour à la ligne dans un sujet ou une adresse permet d'ajouter un en-tête 
 
 Dans `src/server/email/modeles.ts`, sur le modèle de `journal/actions.ts` : pour chaque modèle, le schéma strict de ses paramètres et la fonction qui construit sujet et corps.
 
-En 0.7, **un seul modèle**, de démonstration et de vérification : `essai.verification_envoi` (aucun paramètre, aucun lien), utilisé par les tests et par la vérification manuelle en prévisualisation (section 9, étape 8). Chaque fonctionnalité ajoute ses modèles dans sa PR, avec leurs tests. Retirer un modèle est permis (il n'est pas stocké).
+En 0.7, **un seul modèle**, de démonstration et de vérification : `essai.verification_envoi` (aucun paramètre, aucun lien), utilisé par les tests et par la vérification manuelle en prévisualisation (section 9, étape 5). Chaque fonctionnalité ajoute ses modèles dans sa PR, avec leurs tests. Retirer un modèle est permis (il n'est pas stocké).
 
 Briques admises pour les paramètres, sur le modèle de `journal-audit.md` section 6.2, avec une de plus : identifiant (`z.uuid()`), valeur énumérée, entier, booléen, jeton de lien (section 3.3), et **texte court affichable** (`texteAffichable(max)` : sans caractère de contrôle, longueur bornée). Un test parcourt la liste par `z.toJSONSchema` et refuse toute autre forme (tableau, objet imbriqué, chaîne libre, adresse).
 
@@ -268,7 +268,7 @@ Nouvelles lignes proposées pour `THREATS.md` :
 - **T-65** (section 5.7) : faire envoyer par l'application un email contenant un lien vers un autre site. P2, P4. G 2, V 2, Moyenne. Parade S-51.
 - **T-76** (section 5.8) : fuite du mot de passe d'application Gmail, qui donne l'envoi au nom de l'application et la lecture de sa boîte. Développeur. G 3, V 1, Moyenne. Parades S-83, S-54.
 - **RR-9** : le dossier « Messages envoyés » du compte Gmail garde une copie de chaque email, donc l'adresse du destinataire et le lien ; la boîte de réception reçoit les réponses des destinataires, malgré la phrase qui demande de ne pas répondre (section 3.3), et n'est pas lue. Parade : purge manuelle mensuelle des deux dossiers par le développeur (décision 9) ; liens expirables et révocables (S-20).
-- **RR-10** : Google peut suspendre ou ralentir le compte sans préavis ; l'application n'envoie plus rien pendant 1 à 24 heures, ou plus. En particulier, un compte Gmail neuf qui se connecte depuis un serveur de Francfort (Vercel, `fra1`) peut être bloqué comme connexion suspecte : à observer à l'étape 8 de la section 9, et toute alerte de Google y est notée.
+- **RR-10** : Google peut suspendre ou ralentir le compte sans préavis ; l'application n'envoie plus rien pendant 1 à 24 heures, ou plus. En particulier, un compte Gmail neuf qui se connecte depuis un serveur de Francfort (Vercel, `fra1`) peut être bloqué comme connexion suspecte : à observer à l'étape 5 de la section 9, et toute alerte de Google y est notée.
 - Section 7.5 : **Google (Gmail)** devient destinataire de données (adresses des destinataires, contenu des emails). Hébergement : États-Unis et réseau mondial de Google, à confirmer.
 
 ### 8. La dépendance
@@ -316,18 +316,27 @@ Rien n'est installé par cette fiche. L'installation a lieu dans la PR 2, après
 
 ### 9. Ce que le développeur fait à la main
 
-Dans cet ordre. **À aucun moment le mot de passe d'application n'est transmis à l'assistant, écrit dans un fichier, dans le dépôt, dans `.env.local`, dans la CI ou dans une conversation.** Il va directement de la page de Google au champ de Vercel.
+**À aucun moment le mot de passe d'application n'est transmis à l'assistant, écrit dans un fichier, dans le dépôt, dans `.env.local`, dans la CI ou dans une conversation.** Il va directement de la page de Google au champ de Vercel.
 
-1. **Créer le compte Gmail de production**, réservé à l'application (jamais le compte personnel, `PLAN.md` section 7). Nom neutre, qui sera visible des destinataires. Mot de passe long et unique, dans un gestionnaire de mots de passe. Adresse et téléphone de récupération : ceux du développeur.
-2. **Activer la validation en deux étapes**, avec une application d'authentification ou le téléphone. **Pas uniquement avec une clé de sécurité, et sans « Protection avancée »** : dans ces deux cas, la page des mots de passe d'application n'est pas proposée (<https://support.google.com/accounts/answer/185833>, consultée le 2026-10-12). Noter les codes de secours dans le gestionnaire.
-3. **Créer le second compte, pour la prévisualisation** (décision 3) : refaire les étapes 1 et 2 pour lui.
-4. **Réglages Gmail** du compte de production : désactiver IMAP et POP (Paramètres, « Transfert et POP/IMAP »). À vérifier au premier envoi que SMTP fonctionne toujours ; sinon les réactiver et le noter ici. Ne créer aucun transfert automatique.
-5. **Créer le mot de passe d'application** sur <https://myaccount.google.com/apppasswords>, nommé par exemple `vercel-production`. Google l'affiche une seule fois : 16 caractères. Le copier.
-6. **Le coller aussitôt dans Vercel** : projet, Settings, Environment Variables, `GMAIL_MOT_DE_PASSE_APPLICATION`, type **Sensitive**, environnement **Production** seulement. Puis fermer la page de Google sans conserver le mot de passe ailleurs. Ajouter, en Production : `GMAIL_UTILISATEUR` (l'adresse du compte) et `EMAIL_TRANSPORT=smtp`.
-7. **Prévisualisation** (décision 3) : un mot de passe d'application du second compte (étapes 4 à 6 pour lui), puis les mêmes variables en portée **Preview** seulement, plus `EMAIL_DESTINATAIRES_AUTORISES` (l'adresse personnelle du développeur).
-8. **Ordre de déploiement.** Les variables de Production doivent exister **avant** la fusion de la PR 2 : à partir de là, `env-schema.ts` les exige en production, et une configuration refusée fait échouer chaque requête (`CLAUDE.md`, « Pièges connus »). Vérifier sur le déploiement de prévisualisation de la PR 2 : envoi du modèle `essai.verification_envoi` à l'adresse autorisée, réception, en-têtes de l'email reçu (`From`, un seul destinataire, `SPF` et `DKIM` en `pass` pour `gmail.com`), dossier « Messages envoyés » du compte (décision 9). **Noter toute alerte de Google** (« Alerte de sécurité critique », connexion bloquée, demande de confirmation d'identité) reçue dans la boîte du compte ou sur le téléphone de récupération : un compte neuf qui se connecte depuis un serveur de Francfort peut être bloqué comme suspect (RR-10). Refaire la même observation pour le compte de production à l'étape 9. Le résultat est noté dans « Notes de l'implémentation » : c'est la preuve de la section 10.
-9. **Après la fusion**, un envoi d'essai en production vers l'adresse du développeur, par le même modèle (le moyen de le déclencher, sans exposer de route, est fixé en PR 2 : par exemple un script `scripts/` qui lit les variables d'un terminal, jamais d'un fichier).
-10. **Renouvellement.** Changer le mot de passe du compte Google **révoque tous ses mots de passe d'application** (même source). Après tout changement : créer un nouveau mot de passe d'application, le saisir dans Vercel, redéployer. Même marche en cas de doute sur une fuite (T-76) : supprimer le mot de passe d'application sur la page de Google, en créer un autre.
+**Une variable de Vercel ne s'applique qu'au déploiement suivant.** Toute variable posée, modifiée ou retirée est lue par le prochain déploiement, quel que soit le code qu'il contient. D'où la règle corrigée par le relecteur pour la PR 2 : le code de la PR 1 refuse `EMAIL_TRANSPORT=smtp`, et poser cette variable en production avant la fusion de la PR 2 ferait échouer chaque requête du site au déploiement suivant.
+
+**Règle de configuration de la PR 2** (sections 2.1 et 2.2) :
+
+- en production, `EMAIL_TRANSPORT` est facultatif et vaut `smtp` s'il est absent ; toute autre valeur est refusée ;
+- en production, `GMAIL_UTILISATEUR` et `GMAIL_MOT_DE_PASSE_APPLICATION` restent obligatoires ;
+- en prévisualisation sans variable d'envoi : `memoire`, inchangé.
+
+Dans cet ordre :
+
+1. **Compte de production et variables de production : fait.** Compte Gmail réservé à l'application (jamais le compte personnel, `PLAN.md` section 7), validation en deux étapes par une application d'authentification ou le téléphone (pas uniquement une clé de sécurité, sans « Protection avancée » : sinon la page des mots de passe d'application n'est pas proposée, <https://support.google.com/accounts/answer/185833>), codes de secours dans le gestionnaire de mots de passe. Mot de passe d'application créé sur <https://myaccount.google.com/apppasswords> et collé aussitôt dans Vercel. **Posées depuis le 2026-10-13, environnement Production seulement** : `GMAIL_UTILISATEUR` et `GMAIL_MOT_DE_PASSE_APPLICATION` (type Sensitive). **`EMAIL_TRANSPORT` n'est pas posée, et ne doit pas l'être avant la fusion de la PR 2** : le code de la PR 1 refuse `smtp`. Après la fusion, elle reste inutile (absente, elle vaut `smtp`). Le code de la PR 1, déployé avec ces deux variables, les ignore : `memoire`, aucun refus (`env-schema.email.test.ts` et `env.test.ts`, « après la PR 1 »).
+2. **Réglages Gmail du compte de production** : désactiver IMAP et POP (Paramètres, « Transfert et POP/IMAP »). À vérifier au premier envoi que SMTP fonctionne toujours ; sinon les réactiver et le noter ici. Aucun transfert automatique.
+3. **Second compte, pour la prévisualisation** (décision 3) : mêmes étapes que pour le compte de production (compte, validation en deux étapes, réglages, mot de passe d'application nommé par exemple `vercel-preview`).
+4. **Variables de prévisualisation, limitées à la seule branche `feat/envoi-emails-2`** (champ « Preview Branch » de Vercel) : `GMAIL_UTILISATEUR` (adresse du second compte), `GMAIL_MOT_DE_PASSE_APPLICATION` (son mot de passe d'application, type Sensitive), `EMAIL_TRANSPORT=smtp`, `EMAIL_DESTINATAIRES_AUTORISES` (l'adresse personnelle du développeur). Les autres branches gardent une prévisualisation sans variable d'envoi, donc `memoire`. **À poser seulement quand le code de la PR 2 (transport `smtp`) est poussé sur la branche** : un déploiement de la branche qui porterait encore le code de la PR 1, ou la seule phase rouge, refuserait `smtp` et échouerait à chaque requête.
+5. **Vérification sur le déploiement de prévisualisation de la PR 2** : envoi du modèle `essai.verification_envoi` à l'adresse autorisée, réception, en-têtes de l'email reçu (`From`, un seul destinataire, `SPF` et `DKIM` en `pass` pour `gmail.com`), dossier « Messages envoyés » du second compte (décision 9). **Noter toute alerte de Google** (« Alerte de sécurité critique », connexion bloquée, demande de confirmation d'identité) reçue dans la boîte du compte ou sur le téléphone de récupération : un compte neuf qui se connecte depuis un serveur de Francfort peut être bloqué comme suspect (RR-10). Le résultat est noté dans « Notes de l'implémentation » : c'est la preuve de la section 10. **Si elle échoue**, la PR 2 n'est pas fusionnée (section 10).
+6. **Fusion de la PR 2.** Les variables de production existent déjà (étape 1) : le déploiement de production qui suit la fusion trouve `smtp` par défaut et les deux variables Gmail. Avant de fusionner, vérifier dans Vercel qu'elles sont toujours présentes en Production, et qu'aucune `EMAIL_TRANSPORT` autre que `smtp` n'y a été ajoutée.
+7. **Après la fusion**, un envoi d'essai en production vers l'adresse du développeur, par le même modèle (le moyen de le déclencher, sans exposer de route, est fixé à l'implémentation de la PR 2 : par exemple un script `scripts/` qui lit les variables d'un terminal, jamais d'un fichier). Même observation des alertes de Google qu'à l'étape 5, pour le compte de production.
+8. **Après la vérification**, retirer de Vercel les variables de prévisualisation de la branche `feat/envoi-emails-2`, ou les garder pour une branche de vérification désignée (au jalon 1, suivre un lien de vérification sur `preview`) : à décider à ce moment-là.
+9. **Renouvellement.** Changer le mot de passe du compte Google **révoque tous ses mots de passe d'application** (même source). Après tout changement : créer un nouveau mot de passe d'application, le saisir dans Vercel, redéployer. Même marche en cas de doute sur une fuite (T-76) : supprimer le mot de passe d'application sur la page de Google, en créer un autre.
 
 Ne jamais ajouter ces variables à `.env.local` : `npm run test:e2e` charge ce fichier (section 2.1). Un essai réel depuis le poste se fait en passant les variables dans le terminal, pour une commande, avec `EMAIL_DESTINATAIRES_AUTORISES`.
 
@@ -344,7 +353,7 @@ Conséquences :
 - **Port 465**, TLS dès la connexion (`secure: true`), retenu de préférence au 587 : avec STARTTLS, un intermédiaire peut retirer l'annonce `STARTTLS` et obtenir une session en clair si `requireTLS` est oublié. Sur 465, aucune session sans TLS n'existe. TLS 1.2 au moins, certificat vérifié (`rejectUnauthorized` laissé à `true`, et testé comme tel).
 - **Exécution Node.js obligatoire** : l'envoi ne peut pas s'exécuter dans le moteur « Edge » (pas de `node:net`). Les actions serveur et les pages de l'application s'exécutent déjà en Node.js ; `src/proxy.ts` n'envoie rien.
 - **Une connexion par envoi**, fermée aussitôt (pas de `pool: true`) : une instance de fonction peut être gelée entre deux requêtes.
-- **Ce que la source ne prouve pas** : qu'une connexion depuis la région `fra1` vers `smtp.gmail.com:465` aboutit réellement, et que Google l'accepte sans bloquer la connexion comme suspecte. Ni l'assistant ni la CI ne peuvent le vérifier. C'est l'étape 8 de la section 9, faite par le développeur sur le déploiement de prévisualisation de la PR 2. **Si elle échoue**, la PR 2 n'est pas fusionnée, et l'on revient à l'alternative de l'API Gmail en HTTPS (section 8).
+- **Ce que la source ne prouve pas** : qu'une connexion depuis la région `fra1` vers `smtp.gmail.com:465` aboutit réellement, et que Google l'accepte sans bloquer la connexion comme suspecte. Ni l'assistant ni la CI ne peuvent le vérifier. C'est l'étape 5 de la section 9, faite par le développeur sur le déploiement de prévisualisation de la PR 2. **Si elle échoue**, la PR 2 n'est pas fusionnée, et l'on revient à l'alternative de l'API Gmail en HTTPS (section 8).
 
 ### 11. Points d'accroche pour la suite
 
@@ -402,12 +411,12 @@ PR 1 :
 
 PR 2 :
 
-- [ ] `EMAIL_TRANSPORT=smtp` est refusé sous `NODE_ENV=test` ; en production, toute autre valeur que `smtp`, ou une variable Gmail absente ou mal formée, est refusée ; aucun message d'erreur ne contient de valeur.
+- [ ] `EMAIL_TRANSPORT=smtp` est refusé sous `NODE_ENV=test` ; en production, `EMAIL_TRANSPORT` absent vaut `smtp`, toute autre valeur, ou une variable Gmail absente ou mal formée, est refusée ; en prévisualisation sans variable, `memoire` ; `smtp` hors production exige `EMAIL_DESTINATAIRES_AUTORISES` ; aucun message d'erreur ne contient de valeur.
 - [ ] `nodemailer` installé en version exacte, après accord, `npm audit --omit=dev` sans faille ouverte.
 - [ ] Le transport `smtp` se connecte en TLS sur 465, vérifie le certificat, avec `logger` et `debug` à `false` et des délais courts ; ces options sont figées par un test.
 - [ ] Contre le serveur factice : un seul `RCPT TO`, aucun en-tête injecté même si la validation est contournée ; ni le mot de passe, ni sa forme base64, ni l'adresse n'apparaissent sur `stdout` ou `stderr`.
 - [ ] Chaque erreur de Nodemailer est traduite en une raison de la liste fermée, sans lire `message` ni `response`.
-- [ ] Envoi réel vérifié par le développeur depuis la prévisualisation (section 9, étape 8), résultat noté.
+- [ ] Envoi réel vérifié par le développeur depuis la prévisualisation (section 9, étape 5), résultat noté.
 - [ ] Tout nouveau fichier de `src/server/` commence par `import "server-only";`.
 - [ ] `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:integration` (sur `dev` et en CI) et `npm run test:e2e` passent.
 
@@ -495,7 +504,7 @@ Cohérence de `main` entre les deux. À la fusion de la PR 1, la production et l
 - `VERCEL_ENV=preview`, aucune variable d'envoi : `memoire`, aucun refus.
 - Prouvé par `env-schema.email.test.ts` (« après la PR 1 ») et par `env.test.ts`, qui charge `env.ts` avec ces variables seulement.
 
-La règle « `smtp` obligatoire en production » (décision 4) n'entre en vigueur qu'avec la PR 2, dont le test remplace celui de la production ; les variables Gmail sont posées dans Vercel avant sa fusion (section 9, étape 8). La prévisualisation sans variable reste à `memoire` après la PR 2 : un déploiement de prévisualisation ne tombe jamais faute de configuration d'envoi.
+La règle de production de la PR 2 (décision 4, corrigée : `EMAIL_TRANSPORT` facultatif, `smtp` s'il est absent, variables Gmail obligatoires) n'entre en vigueur qu'avec la PR 2, dont les tests remplacent ceux de la production ; les variables Gmail de production sont posées dans Vercel depuis le 2026-10-13, et ignorées par le code de la PR 1 (section 9). La prévisualisation sans variable reste à `memoire` après la PR 2 : un déploiement de prévisualisation ne tombe jamais faute de configuration d'envoi.
 
 ## Fichiers concernés
 
@@ -538,7 +547,7 @@ Aucune avec l'option A de la question 2. L'option B créerait une table `email_s
 - **Copie dans « Messages envoyés »** (RR-9, décision 9).
 - **Réponses non lues.** Malgré la phrase de fin de chaque email (section 3.3), un destinataire peut répondre : sa réponse arrive dans la boîte de réception du compte, que personne ne lit. Elle est effacée par la purge manuelle mensuelle (RR-9). Un client qui croit avoir prévenu l'entreprise par cette voie ne l'a pas fait.
 - **Plafonds serrés.** À partir de 5 organisations actives, `email.application` devient le goulot ; une relance de fin de mois peut dépasser `email.organisation` (40). À revoir aux jalons 6 et 8 (section 5.2).
-- **Compte neuf jugé suspect.** Google peut bloquer la première connexion depuis Francfort (RR-10, section 9, étape 8).
+- **Compte neuf jugé suspect.** Google peut bloquer la première connexion depuis Francfort (RR-10, section 9, étape 5).
 - **Contournement de la limite par destinataire** par les sous-adresses (`nom+1@`) et, chez Gmail, les points dans la partie locale, selon la question 10.
 - **Plusieurs comptes, plusieurs organisations.** Un attaquant qui crée N organisations a N fois `email.organisation`, jusqu'à `email.application`, qui protège alors le compte au prix de bloquer tout le monde. La création d'organisations en masse relève du jalon 1 et du 2.1.
 - **Expéditeur `@gmail.com`.** Les destinataires peuvent s'en méfier, et certains filtres le classer en indésirable. Le module interchangeable permet de passer à un service spécialisé le jour où un domaine existe (`PLAN.md` section 7).
@@ -595,7 +604,7 @@ Aucune avec l'option A de la question 2. L'option B créerait une table `email_s
    - a. Accepter (RR-9), avec une purge manuelle mensuelle de ce dossier par le développeur.
    - b. Purge automatique par IMAP : une dépendance et un accès de plus.
    - c. Accepter sans purge.
-   - **Recommandation** : a, après avoir constaté à l'étape 8 que Gmail garde bien ces copies. Les liens expirent et se révoquent (S-20), ce qui limite la valeur d'une copie volée.
+   - **Recommandation** : a, après avoir constaté à l'étape 5 de la section 9 que Gmail garde bien ces copies. Les liens expirent et se révoquent (S-20), ce qui limite la valeur d'une copie volée.
 
 10. **Normalisation de l'adresse pour le compteur `destinataire`.**
     - a. Domaine en minuscules seulement.
@@ -630,7 +639,7 @@ Prises par le relecteur à la validation de la fiche, le 2026-10-12. Toutes les 
 1. **Version de Nodemailer.** La 10.x la plus récente publiée depuis au moins sept jours, sans avis de sécurité ouvert, en version exacte, décidée le jour de l'installation (PR 2), après `npm audit` et lecture de la page des avis.
 2. **Email non parti.** Option A : envoi direct après la validation de la transaction, échec signalé dans le résultat, « renvoyer » à la main.
 3. **Prévisualisation.** Option b : second compte Gmail, envoi limité à `EMAIL_DESTINATAIRES_AUTORISES`.
-4. **Configuration Gmail absente ou invalide en production.** Option a : configuration refusée (à partir de la PR 2).
+4. **Configuration Gmail absente ou invalide en production.** Option a : configuration refusée (à partir de la PR 2). Corrigée par le relecteur avant la phase rouge de la PR 2 : `EMAIL_TRANSPORT` facultatif en production, `smtp` s'il est absent (section 9).
 5. **Limites.** Option a : application 200 par 24 h, organisation 40 par 24 h, destinataire 3 par heure et 10 par 24 h. À revoir aux jalons 6 et 8 (section 5.2).
 6. **Format.** Texte brut seulement.
 7. **Sujet et expéditeur.** Fixes, sans contenu saisi.
@@ -733,3 +742,39 @@ Code : `src/server/email/adresse.ts`, `modeles.ts`, `envoi.ts` ; `src/server/mod
 - `npm test` : 1 417 tests réussis, aucun échec.
 - `npm run test:integration` sur `dev` : 18 fichiers ; 171 réussis, 1 échec attendu existant.
 - `npm run build` : réussi. `npm run test:e2e` : 104 réussis. Ports 3000 et 3101 libres avant et après.
+
+### Phase rouge de la PR 2, le 2026-10-13
+
+Branche `feat/envoi-emails-2`. Tests écrits sans implémentation ; aucune dépendance installée ; `package.json` et `package-lock.json` inchangés.
+
+**Vercel au 2026-10-13, avant tout le reste.** `GMAIL_UTILISATEUR` et `GMAIL_MOT_DE_PASSE_APPLICATION` sont posées en Production seulement, sans `EMAIL_TRANSPORT`. Le code de la PR 1 les **ignore** : `validerConfigurationEmail` ne lit aucune variable `GMAIL_*`, et `validerEnvironnement` ne passe à Zod que `DATABASE_URL`, `BETTER_AUTH_SECRET` et `BETTER_AUTH_URL`. Résultat en production : `memoire`, aucun refus. Prouvé par deux tests qui passent sur le code de la PR 1 : `env-schema.email.test.ts` et `env.test.ts` (chargement réel), « après la PR 1 », avec ces deux variables (valeurs factices) et sans `EMAIL_TRANSPORT`.
+
+**Règle corrigée par le relecteur** (section 9) : en production, `EMAIL_TRANSPORT` est facultatif et vaut `smtp` s'il est absent ; toute autre valeur est refusée ; les deux variables Gmail restent obligatoires. En prévisualisation sans variable : `memoire`. Sections 2.1, 2.2, 9, « Découpage en PR », critères de la PR 2 et décision 4 mises à jour.
+
+**Interfaces fixées par les tests** (à confirmer par le relecteur) :
+
+- `env-schema.ts` : `TransportEmail` reçoit `"smtp"` ; `ConfigurationEmail` reçoit une **cinquième propriété**, `gmail` : `{ utilisateur, motDePasse }` figé, ou `null` hors `smtp`. `GMAIL_UTILISATEUR` : adresse acceptée par `schemaAdresse` au domaine `gmail.com`. `GMAIL_MOT_DE_PASSE_APPLICATION` : exactement 16 lettres minuscules. `smtp` hors production (prévisualisation, poste local) exige `EMAIL_DESTINATAIRES_AUTORISES` ; en production, la liste est ignorée sans refus.
+- `modules/email/smtp.ts` : `optionsTransportSmtp({ utilisateur, motDePasse })`, objet figé en profondeur, exactement : `host: "smtp.gmail.com"`, `port: 465`, `secure: true`, `auth`, `tls: { minVersion: "TLSv1.2", rejectUnauthorized: true, servername: "smtp.gmail.com" }`, `connectionTimeout: 5000`, `greetingTimeout: 5000`, `socketTimeout: 10000`, `pool: false`, `logger: false`, `debug: false`, `disableFileAccess: true`, `disableUrlAccess: true`. `creerTransportSmtp(options)` renvoie un `Transport` ; le test lui passe ces options redirigées vers le serveur factice (`host`, `port`, `secure: false`, `ignoreTLS: true`). `traduireErreurSmtp(erreur)` renvoie une `EchecTransport` sans lire `message` ni `response`.
+- Traduction : `EENVELOPE` ou `EMESSAGE` avec un `responseCode` 5xx donnent `refuse_par_serveur` ; tout le reste, `EAUTH` compris, donne `indisponible` (4xx compris : refus temporaire). Un `code` ou un `responseCode` mal formé est écarté.
+- Outillage : `src/server/modules/email/outils-test/serveur-smtp.ts` (`demarrerServeurSmtp({ reponseAuth, reponseRcpt, muet })`), en `node:net` sur `127.0.0.1`, port choisi par le système.
+
+**Ajouts à la fiche, à confirmer** : `servername`, `disableFileAccess` et `disableUrlAccess` ne figuraient pas dans la fiche. Les deux derniers ferment l'accès aux fichiers et aux adresses depuis un message (avis GHSA-8m3c-c648-2xjj et GHSA-p6gq-j5cr-w38f, sur ces options). Inutiles avec nos messages en texte brut, ils ne coûtent rien.
+
+**Tests existants que la PR 2 contredit**, à modifier à l'implémentation après accord (comme « La PR 2 remplace le cas de la production ») :
+
+- `env-schema.email.test.ts` : « après la PR 1 », production sans variable (`memoire`) et production avec les variables Gmail (`memoire`) : la PR 2 donne respectivement un refus et `smtp`. « prévisualisation : memoire » et « forme du résultat : quatre propriétés exactement » : `toStrictEqual` sans `gmail`.
+- `env.test.ts` : « témoin : configuration valide » et « après la PR 1 : Vercel production / preview » (`toStrictEqual` sans `gmail` ; la production sans variable devient un refus) ; « après la PR 1 : production avec les variables Gmail » (devient `smtp`).
+
+**Tests nouveaux qui passent déjà, et pourquoi** :
+
+- Les deux tests « après la PR 1 » avec les variables Gmail : ils décrivent le code de production actuel (point 1 ci-dessus), et seront remplacés.
+- `env.test.ts`, « prévisualisation sans aucune variable d'envoi : se charge, memoire » : comportement inchangé par la PR 2, témoin.
+- Renforcés pour échouer aujourd'hui : « `EMAIL_TRANSPORT=%j` refusée en production » (5 cas) et « sous `NODE_ENV=test`, `smtp` refusé » passaient parce que la PR 1 refuse toute valeur `smtp`. Chacun vérifie d'abord, dans le même test, que la configuration voisine valide donne `smtp`.
+
+**Constats du 2026-10-13** :
+
+- `npm test` : 43 fichiers, 3 en échec ; 1 489 tests, 69 en échec, 1 420 réussis. Les 1 417 tests de la PR 1 passent ; les 69 échecs sont tous nouveaux.
+- `npm run lint` : vert. `npm run typecheck` : 39 erreurs, toutes dans `smtp.test.ts` (34 : exports de `smtp.ts` sans paramètre ni type) et `env-schema.email.test.ts` (5 : `gmail` absent du type).
+- Construction, intégration et bout en bout : non lancés, aucun test de ces projets ajouté.
+
+**Dépendance (décision 1)**, relue le 2026-10-13, rien d'installé : proposition `nodemailer` **10.0.15**, publiée le 2026-10-05, la plus récente 10.x publiée depuis au moins sept jours (10.0.16 : 2026-10-07 ; 10.1.0 : 2026-10-10). Aucun avis publié ni mis à jour depuis le 2026-10-12, ni dans le dépôt (<https://github.com/nodemailer/nodemailer/security/advisories>, avis les plus récents le 2026-09-30), ni dans la base de GitHub (`api.github.com/advisories?affects=nodemailer`, dernière mise à jour le 2026-10-05) ; aucun avis connu ne touche 10.0.15. Les quatre avis du dépôt du 2026-09-30 (GHSA-4ffr-jq9g-5ffx, GHSA-g73g-hqqh-jr95, GHSA-39m8-27wv-hr27, GHSA-4g23-2xm8-66gc) n'apparaissent pas dans la base de GitHub lue par `npm audit` : un `npm audit` vert ne suffit pas, la page du dépôt se relit à l'installation. `npm audit` n'a pas été lancé (il exige l'installation) ; attendu après l'installation : `npm audit --omit=dev` sans faille, et `npm audit` identique à aujourd'hui.
