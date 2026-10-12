@@ -18,7 +18,9 @@ describe("LIMITES", () => {
       expect(Number.isInteger(limite.fenetreSecondes)).toBe(true);
       expect(limite.fenetreSecondes).toBeGreaterThan(0);
       expect(limite.fenetreSecondes).toBeLessThanOrEqual(UN_JOUR);
-      expect(["utilisateur"]).toContain(limite.par);
+      // 0.7 : trois valeurs de plus, pour les limites d'envoi d'emails
+      // (docs/features/envoi-emails.md, section 5.2).
+      expect(["utilisateur", "application", "organisation", "destinataire"]).toContain(limite.par);
     },
   );
 
@@ -28,6 +30,53 @@ describe("LIMITES", () => {
       fenetreSecondes: 60,
       par: "utilisateur",
     });
+  });
+});
+
+// Limites d'envoi d'emails (décision 5). Fiche : docs/features/envoi-emails.md,
+// section 5.
+const UNE_HEURE = 60 * 60;
+const LIMITE_GMAIL_PAR_JOUR = 500;
+
+describe("limites d'envoi d'emails (0.7)", () => {
+  test("valeurs retenues (décision 5)", () => {
+    expect(LIMITES["email.application"]).toStrictEqual({
+      maximum: 200,
+      fenetreSecondes: UN_JOUR,
+      par: "application",
+    });
+    expect(LIMITES["email.organisation"]).toStrictEqual({
+      maximum: 40,
+      fenetreSecondes: UN_JOUR,
+      par: "organisation",
+    });
+    expect(LIMITES["email.destinataire"]).toStrictEqual({
+      maximum: 3,
+      fenetreSecondes: UNE_HEURE,
+      par: "destinataire",
+    });
+    expect(LIMITES["email.destinataire_jour"]).toStrictEqual({
+      maximum: 10,
+      fenetreSecondes: UN_JOUR,
+      par: "destinataire",
+    });
+  });
+
+  test("au bord de la fenêtre fixe (2 × le maximum), toujours sous la limite de Gmail", () => {
+    expect(2 * LIMITES["email.application"].maximum).toBeLessThan(LIMITE_GMAIL_PAR_JOUR);
+    expect(LIMITES["email.application"].fenetreSecondes).toBeLessThanOrEqual(UN_JOUR);
+  });
+
+  test("une organisation seule n'épuise pas la limite de l'application", () => {
+    expect(LIMITES["email.organisation"].maximum).toBeLessThan(
+      LIMITES["email.application"].maximum,
+    );
+  });
+
+  test("la limite par heure d'un destinataire est sous sa limite par jour", () => {
+    expect(LIMITES["email.destinataire"].maximum).toBeLessThan(
+      LIMITES["email.destinataire_jour"].maximum,
+    );
   });
 });
 

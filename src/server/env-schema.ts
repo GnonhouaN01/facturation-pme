@@ -115,3 +115,18 @@ export function validerEnvironnement(source: Source): Environnement {
   });
   throw new Error([ENTETE, ...lignes].join("\n"));
 }
+
+// Phase rouge de la 0.7 (PR 1) : interface fixée par les tests, sans
+// implémentation. Fiche : docs/features/envoi-emails.md, section 2.2 et
+// « Notes de l'implémentation ».
+export type ConfigurationEmail = Readonly<{
+  transport: "memoire" | "fichier";
+  dossier: string | null;
+  destinatairesAutorises: readonly string[];
+  estProduction: boolean;
+}>;
+
+export function validerConfigurationEmail(source: Source): ConfigurationEmail {
+  void source;
+  throw new Error("non implémenté");
+}
