@@ -6,7 +6,14 @@ import { type APIRequestContext, type Page, expect, test } from "@playwright/tes
 import { TEXTES_COMMUNS } from "../src/textes/commun";
 import { TEXTES_ERREURS } from "../src/textes/erreurs";
 
-import { nonceDe, observerViolations, POLITIQUE_PRODUCTION, sansNonce, violations } from "./outils";
+import {
+  ENTETES_SECTION_6,
+  nonceDe,
+  observerViolations,
+  POLITIQUE_PRODUCTION,
+  sansNonce,
+  violations,
+} from "./outils";
 import {
   ADRESSE_PANNE,
   COOKIE_SESSION,
@@ -114,6 +121,9 @@ test.describe("page « erreur », serveur à la base injoignable", () => {
 
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+  // Statut du document d'erreur de Next.js, constaté le 2026-10-12.
+  const STATUT_PANNE = 500;
+
   function marqueursTrouves(texte: string): string[] {
     return MARQUEURS.filter((marqueur) =>
       typeof marqueur === "string" ? texte.includes(marqueur) : marqueur.test(texte),
@@ -188,14 +198,35 @@ test.describe("page « erreur », serveur à la base injoignable", () => {
     expect(await violations(page)).toEqual([]);
   });
 
+  // Corrigé à la PR 3 avec l'accord du relecteur (décision 32) : une erreur
+  // levée hors d'une frontière Suspense fait échouer le squelette de la page.
+  // Next.js renvoie alors son document d'erreur, au corps vide ; la page
+  // « erreur » n'est rendue que dans le navigateur, à partir du digest de la
+  // charge utile (section 4.3).
   test("aucun détail dans le HTML", async ({ request }) => {
     const reponse = await lire(request);
     const html = await reponse.text();
+    const recus = reponse.headers();
 
-    // Le test porte bien sur la page « erreur ».
-    expect(html).toContain(TEXTES_ERREURS.erreur);
+    // Le test porte bien sur le document d'erreur de Next.js.
+    expect(reponse.status()).toBe(STATUT_PANNE);
+    expect(html).toMatch(/<html[^>]*\bid="__next_error__"/);
+    expect(html).not.toContain("data-next-error-");
+    // Chaque digest de la charge utile est un incident de la chaîne (UUID).
+    const digests = [...html.matchAll(/"digest[^0-9a-z]{1,8}([^"&]{1,80}?)[^0-9a-z-]/g)].map(
+      (trouve) => trouve[1] ?? "",
+    );
+    expect(digests.length).toBeGreaterThan(0);
+    for (const digest of digests) expect(digest).toMatch(UUID);
+    // La politique et les en-têtes de sécurité, comme sur toute réponse.
+    expect(sansNonce(recus["content-security-policy"])).toEqual(POLITIQUE_PRODUCTION);
+    expect(Buffer.from(nonceDe(recus["content-security-policy"]), "base64")).toHaveLength(16);
+    for (const [entete, valeur] of Object.entries(ENTETES_SECTION_6)) {
+      expect(recus[entete], entete).toBe(valeur);
+    }
+    expect(recus["x-powered-by"]).toBeUndefined();
     expect(marqueursTrouves(html)).toEqual([]);
-    expect(marqueursTrouves(JSON.stringify(reponse.headers()))).toEqual([]);
+    expect(marqueursTrouves(JSON.stringify(recus))).toEqual([]);
   });
 
   test("aucun détail dans la charge utile RSC", async ({ request }) => {

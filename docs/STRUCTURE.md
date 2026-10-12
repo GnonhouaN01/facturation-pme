@@ -43,13 +43,14 @@ Next.js transforme chaque sous-dossier de `app/` en adresse du site. Les dossier
 ```
 src/app/
 ├── (public)/                Pages sans session
+│   ├── layout.tsx           En-tête au nom du produit, contenu, pied de page
 │   ├── page.tsx             Accueil
 │   ├── connexion/
 │   ├── inscription/
 │   └── mot-de-passe-oublie/
 ├── (app)/                   Pages avec session obligatoire
-│   ├── layout.tsx           Vérifie la session, affiche le menu
-│   ├── tableau-de-bord/
+│   ├── layout.tsx           Lit le rôle par lirePourPage, affiche barre latérale et bandeau ; ne protège pas
+│   ├── tableau-de-bord/     page.tsx : page vide (0.6), remplie par la 7.1
 │   ├── clients/
 │   │   ├── page.tsx         Liste
 │   │   ├── [id]/page.tsx    Fiche
@@ -62,12 +63,17 @@ src/app/
 │   ├── organisation/        Paramètres, membres, journal d'audit
 │   └── compte/              Mot de passe, double authentification, sessions
 ├── lien/                    Pages publiques par lien
+│   ├── layout.tsx           Contenu seul, sans navigation ; ne lit jamais la session
 │   ├── devis/[jeton]/
 │   └── facture/[jeton]/
 ├── api/
 │   ├── auth/[...all]/       Route de Better Auth
 │   └── taches/quotidienne/  Tâche planifiée
-├── layout.tsx               Structure commune à toutes les pages
+├── layout.tsx               Structure commune : polices, lang="fr", rendu dynamique
+├── not-found.tsx            « Cette page est introuvable » (absent, refusé, non connecté)
+├── error.tsx                « Une erreur est survenue. » et l'identifiant d'incident
+├── global-error.tsx         La même, pour une erreur du gabarit racine
+├── polices.ts               Les trois polices, déclarées une fois
 └── globals.css
 ```
 
@@ -80,6 +86,8 @@ src/app/
 | `lien/` | Le détenteur d'un jeton | F1, la plus exposée |
 
 Regrouper les pages publiques par lien dans un dossier à part rend visible, d'un coup d'œil, toute la surface accessible sans compte.
+
+**Chaque page de `(app)/` se protège elle-même** (fonctionnalité 0.6) : son `page.tsx` appelle `lirePourPage` (`server/actions/exposer.ts`) avec son droit, même s'il ne lit rien. Le gabarit `(app)/layout.tsx` appelle aussi `lirePourPage`, pour connaître le rôle et les entrées de navigation, mais c'est de l'affichage : un gabarit n'est pas réexécuté à chaque navigation. Sans session, sans adhésion ou sans droit, la réponse est la page « introuvable », identique à celle d'une adresse inexistante. Le test d'inventaire (`server/actions/inventaire.test.ts`) vérifie l'appel dans chaque `page.tsx` de la zone. Fiche : `docs/features/socle-interface.md`, sections 2.3 et 2.4.
 
 **Les fichiers `actions.ts`** sont les points d'entrée des modifications. Ils ne contiennent aucune règle métier : chaque action y est déclarée à travers la fonction commune de contrôle, puis délègue à un service. Voir la section 3.3.
 
@@ -110,12 +118,13 @@ src/server/
 │   ├── config.ts            Configuration de Better Auth
 │   └── session.ts           Lecture de la session
 ├── autorisation/
-│   └── matrice.ts           Les rôles, la matrice rôles x droits, unique, et peut()
+│   ├── matrice.ts           Les rôles, la matrice rôles x droits, unique, et peut()
+│   └── navigation.ts        Entrées de navigation filtrées par la matrice, lecture du gabarit
 ├── actions/
 │   ├── action.ts            La fonction commune de contrôle : declarerAction, la chaîne
 │   ├── origine.ts           Contrôle de l'origine de la requête
 │   ├── refus.ts             Modèle de résultat, traduction des erreurs
-│   ├── exposer.ts           Adaptateur Next.js des actions serveur
+│   ├── exposer.ts           Adaptateurs Next.js : actions serveur (exposer), pages (lirePourPage)
 │   ├── registre.ts          Liste de toutes les actions déclarées
 │   └── <domaine>.ts         Déclarations des actions d'un domaine
 ├── services/                Règles métier, par domaine
@@ -198,6 +207,8 @@ Le seul fichier qui lit `process.env`. Aucun autre fichier ne lit directement un
 ```
 src/components/
 ├── ui/                      Composants shadcn/ui, copiés dans le projet
+├── gabarits/                Gabarit de l'application : barre latérale, navigation, bandeau, en-tête de page
+├── erreurs/                 Contenu des pages « erreur »
 └── clients/, devis/, ...    Composants propres à un domaine
 ```
 
