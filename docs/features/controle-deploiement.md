@@ -189,3 +189,9 @@ Prises le 2026-10-13 par l'assistant, selon ses recommandations, sur instruction
 9. **Valeurs attendues recopiées** dans le script, avec un test de cohérence (alternatives écartées).
 
 ## Notes de l'implémentation
+
+### Implémentation, le 2026-10-13
+
+- Phase rouge (`019efb0`) : la spec échoue au chargement, `scripts/controle-deploiement.mjs` n'existant pas.
+- Playwright charge les modules importés par une spec en CommonJS (le dépôt n'a pas `"type": "module"`) : `import.meta` et l'`await` de premier niveau y lèvent `SyntaxError`. Le lancement direct se reconnaît donc au nom du script (`process.argv[1]`), et la ligne de commande n'utilise pas d'`await` de premier niveau.
+- Après l'implémentation : les 25 tests de `e2e/controle-deploiement.spec.ts` passent, dont le site construit en local avec exactement les deux échecs de la section 5. Chaque défaut du serveur factice fait échouer le seul contrôle attendu, ce qui sert de contre-épreuve à chaque contrôle.

@@ -1,0 +1,48 @@
+name: Contrôle après déploiement
+
+# Après chaque déploiement de production réussi (événement publié par
+# Vercel), et à la main depuis main : requêtes GET publiques sur le domaine
+# de production, sans secret ni écriture. Un échec fait échouer le job, et
+# GitHub prévient par email. Fiche : docs/features/controle-deploiement.md.
+
+on:
+  deployment_status:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: controle-deploiement
+  cancel-in-progress: false
+
+jobs:
+  controler:
+    name: Contrôler la production
+    # Vercel nomme l'environnement « Production » ou « Production – <projet> ».
+    # Un déploiement de prévisualisation donne une exécution sautée.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'deployment_status' &&
+       github.event.deployment_status.state == 'success' &&
+       startsWith(github.event.deployment.environment, 'Production'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Adresse écrite ici, jamais lue dans l'événement (décision 3).
+    env:
+      ADRESSE_PRODUCTION: https://facturation-pme.vercel.app
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      # Aucune dépendance : pas de npm ci.
+      - name: Contrôler le site
+        run: node scripts/controle-deploiement.mjs "$ADRESSE_PRODUCTION" --essais 3 --pause 20
