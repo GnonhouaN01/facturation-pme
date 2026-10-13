@@ -23,16 +23,22 @@ vi.mock("../env", () => ({
     BETTER_AUTH_SECRET: "secret-factice-de-trente-deux-caracteres",
     BETTER_AUTH_URL: "https://facturation.exemple.ci",
   },
+  // 8.3 : la route de la tâche quotidienne charge server/taches/, qui lit
+  // le secret de la tâche ; aucun appel n'est fait.
+  secretTache: { secret: null },
 }));
 
 const APP = fileURLToPath(new URL("../../app/", import.meta.url));
 const DEMO = fileURLToPath(new URL("../../../tests/fixtures/inventaire/", import.meta.url));
 
-// Liste fermée des gestionnaires de route, chacun avec sa fiche. Aucun
-// n'existe en 0.4. Chemin du dossier sous src/app/, séparé par des « / ».
+// Liste fermée des gestionnaires de route, chacun avec sa fiche. Chemin du
+// dossier sous src/app/, séparé par des « / ». La tâche quotidienne est
+// servie par un segment dynamique, avec une liste fermée de tâches (8.3,
+// docs/features/tache-quotidienne.md, section 2.1, décision 2).
 const ROUTES_ADMISES: Readonly<Record<string, string>> = {
   "api/auth/[...all]": "PLAN.md 1.1 : exposition de /api/auth, après fermeture de /organization/*",
-  "api/taches/quotidienne": "PLAN.md 8.3 : tâche quotidienne, avec son propre contrôle",
+  "api/taches/[tache]":
+    "PLAN.md 8.3 : tâche quotidienne, avec son propre contrôle (docs/features/tache-quotidienne.md)",
 };
 
 const ACTIONS = /^actions\.(ts|tsx|js|jsx|mjs|mts)$/;
@@ -381,5 +387,40 @@ describe("pages de la zone application", () => {
     ],
   ])("démonstration, %s", (_nom, sources, attendus) => {
     expect(problemesDesPages(sources)).toEqual(attendus);
+  });
+});
+
+// Forme exacte de la route de la tâche quotidienne : un import, un seul
+// export GET, égal à traiterTache. Tout le contrôle vit dans
+// src/server/taches/quotidienne.ts (secret, liste fermée, réponses). Fiche :
+// docs/features/tache-quotidienne.md, section 2.1, test 6.
+const ROUTE_TACHES = join(APP, "api", "taches", "[tache]", "route.ts");
+const FORME_ROUTE_TACHES = [
+  'import { traiterTache } from "@/server/taches/quotidienne";',
+  "export const GET = traiterTache;",
+];
+
+describe("route de la tâche quotidienne", () => {
+  test("src/app/api/taches/[tache]/route.ts est parcourue par l'inventaire", async () => {
+    const { parcourus } = await inventorier(APP, REGISTRE);
+
+    expect(parcourus).toContain("api/taches/[tache]/route.ts");
+  });
+
+  test("forme exacte : un import, export const GET = traiterTache, commentaires mis à part", () => {
+    const lignes = readFileSync(ROUTE_TACHES, "utf8")
+      .split("\n")
+      .map((ligne) => ligne.trim())
+      .filter((ligne) => ligne !== "" && !ligne.startsWith("//"));
+
+    expect(lignes).toEqual(FORME_ROUTE_TACHES);
+  });
+
+  test("le module n'exporte que GET, égal à traiterTache", async () => {
+    const route = (await import(pathToFileURL(ROUTE_TACHES).href)) as Record<string, unknown>;
+    const { traiterTache } = await import("../taches/quotidienne");
+
+    expect(Object.keys(route)).toEqual(["GET"]);
+    expect(route.GET).toBe(traiterTache);
   });
 });

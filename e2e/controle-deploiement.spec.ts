@@ -22,7 +22,8 @@ import { documentServi, ENTETES_SECTION_6, POLITIQUE_PRODUCTION } from "./outils
 // Script de contrôle après déploiement (0.8), éprouvé contre un serveur
 // factice local, puis contre le site construit en local. Jamais contre la
 // production ni une prévisualisation. Fiche :
-// docs/features/controle-deploiement.md, sections 1, 2 et 5.
+// docs/features/controle-deploiement.md, sections 1, 2 et 5. Page « tache »
+// (8.3) : docs/features/tache-quotidienne.md, section 6, test 10.
 
 const SCRIPT = "scripts/controle-deploiement.mjs";
 const executer = promisify(execFile);
@@ -50,7 +51,15 @@ type Defaut =
   | "pile"
   | "chemin-de-fichier"
   | "variable-dans-le-corps"
-  | "variable-dans-un-entete";
+  | "variable-dans-un-entete"
+  // Tâche quotidienne (8.3).
+  | "tache-200-sans-secret"
+  | "tache-401"
+  | "tache-forge-distingue"
+  | "tache-inconnue-distingue"
+  | "tache-x-powered-by"
+  | "tache-fuite-entete"
+  | "tache-en-anglais";
 
 type Factice = { adresse: string; requetes: Requete[]; fermer: () => Promise<void> };
 
@@ -122,6 +131,34 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
     }
     if (defaut === "x-powered-by") entetes["X-Powered-By"] = "Next.js";
 
+    // Tâche quotidienne : comme src/server/taches/quotidienne.ts, un refus et
+    // une tâche inconnue reçoivent 404, corps vide, sans Content-Type ; la
+    // politique et les en-têtes de la section 6 sont posés comme partout.
+    if (chemin.startsWith("/api/taches/")) {
+      const quotidienne = chemin === "/api/taches/quotidienne";
+      const avecSecret = requete.headers.authorization !== undefined;
+      const tache: Record<string, string> = { ...entetes, "Cache-Control": "no-store" };
+      delete tache["Content-Type"];
+      if (defaut === "tache-x-powered-by") tache["X-Powered-By"] = "Next.js";
+      if (defaut === "tache-fuite-entete") tache["X-Indice"] = "/var/task/node_modules/x.js";
+      let statut = 404;
+      let corps = "";
+      if (defaut === "tache-200-sans-secret" && quotidienne && !avecSecret) {
+        statut = 200;
+        corps = '{"ok":true}';
+      }
+      if (defaut === "tache-401" && quotidienne) statut = 401;
+      if (defaut === "tache-forge-distingue" && quotidienne && avecSecret) corps = "x";
+      if (defaut === "tache-inconnue-distingue" && !quotidienne) {
+        tache["Content-Type"] = "text/html; charset=utf-8";
+        corps = page(nonce, "Facturation PME", INTROUVABLE_FR, "0:{}");
+      }
+      if (defaut === "tache-en-anglais") corps = "Not Found";
+      reponse.writeHead(statut, tache);
+      reponse.end(corps);
+      return;
+    }
+
     const accueil = chemin === "/";
     const tableau = chemin === "/tableau-de-bord";
     const lien = chemin.startsWith("/lien/devis/");
@@ -181,9 +218,15 @@ function echecs(resultats: readonly Resultat[]): string[] {
 
 const PAGES = ["accueil", "tableau-de-bord", "inexistante", "lien"] as const;
 const surToutes = (controle: string) => PAGES.map((p) => `${p}:${controle}`);
+// Politique et en-têtes : vérifiés aussi sur la page « tache » (8.3).
+const avecTache = (controle: string) => [...surToutes(controle), `tache:${controle}`];
 
 test.describe("contrôle après déploiement, serveur factice", () => {
-  test("serveur conforme : tout passe, seulement des GET, sans cookie sauf le cookie forgé", async () => {
+  // 8.3 (modifié, signalé) : 10 requêtes par passage au lieu de 7, et un
+  // en-tête Authorization forgé, seconde exception après le cookie forgé, sur
+  // /api/taches/quotidienne seulement (docs/features/tache-quotidienne.md,
+  // section 6).
+  test("serveur conforme : tout passe, seulement des GET, sans cookie ni Authorization sauf les valeurs forgées", async () => {
     const factice = await demarrerFactice();
     try {
       const premier = await controlerSite(factice.adresse);
@@ -193,12 +236,22 @@ test.describe("contrôle après déploiement, serveur factice", () => {
       expect(echecs(second)).toEqual([]);
       expect(premier.length).toBeGreaterThan(10);
 
-      expect(factice.requetes).toHaveLength(14);
+      expect(factice.requetes).toHaveLength(20);
       for (const requete of factice.requetes) {
         expect(requete.methode).toBe("GET");
-        expect(requete.entetes.authorization).toBeUndefined();
         expect(requete.entetes["content-length"]).toBeUndefined();
       }
+      // Un seul Authorization par passage : un secret forgé, tiré au hasard à
+      // chaque passage, sur /api/taches/quotidienne.
+      const autorises = factice.requetes.filter((r) => r.entetes.authorization !== undefined);
+      expect(autorises.map((r) => r.chemin)).toEqual([
+        "/api/taches/quotidienne",
+        "/api/taches/quotidienne",
+      ]);
+      for (const r of autorises) {
+        expect(r.entetes.authorization).toMatch(/^Bearer [A-Za-z0-9_-]{43}$/);
+      }
+      expect(autorises[0]?.entetes.authorization).not.toBe(autorises[1]?.entetes.authorization);
       // Un seul cookie par passage : la session forgée, sur /tableau-de-bord,
       // sous ses deux noms, tirée au hasard à chaque passage.
       const avecCookie = factice.requetes.filter((r) => r.entetes.cookie !== undefined);
@@ -221,22 +274,35 @@ test.describe("contrôle après déploiement, serveur factice", () => {
       expect(inexistantes).toHaveLength(2);
       expect(inexistantes[0]).not.toBe(inexistantes[1]);
       expect(new Set(liens).size).toBe(4);
+      const taches = chemins.filter((c) => c.startsWith("/api/taches/"));
+      const tachesInconnues = taches.filter((c) => /^\/api\/taches\/[0-9a-f]{16}$/.test(c));
+      expect(taches.filter((c) => c === "/api/taches/quotidienne")).toHaveLength(4);
+      expect(tachesInconnues).toHaveLength(2);
+      expect(tachesInconnues[0]).not.toBe(tachesInconnues[1]);
+      expect(premier.map((r) => r.nom).filter((n) => n.startsWith("tache:"))).toEqual([
+        "tache:statut",
+        "tache:politique",
+        "tache:entetes",
+        "tache:fuite",
+        "tache:anglais",
+        "tache:identique",
+      ]);
     } finally {
       await factice.fermer();
     }
   });
 
   const CAS: readonly [Defaut, string[]][] = [
-    ["x-powered-by", surToutes("entetes")],
-    ["sans-hsts", surToutes("entetes")],
-    ["hsts-sans-sous-domaines", surToutes("entetes")],
-    ["unsafe-inline", surToutes("politique")],
+    ["x-powered-by", avecTache("entetes")],
+    ["sans-hsts", avecTache("entetes")],
+    ["hsts-sans-sous-domaines", avecTache("entetes")],
+    ["unsafe-inline", avecTache("politique")],
     [
       "sans-nonce",
-      [...surToutes("politique"), ...surToutes("nonce-scripts"), "accueil:nonce-neuf"],
+      [...avecTache("politique"), ...surToutes("nonce-scripts"), "accueil:nonce-neuf"],
     ],
-    ["nonces-differents", surToutes("politique")],
-    ["directive-manquante", surToutes("politique")],
+    ["nonces-differents", avecTache("politique")],
+    ["directive-manquante", avecTache("politique")],
     ["nonce-fixe", ["accueil:nonce-neuf"]],
     ["script-sans-nonce", surToutes("nonce-scripts")],
     ["accueil-500", ["accueil:statut"]],
@@ -249,6 +315,13 @@ test.describe("contrôle après déploiement, serveur factice", () => {
     ["chemin-de-fichier", ["tableau-de-bord:fuite"]],
     ["variable-dans-le-corps", ["accueil:fuite"]],
     ["variable-dans-un-entete", ["tableau-de-bord:fuite"]],
+    ["tache-200-sans-secret", ["tache:identique", "tache:statut"]],
+    ["tache-401", ["tache:identique", "tache:statut"]],
+    ["tache-forge-distingue", ["tache:identique"]],
+    ["tache-inconnue-distingue", ["tache:identique"]],
+    ["tache-x-powered-by", ["tache:entetes"]],
+    ["tache-fuite-entete", ["tache:fuite"]],
+    ["tache-en-anglais", ["tache:anglais"]],
   ];
 
   for (const [defaut, attendus] of CAS) {
@@ -284,7 +357,7 @@ test.describe("contrôle après déploiement, serveur factice", () => {
 
     expect(resultats.length).toBeGreaterThan(10);
     expect(resultats.every((r) => !r.ok)).toBe(true);
-    for (const page of PAGES) {
+    for (const page of [...PAGES, "tache"]) {
       expect(echecs(resultats)).toContain(`${page}:statut`);
     }
   });
@@ -398,6 +471,31 @@ test.describe("contrôle après déploiement, ligne de commande", () => {
         expect(sortie.toLowerCase()).not.toContain(interdit);
       }
       expect(sortie).not.toMatch(/nonce="(?!N")/);
+    } finally {
+      await factice.fermer();
+    }
+  });
+
+  // Le secret forgé n'est jamais affiché, même avec --detail ; la page
+  // « tache » n'a pas de lignes de détail.
+  test("--detail : ni Authorization, ni Bearer, ni secret forgé dans la sortie", async () => {
+    const factice = await demarrerFactice("tache-forge-distingue");
+    try {
+      const { code, sortie } = await lancer(factice.adresse, "--detail");
+      const forges = factice.requetes
+        .map((r) => r.entetes.authorization)
+        .filter((v): v is string => v !== undefined)
+        .map((v) => v.replace(/^Bearer /, ""));
+
+      expect(code, sortie).toBe(1);
+      expect(sortie).toContain("ÉCHEC  tache:identique");
+      expect(sortie.toLowerCase()).not.toContain("bearer");
+      expect(sortie.toLowerCase()).not.toContain("authorization");
+      expect(forges).toHaveLength(1);
+      for (const forge of forges) expect(sortie).not.toContain(forge);
+      const lignes = sortie.split("\n");
+      const indice = lignes.findIndex((l) => l.startsWith("ÉCHEC  tache:identique"));
+      expect(lignes[indice + 1] ?? "").not.toMatch(/^ {9}\S/);
     } finally {
       await factice.fermer();
     }

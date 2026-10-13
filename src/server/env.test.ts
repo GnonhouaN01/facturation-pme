@@ -9,6 +9,12 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 // docs/features/envoi-emails.md, section 2.2 et « Découpage en PR » ;
 // décision 1 du relecteur sur la phase rouge.
 
+// Secret factice de la tâche quotidienne (43 caractères base64url),
+// obligatoire en production depuis la 8.3 : les chargements de production
+// qui doivent réussir le reçoivent. Fiche : docs/features/tache-quotidienne.md,
+// section 2.3.
+const SECRET_TACHE = "Fact1ce_Secret-De-Tache-Quotidienne-43carac";
+
 const BASE = {
   DATABASE_URL:
     "postgresql://app_facturation:mdp-factice@base.exemple.test/facturation?sslmode=verify-full",
@@ -31,6 +37,7 @@ const LUES = [
   "EMAIL_DOSSIER",
   "GMAIL_UTILISATEUR",
   "GMAIL_MOT_DE_PASSE_APPLICATION",
+  "CRON_SECRET",
 ] as const;
 
 function poser(variables: Partial<Record<(typeof LUES)[number], string>>): void {
@@ -157,6 +164,7 @@ describe("env.ts : chargement", () => {
       VERCEL_URL: "facturation-abc123.vercel.app",
       GMAIL_UTILISATEUR: "facturation.factice@gmail.com",
       GMAIL_MOT_DE_PASSE_APPLICATION: "abcdefghijklmnop",
+      CRON_SECRET: SECRET_TACHE,
     });
 
     const charge = await charger();
@@ -186,7 +194,7 @@ describe("env.ts : chargement, PR 2", () => {
   } as const;
 
   test("production, variables Gmail, EMAIL_TRANSPORT absente : se charge, smtp", async () => {
-    poser({ ...PRODUCTION, ...GMAIL });
+    poser({ ...PRODUCTION, ...GMAIL, CRON_SECRET: SECRET_TACHE });
 
     const charge = await charger();
 
@@ -219,5 +227,63 @@ describe("env.ts : chargement, PR 2", () => {
     const charge = await charger();
 
     expect(charge.configurationEmail.transport).toBe("memoire");
+  });
+});
+
+// 8.3 : CRON_SECRET, obligatoire en production. Sans elle, le chargement de
+// env.ts échoue : la construction échoue avec lui (« Collecting page data »
+// charge env.ts, constaté le 2026-10-13). Fiche :
+// docs/features/tache-quotidienne.md, section 2.3, décision 1.
+describe("env.ts : chargement, tâche quotidienne", () => {
+  const PRODUCTION = {
+    ...BASE,
+    NODE_ENV: "production",
+    VERCEL: "1",
+    VERCEL_ENV: "production",
+    VERCEL_URL: "facturation-abc123.vercel.app",
+    GMAIL_UTILISATEUR: "facturation.factice@gmail.com",
+    GMAIL_MOT_DE_PASSE_APPLICATION: "abcdefghijklmnop",
+  } as const;
+
+  test("production sans CRON_SECRET : le chargement échoue, variable nommée", async () => {
+    poser({ ...PRODUCTION });
+
+    const erreur = await erreurDeChargement();
+
+    expect(erreur.message).toMatch(/^- CRON_SECRET : absente$/mu);
+  });
+
+  test("production, CRON_SECRET trop courte : le chargement échoue, sans la valeur", async () => {
+    const courte = SECRET_TACHE.slice(0, 42);
+    poser({ ...PRODUCTION, CRON_SECRET: courte });
+
+    const erreur = await erreurDeChargement();
+
+    expect(erreur.message).toMatch(/^- CRON_SECRET : /mu);
+    expect(erreur.message).not.toContain(courte);
+  });
+
+  test("production avec CRON_SECRET : se charge, secretTache exporté", async () => {
+    poser({ ...PRODUCTION, CRON_SECRET: SECRET_TACHE });
+
+    const charge = await charger();
+
+    expect(charge.secretTache).toEqual({ secret: SECRET_TACHE });
+  });
+
+  test("prévisualisation sans CRON_SECRET : se charge, secret nul", async () => {
+    poser({ ...PRODUCTION, VERCEL_ENV: "preview" });
+
+    const charge = await charger();
+
+    expect(charge.secretTache).toEqual({ secret: null });
+  });
+
+  test("local (tests) sans CRON_SECRET : se charge, secret nul", async () => {
+    poser({ ...BASE, NODE_ENV: "test" });
+
+    const charge = await charger();
+
+    expect(charge.secretTache).toEqual({ secret: null });
   });
 });

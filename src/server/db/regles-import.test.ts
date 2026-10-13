@@ -943,3 +943,202 @@ describe("propriétés interdites dans src/proxy.ts", { timeout: 60_000 }, () =>
     expect(config.rules?.["no-restricted-properties"]?.[0]).toBe(2);
   });
 });
+// U. Tâche quotidienne (8.3) : src/server/taches/ ne s'importe que dans la
+// route src/app/api/taches/[tache]/route.ts et les tests ; db/comptes.ts
+// (purge des comptes non vérifiés) et purgerCompteurs que dans
+// src/server/taches/ et les tests. Chargement dynamique compris. Fiche :
+// docs/features/tache-quotidienne.md, « Règles de sécurité », test 7.
+const TACHES_ALIAS = `import { traiterTache } from "@/server/taches/quotidienne";
+export const GET = traiterTache;
+`;
+const TACHES_RELATIF = `import { ETAPES } from "../taches/etapes";
+export const f = ETAPES;
+`;
+const TACHES_DYNAMIQUE = `export const f = () => import("@/server/taches/quotidienne");
+`;
+const TACHES_REEXPORT = `export { traiterTache } from "@/server/taches/quotidienne";
+`;
+const COMPTES_ALIAS = `import { purgerComptesNonVerifies } from "@/server/db/comptes";
+export const f = purgerComptesNonVerifies;
+`;
+const COMPTES_RELATIF_DB = `import { purgerComptesNonVerifies } from "./comptes";
+export const f = purgerComptesNonVerifies;
+`;
+const COMPTES_RELATIF_REQUETES = `import { purgerComptesNonVerifies } from "../comptes";
+export const f = purgerComptesNonVerifies;
+`;
+const COMPTES_DYNAMIQUE = `export const f = () => import("@/server/db/comptes");
+`;
+const PURGER_ALIAS = `import { purgerCompteurs } from "@/server/debit/debit";
+export const f = purgerCompteurs;
+`;
+const PURGER_RELATIF_ACTIONS = `import { purgerCompteurs } from "../debit/debit";
+export const f = purgerCompteurs;
+`;
+const VERIFIER_DEBIT_ACTION = `import { verifierDebit } from "../debit/debit";
+export const f = verifierDebit;
+`;
+const TACHES_INTERNE = `import { ETAPES } from "./etapes";
+import { secretValide } from "./secret";
+export const f = [ETAPES, secretValide];
+`;
+
+describe(
+  "U. server/taches/ seulement dans sa route ; db/comptes.ts et purgerCompteurs seulement dans server/taches/",
+  { timeout: 60_000 },
+  () => {
+    test.each([
+      ["server/taches/ dans une page", TACHES_ALIAS, "src/app/essai/page.tsx"],
+      [
+        "server/taches/ dans une autre route",
+        TACHES_ALIAS,
+        "src/app/api/autre/route.ts",
+      ],
+      [
+        "server/taches/ dans une action",
+        TACHES_RELATIF,
+        "src/server/actions/essai.ts",
+      ],
+      [
+        "server/taches/ dans un service",
+        TACHES_RELATIF,
+        "src/server/services/essai.ts",
+      ],
+      ["server/taches/ dans auth/", TACHES_RELATIF, "src/server/auth/essai.ts"],
+      [
+        "import dynamique de server/taches/",
+        TACHES_DYNAMIQUE,
+        "src/server/services/essai.ts",
+      ],
+      [
+        "réexportation de server/taches/",
+        TACHES_REEXPORT,
+        "src/server/services/essai.ts",
+      ],
+      [
+        "db/comptes.ts dans un service",
+        COMPTES_ALIAS,
+        "src/server/services/essai.ts",
+      ],
+      [
+        "db/comptes.ts dans une action",
+        COMPTES_ALIAS,
+        "src/server/actions/essai.ts",
+      ],
+      ["db/comptes.ts dans une page", COMPTES_ALIAS, "src/app/essai/page.tsx"],
+      [
+        "db/comptes.ts dans auth/config.ts",
+        COMPTES_ALIAS,
+        "src/server/auth/config.ts",
+      ],
+      [
+        "db/comptes.ts dans un autre fichier de db/",
+        COMPTES_RELATIF_DB,
+        "src/server/db/essai.ts",
+      ],
+      [
+        "db/comptes.ts dans une requête",
+        COMPTES_RELATIF_REQUETES,
+        "src/server/db/requetes/essai.ts",
+      ],
+      [
+        "import dynamique de db/comptes.ts",
+        COMPTES_DYNAMIQUE,
+        "src/server/services/essai.ts",
+      ],
+      [
+        "purgerCompteurs dans un service",
+        PURGER_ALIAS,
+        "src/server/services/essai.ts",
+      ],
+      [
+        "purgerCompteurs dans actions/action.ts",
+        PURGER_RELATIF_ACTIONS,
+        "src/server/actions/action.ts",
+      ],
+      ["purgerCompteurs dans auth/", PURGER_ALIAS, "src/server/auth/essai.ts"],
+      ["purgerCompteurs dans une page", PURGER_ALIAS, "src/app/essai/page.tsx"],
+    ])("%s : refusé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).not.toEqual([]);
+    });
+
+    test.each([
+      [
+        "server/taches/ dans sa route",
+        TACHES_ALIAS,
+        "src/app/api/taches/[tache]/route.ts",
+      ],
+      [
+        "server/taches/ dans un test",
+        TACHES_RELATIF,
+        "src/server/actions/essai.test.ts",
+      ],
+      [
+        "server/taches/ dans un test d'intégration de db/",
+        TACHES_ALIAS,
+        "src/server/db/essai.integration.test.ts",
+      ],
+      [
+        "fichiers de server/taches/ entre eux",
+        TACHES_INTERNE,
+        "src/server/taches/quotidienne.ts",
+      ],
+      [
+        "db/comptes.ts dans server/taches/",
+        COMPTES_ALIAS,
+        "src/server/taches/etapes.ts",
+      ],
+      [
+        "db/comptes.ts dans un test d'intégration de db/",
+        COMPTES_RELATIF_DB,
+        "src/server/db/essai.integration.test.ts",
+      ],
+      [
+        "purgerCompteurs dans server/taches/",
+        PURGER_ALIAS,
+        "src/server/taches/etapes.ts",
+      ],
+      [
+        "purgerCompteurs dans un test",
+        PURGER_ALIAS,
+        "src/server/taches/essai.test.ts",
+      ],
+      [
+        "verifierDebit dans actions/action.ts (inchangé)",
+        VERIFIER_DEBIT_ACTION,
+        "src/server/actions/action.ts",
+      ],
+    ])("%s : autorisé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).toEqual([]);
+    });
+
+    // Un refus de la règle U cite sa fiche : un refus venu d'une autre règle
+    // ne prouverait rien sur U.
+    test.each([
+      [
+        "server/taches/ dans un service",
+        TACHES_RELATIF,
+        "src/server/services/essai.ts",
+      ],
+      [
+        "db/comptes.ts dans un service",
+        COMPTES_ALIAS,
+        "src/server/services/essai.ts",
+      ],
+      [
+        "purgerCompteurs dans un service",
+        PURGER_ALIAS,
+        "src/server/services/essai.ts",
+      ],
+      [
+        "import dynamique de db/comptes.ts",
+        COMPTES_DYNAMIQUE,
+        "src/server/services/essai.ts",
+      ],
+    ])("%s : le refus cite la règle U", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).toEqual(
+        expect.arrayContaining([expect.stringContaining("règle U")]),
+      );
+    });
+  },
+);
