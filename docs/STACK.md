@@ -32,6 +32,7 @@ Ce document liste les outils et services retenus, leur rôle, la raison du choix
 | Base managée | Neon, région de Francfort, trois branches : `production`, `preview`, `dev` | 0,5 Go de stockage et 100 heures de calcul par projet et par mois. Mise en veille après 5 minutes d'inactivité, réveil automatique. 10 branches. Restauration sur 6 heures | Pas de mise en pause prolongée. Une branche de base par prévisualisation (T-74) |
 | Emails | Compte Gmail dédié à l'application, en SMTP (port 465) avec un mot de passe d'application. Branché en production par la PR 2 de la fonctionnalité 0.7 (`docs/features/envoi-emails.md`) | 500 emails par jour et 500 destinataires par email pour un compte personnel ; au-delà, envoi bloqué de 1 à 24 heures (Google, `support.google.com/mail/answer/22839`, consulté le 2026-10-12). Nos limites restent en dessous : 200 par 24 heures pour toute l'application, 40 par organisation | Gratuit, sans nom de domaine. Port 465 ouvert depuis les fonctions de Vercel (port 25 bloqué) |
 | Tâches planifiées | Vercel Cron | Une exécution par jour au plus, précision d'une heure | Aucun service en plus |
+| Mots de passe compromis (S-10) | Have I Been Pwned, service `api.pwnedpasswords.com` (Cloudflare), par l'extension `haveIBeenPwned` de Better Auth, sans dépendance nouvelle. Branché par la fonctionnalité 1.1 (`docs/features/inscription.md`, section 5.2) | Gratuit, sans compte ni clé | Seuls 5 caractères de l'empreinte SHA-1 du mot de passe sont envoyés (anonymat par préfixe). Service injoignable : inscription refusée |
 | Suivi des erreurs | Sentry, **à configurer avec la première fonctionnalité mise en production** | À vérifier à ce moment-là | Identifiant d'incident (S-85) |
 | Dépôt et intégration continue | GitHub | Gratuit pour un dépôt public | Imposé |
 
@@ -56,6 +57,7 @@ Zéro. L'envoi d'emails passe par un compte Gmail gratuit, sans nom de domaine (
 | Neon | Toutes les données | Connexion chiffrée, secrets distincts par environnement |
 | Vercel | Le code, les secrets d'exécution, le trafic | Secrets saisis dans son interface, jamais dans le dépôt |
 | Google (Gmail) | Adresses des destinataires et contenu des emails, avec une copie dans « Messages envoyés » ; les réponses des destinataires | Texte brut, aucune donnée sensible, liens expirables plutôt que pièces jointes ; purge manuelle mensuelle de la boîte (`THREATS.md`, RR-9) |
+| Have I Been Pwned (Cloudflare) | Les 5 premiers caractères hexadécimaux de l'empreinte SHA-1 d'un mot de passe saisi, à l'inscription (puis à la réinitialisation, 1.3), et l'adresse IP du serveur de Vercel | Ni adresse email, ni mot de passe, ni empreinte complète ; remplissage des réponses (`Add-Padding`) ; aucun test n'appelle le service |
 | Sentry | Erreurs et leur contexte technique | Réglé pour ne recevoir aucune donnée personnelle ni secret (S-54) |
 | GitHub | Le code source | Dépôt public : aucun secret, aucune donnée réelle |
 

@@ -1,6 +1,6 @@
 # Fonctionnalité : inscription et vérification de l'email
 
-Statut : brouillon. Fiche rédigée le 2026-10-13 ; les questions ouvertes portent la recommandation de l'assistant, appliquée par défaut (section « Décisions par défaut »), sauf les trois vrais choix de la section « Questions », à trancher par le développeur.
+Statut : validée, PR 1 en cours. Fiche rédigée le 2026-10-13 ; les trois vrais choix tranchés par le développeur le même jour (section « Décisions »), les autres points selon la recommandation de l'assistant (section « Décisions par défaut »). Ordre retenu : PR 1 de cette fiche, puis fiche et PR de la tâche quotidienne (8.3 avancée), puis PR 2.
 
 Jalon 1, fonctionnalité 1.1 de `docs/PLAN.md`. Taille M. Cas d'utilisation : UC-01. Exigences : F-001, S-10, S-11, S-15, S-54, S-55, S-81, S-82, S-85. Menaces : T-07, T-39, T-40, T-41, T-55 ; T-01 et T-43 préparées (limites de Better Auth, connexion en 1.2).
 
@@ -47,7 +47,7 @@ Vue d'ensemble :
 | Liste fermée des points d'entrée | `src/server/auth/points-entree.ts`, `src/app/api/auth/[...all]/route.ts` | Trois points d'entrée ouverts ; tout le reste répond comme une adresse inexistante (T-55) ; origine, taille, schéma Zod, réponses normalisées |
 | Débit de Better Auth | `src/server/debit/better-auth.ts`, `src/server/debit/limites.ts` | `customStorage` sur `compteur_debit`, limites par adresse IP dans `limites.ts` |
 | Emails de compte | `src/server/auth/emails.ts`, `src/server/email/modeles.ts`, `src/textes/emails.ts` | Rappels de Better Auth → limites → `envoyerEmail`, après la réponse |
-| Pages | `src/app/(public)/inscription/`, `src/app/lien/verification/[jeton]/` | Formulaire, « vérifiez votre boîte », confirmation, résultat |
+| Pages | `src/app/(public)/inscription/`, `src/app/lien/verification/` | Formulaire, « vérifiez votre boîte », confirmation, résultat |
 | Purge | `src/server/db/comptes.ts` | Comptes non vérifiés de plus de 7 jours (`THREATS.md` 7.2), appelée par la tâche quotidienne |
 
 ### 1. Le journal de Better Auth (T-39, S-54, S-85)
@@ -73,6 +73,7 @@ export function consignerAuth(niveau: "info" | "warn" | "error" | "debug"): void
 - **Pourquoi pas `disabled: true`** : une panne de la base deviendrait invisible dans le journal du serveur pour les points d'entrée de Better Auth. La ligne fixe garde le signal (« une erreur de Better Auth, à telle heure ») sans aucun contenu.
 - **Pourquoi pas un filtre** (retirer les jetons d'un message) : il faudrait reconnaître toutes les formes de secret et de donnée personnelle, aujourd'hui et après chaque mise à jour. Une liste de ce qu'on garde (le niveau) ne peut pas fuir ce qu'elle ignore.
 - **L'erreur elle-même.** Une erreur de base levée pendant `auth.api.getSession` remonte à notre code (`lireSession`, puis `etablirContexte` ou la chaîne), qui la consigne déjà sans message (`consigner.ts`, 0.6). Pour la route, le gestionnaire attrape toute exception de `auth.handler` et répond 500, corps fixe, identifiant d'incident (section 2.2) : aucune exception ne remonte à Next.js, qui l'écrirait avec son message.
+- **Le routeur `better-call` écrit lui-même l'erreur** (constaté à la mise à jour de la fiche, `node_modules/better-call/dist/router.mjs` ligne 93, version 1.4.0) : quand le gestionnaire d'erreur de Better Auth (`api/index.mjs` lignes 195 à 214) ne renvoie pas de réponse, ce qui est le cas pour toute erreur qui n'est pas une `APIError` (panne de base comprise), le routeur appelle `console.error("# SERVER_ERROR: ", error)` avec l'erreur complète, sans passer par le journal de Better Auth. Retenu : `onAPIError: { throw: true }`. Better Auth relance alors l'erreur ; le routeur rend une `APIError` en réponse et relance toute autre erreur hors d'`auth.handler`, où notre gestionnaire l'attrape (section 2.2, étape 5). Le test 1 passe par `auth.handler` pour couvrir ce chemin.
 
 #### 1.3 La preuve
 
@@ -103,9 +104,9 @@ export const POST = traiterRequeteAuth;
 1. **Point d'entrée.** Méthode et chemin (relatif à `/api/auth`, sans barre finale) cherchés dans `POINTS_ENTREE_OUVERTS`. Absent : réponse **inexistante**, construite par une seule fonction, `reponseInexistante()` (statut 404, corps vide, aucun en-tête propre). Un chemin fermé, une méthode non admise sur un chemin ouvert et un chemin qui n'existe pas reçoivent donc la même réponse, octet pour octet. `auth.handler` n'est pas appelé.
 2. **Origine** (`POST` seulement). `verifierOrigine` de la chaîne (`src/server/actions/origine.ts`) : `Origin` obligatoire, égale à l'origine de `BETTER_AUTH_URL` ; `Sec-Fetch-Site`, s'il est présent, vaut `same-origin`. Refus : 403, corps fixe. Le contrôle de Better Auth (`originCheckMiddleware`) reste actif derrière.
 3. **Taille et type** (`POST`). `Content-Type: application/json` ; corps de 4 Kio au plus, lu une fois. Sinon 400, corps fixe.
-4. **Validation.** Schéma Zod strict du point d'entrée (`src/schemas/compte.ts`). Tout champ non prévu est refusé : `image`, `callbackURL`, `rememberMe` et les champs supplémentaires ne parviennent jamais à Better Auth. Pour `GET /verify-email`, la requête : `token` au format JWT (trois segments `base64url`, 1 024 caractères au plus) et `callbackURL` égal à l'unique valeur fixée par le code. Refus : 400, corps fixe.
-5. **Better Auth.** Une requête neuve est construite avec le corps validé et passée à `auth.handler`. Toute exception est attrapée : 500, corps fixe, identifiant d'incident, ligne au journal technique sans message (section 1.2).
-6. **Réponse normalisée.** Pour `POST`, le corps de Better Auth n'est **jamais** renvoyé tel quel : il est traduit en une réponse de la liste fermée `{ ok: true }` ou `{ ok: false, raison }`, raisons `mot_de_passe_trop_court`, `mot_de_passe_compromis`, `invalide`, `trop_de_requetes`, `erreur`. Les en-têtes de Better Auth ne sont gardés que pour `GET /verify-email` (redirection et `Set-Cookie`). Le 429 de Better Auth devient `trop_de_requetes`, **sans** `X-Retry-After` (décision 2 de la 0.5 : ni délai, ni compte).
+4. **Validation.** Schéma Zod strict du point d'entrée (`src/schemas/compte.ts`). Tout champ non prévu est refusé : `image`, `callbackURL`, `rememberMe` et les champs supplémentaires ne parviennent jamais à Better Auth. Pour `POST /verify-email`, le corps `{ jeton }` : format JWT (trois segments `base64url`, 1 024 caractères au plus). Refus : 400, corps fixe.
+5. **Better Auth.** Une requête neuve est construite avec le corps validé et passée à `auth.handler`. Pour `POST /verify-email`, cette requête interne est un `GET /api/auth/verify-email?token=<jeton>` sans `callbackURL`, construite en mémoire seulement : elle ne traverse aucun réseau et n'apparaît dans aucun journal de requêtes (section 4.3). Elle reprend l'en-tête de l'adresse IP de la requête reçue, pour que la limite `auth.verification` s'applique. Toute exception est attrapée : 500, corps fixe, identifiant d'incident, ligne au journal technique sans message (section 1.2).
+6. **Réponse normalisée.** Pour `POST`, le corps de Better Auth n'est **jamais** renvoyé tel quel : il est traduit en une réponse de la liste fermée `{ ok: true }` ou `{ ok: false, raison }`, raisons `mot_de_passe_trop_court`, `mot_de_passe_compromis`, `invalide`, `trop_de_requetes`, `erreur`. Seuls les en-têtes `Set-Cookie` de `/verify-email` sont gardés ; une vérification refusée par Better Auth (jeton expiré, altéré, utilisateur inconnu) devient `{ ok: false, raison: "lien_invalide" }`. Le 429 de Better Auth devient `trop_de_requetes`, **sans** `X-Retry-After` (décision 2 de la 0.5 : ni délai, ni compte).
 7. **Durée plancher** (`POST /sign-up/email` et `POST /send-verification-email`). La réponse ne part pas avant 800 ms après la réception, quel que soit le chemin suivi (section 4.4, T-07).
 
 #### 2.3 Lesquels restent ouverts, et pourquoi
@@ -113,7 +114,7 @@ export const POST = traiterRequeteAuth;
 | Méthode et chemin | Pourquoi ouvert en 1.1 | Protections propres |
 |---|---|---|
 | `POST /sign-up/email` | UC-01, étapes 1 à 3 : créer le compte, non vérifié | Origine, schéma strict, limite par adresse IP, mots de passe compromis, durée plancher, réponse uniforme |
-| `GET /verify-email` | UC-01, étapes 4 et 5 : marquer l'adresse vérifiée et ouvrir la session. `GET`, car Better Auth n'accepte que cette méthode ; il n'est appelé que par le formulaire de la page `/lien/verification/<jeton>` (section 4.3) | Jeton signé, expiré en 1 heure ; `callbackURL` fixée ; limite par adresse IP |
+| `POST /verify-email` | UC-01, étapes 4 et 5 : marquer l'adresse vérifiée et ouvrir la session. Better Auth n'accepte que `GET`, jeton dans l'adresse : notre gestionnaire reçoit le jeton dans le corps et appelle Better Auth en mémoire (section 2.2, étape 5). `GET /verify-email` reste fermé | Origine, schéma strict, jeton signé expiré en 1 heure, limite par adresse IP |
 | `POST /send-verification-email` | UC-01, erreur 4a : renvoyer un lien expiré | Origine, schéma strict, limite par adresse IP et par destinataire, durée plancher, réponse uniforme |
 
 Tout le reste répond comme une adresse inexistante, et en particulier :
@@ -126,6 +127,8 @@ Tout le reste répond comme une adresse inexistante, et en particulier :
 | `/two-factor/*` | 1.4 |
 | `/list-sessions`, `/revoke-session*` | 1.5 |
 | `/update-user`, `/change-email`, `/change-password`, `/delete-user`, `/ok`, `/error`, `/callback/*`, tout autre | Une fiche qui en a besoin |
+
+**En production, les trois sont fermés jusqu'à la 1.3** (décision 1) : la constante `INSCRIPTION_OUVERTE_EN_PRODUCTION`, à `false` dans `points-entree.ts`, retirée par la PR de la 1.3. Quand `VERCEL_ENV` vaut `production`, chacun reçoit `reponseInexistante()`, la même réponse qu'un chemin fermé, octet pour octet (test dédié). Ouverts en local, en test et en prévisualisation. Aucune variable d'environnement ne change ce choix.
 
 Ouvrir un point d'entrée, c'est ajouter une ligne à `POINTS_ENTREE_OUVERTS` avec sa fiche, son schéma et ses tests, dans la PR de la fonctionnalité.
 
@@ -169,7 +172,7 @@ Le stockage `"memory"` (option B1 de la 0.5) et `"database"` (B2) restent écart
 |---|---|---|---|---|
 | `auth.inscription` | 5 | 1 h | `/sign-up/email` | Comptes en masse (abus de UC-01, T-41) |
 | `auth.renvoi_verification` | 3 | 1 h | `/send-verification-email` | Boîte inondée, épuisement des envois |
-| `auth.verification` | 10 | 10 min | `/verify-email` | Essais de jetons |
+| `auth.verification` | 10 | 10 min | `/verify-email` (appel interne, section 2.2) | Essais de jetons |
 | `auth.defaut` | 30 | 1 min | Tout autre chemin ouvert plus tard | Valeur sûre pour une ouverture future |
 
 S'y ajoute, pour les emails de compte (section 4.2) :
@@ -233,7 +236,7 @@ Les deux rappels vivent dans `src/server/auth/emails.ts`. Chacun :
 1. **Ne fait que planifier** l'envoi par `after()` de Next.js 16 (`node_modules/next/dist/docs/01-app/03-api-reference/04-functions/after.md` : utilisable dans un gestionnaire de route ; sur Vercel, `waitUntil` garde la fonction en vie jusqu'à la fin) et rend la main aussitôt. Better Auth n'attend donc jamais l'échange avec Gmail.
 2. **Ne lève jamais.** Toute erreur est attrapée et consignée sans adresse. C'est indispensable : sur `/send-verification-email`, Better Auth relance l'erreur du rappel (`email-verification.mjs`, `if (error) throw error`), ce qui distinguerait un compte non vérifié d'une adresse inconnue (T-07).
 3. Dans la tâche planifiée, après la réponse : `verifierDebit` de `email.destinataire`, `email.destinataire_jour`, `email.compte`, `email.application`, dans cet ordre, puis `envoyerEmail`. Une limite atteinte arrête l'envoi, sans rien dire au visiteur.
-4. **Ignore `url`** fournie par Better Auth (qui contient la `callbackURL` reçue de la requête) : le lien est construit par la porte, depuis `token` seulement (section 4.3).
+4. **Ignore `url`** fournie par Better Auth (qui contient le jeton dans l'adresse, et la `callbackURL` reçue de la requête) : le lien est construit par la porte, depuis `token` seulement (section 4.3).
 
 `envoyerEmail` et `verifierDebit` sont donc appelés hors de toute transaction : la règle 15 est respectée. Vérifié dans `node_modules` : l'inscription passe par `runWithTransaction` (`sign-up.mjs` ligne 144), mais l'adaptateur Drizzle n'ouvre de transaction que si `transaction: true` (`@better-auth/drizzle-adapter/dist/index.mjs` ligne 559, défaut `false`). Un test de `config.test.ts` fige `transaction` à `false` ; même s'il changeait, l'envoi planifié par `after()` part après la réponse, donc après toute transaction.
 
@@ -242,16 +245,16 @@ Les deux rappels vivent dans `src/server/auth/emails.ts`. Chacun :
 - `envoyerEmail` s'importe dans `src/server/actions/action.ts`, **`src/server/auth/emails.ts`** et les tests. Modification de la règle T dans `eslint.config.mjs`, par la méthode de `CLAUDE.md` (script Python, `chr(92)`, comptage des barres inverses, puis `regles-import.test.ts`).
 - `STRUCTURE.md`, section 7 : `server/auth/` peut importer `server/email/envoi.ts` et `server/debit/` (`emails.ts` seulement), `server/erreurs/` (`journal.ts`).
 
-#### 4.3 Les liens (question 8 de la 0.7)
+#### 4.3 Les liens : jeton dans le fragment (question 8 de la 0.7, décision 3)
 
-Le jeton de vérification de Better Auth 1.7.7 est un JWT signé (`createEmailVerificationToken`, `email-verification.mjs` ligne 14), d'environ 250 caractères, sans état en base. Il ne tient pas dans la brique `jeton` de la 0.7 (43 caractères).
+Le jeton de vérification de Better Auth 1.7.7 est un JWT signé (`createEmailVerificationToken`, `email-verification.mjs` ligne 14), d'environ 250 caractères, sans état en base. Sa charge utile contient l'adresse email, encodée et non chiffrée. Better Auth le met dans l'adresse (`/verify-email?token=...`) : il apparaîtrait dans les journaux de requêtes de Vercel et dans tout journal qui note une adresse (S-54).
 
-Retenu : l'option a de la 0.7, **`/lien/` seulement**, une seule forme de lien contrôlée par la porte :
+Retenu : **le jeton ne figure jamais dans une adresse reçue par le serveur.**
 
-- Nouvelle brique `jetonVerification()` dans `modeles.ts` : trois segments `base64url` séparés par des points, 1 024 caractères au plus. Le type de lien `verification` s'ajoute. La porte construit `<origine de BETTER_AUTH_URL>/lien/verification/<jeton>`.
-- La page `/lien/verification/[jeton]` (zone par lien : ne lit jamais la session) valide le format du jeton et affiche un texte et un bouton « Confirmer mon adresse ». Le bouton est un formulaire HTML `GET` vers `/api/auth/verify-email`, champs cachés `token` et `callbackURL=/inscription/verifiee`. Aucun JavaScript requis.
-- **Pourquoi un bouton, et non une redirection** : les filtres de messagerie et les aperçus de liens ouvrent les liens d'un email. Une redirection automatique ferait consommer la vérification, et ouvrir la session, par le robot du filtre ; l'utilisateur arriverait ensuite sur un compte déjà vérifié, sans session (connexion en 1.2 seulement). Un robot ne soumet pas un formulaire.
-- `/inscription/verifiee` lit le paramètre `error` posé par Better Auth sur une liste fermée (`TOKEN_EXPIRED`, `INVALID_TOKEN`, `USER_NOT_FOUND`) : un seul message pour les trois, « Ce lien n'est plus valable », avec le formulaire de renvoi (UC-01, 4a). Sans erreur : « Adresse vérifiée ».
+- **Lien de l'email** : `<origine de BETTER_AUTH_URL>/lien/verification#<jeton>`. Le fragment (après `#`) n'est jamais envoyé au serveur par un navigateur, ni dans la requête, ni dans `Referer`. La porte le construit : nouvelle fonction `lienFragment(origine, type, jeton)` à côté de `lienPublic`, type `verification`, jeton validé par la nouvelle brique `jetonVerification()` (trois segments `base64url` séparés par des points, 1 024 caractères au plus). Un appelant ne fournit que le jeton : ni l'origine, ni le chemin (T-65, règle 17).
+- **Page `/lien/verification`** (zone par lien : ne lit jamais la session ; PR 2). Composant client : il lit `location.hash`, l'efface aussitôt de la barre d'adresse et de l'historique (`history.replaceState`), vérifie sa forme, et affiche un bouton « Confirmer mon adresse ». Le bouton envoie `POST /api/auth/verify-email` avec `{ jeton }` dans le corps (JSON, `Origin` de la page). Réponse `{ ok: true }` (cookie de session posé) : passage à `/inscription/verifiee`. `lien_invalide` : « Ce lien n'est plus valable », avec le formulaire de renvoi (UC-01, 4a). Sans JavaScript : message fixe (`<noscript>`), rien n'est envoyé. Le serveur rend le même document pour tout fragment, puisqu'il ne le voit pas.
+- **Pourquoi un bouton** : les filtres de messagerie ouvrent les liens d'un email. Une confirmation automatique ferait consommer la vérification, et ouvrir la session, par le robot du filtre. Un robot ne clique pas un bouton qui envoie un `POST`.
+- **Côté serveur** : section 2.2, étape 5. `GET /verify-email` reste fermé : un jeton placé dans une adresse reçoit la réponse inexistante, sans appel à Better Auth (test dédié).
 
 #### 4.4 Uniformité des réponses (T-07, S-11)
 
@@ -280,7 +283,7 @@ Ajoutés à `MODELES_EMAIL`, textes dans `src/textes/emails.ts`, texte brut, phr
 
 #### 4.6 Comptes non vérifiés
 
-- `lireSession` (`src/server/auth/session.ts`) renvoie `null` pour un utilisateur dont `emailVerified` est faux. Aujourd'hui une telle session ne peut pas exister (pas de connexion automatique à l'inscription) ; la règle protège contre un changement de configuration.
+- `lireSession` (`src/server/auth/session.ts`) renvoie `null` pour un utilisateur dont `emailVerified` est faux. Aujourd'hui une telle session ne peut pas exister (pas de connexion automatique à l'inscription) ; la règle protège contre un changement de configuration. Conséquence sur l'outillage : `creerMembre` (`outils-test/membres.ts`) crée désormais un utilisateur à l'adresse vérifiée, comme tout vrai membre ; sans cela, toutes les sessions de test seraient lues comme absentes.
 - `purgerComptesNonVerifies()` (`src/server/db/comptes.ts`) supprime les utilisateurs non vérifiés créés il y a plus de 7 jours (`THREATS.md` 7.2), leurs comptes et sessions suivant par `ON DELETE CASCADE`. Appelée par la tâche quotidienne. Elle touche une table de Better Auth sans `organisation_id` : requête par `db`, dans `src/server/db/`, sans organisation active, comme `db/debit.ts`.
 
 ### 5. Les pages et la validation
@@ -291,8 +294,8 @@ Ajoutés à `MODELES_EMAIL`, textes dans `src/textes/emails.ts`, texte brut, phr
 |---|---|---|
 | `/inscription` | `(public)` | Nom, email, mot de passe ; règles affichées (12 caractères au moins) ; envoi par `fetch` en JSON vers `/api/auth/sign-up/email` (Better Auth n'accepte que `application/json`) ; succès : `/inscription/envoyee` |
 | `/inscription/envoyee` | `(public)` | « Si l'adresse est valable, un email vient de partir », formulaire de renvoi |
-| `/lien/verification/[jeton]` | `lien` | Section 4.3 |
-| `/inscription/verifiee` | `(public)` | Section 4.3 |
+| `/lien/verification` | `lien` | Section 4.3 |
+| `/inscription/verifiee` | `(public)` | « Adresse vérifiée » |
 
 Interface selon `docs/DESIGN-SYSTEM.md` (compétence `interface`), textes dans `src/textes/`, vérifiée à 390 et 1280 px. Le formulaire d'inscription demande JavaScript ; sans lui, il affiche un message fixe (`<noscript>`), aucun envoi.
 
@@ -305,7 +308,12 @@ Interface selon `docs/DESIGN-SYSTEM.md` (compétence `interface`), textes dans `
 - `motDePasse` : 12 à 128 caractères ;
 - objets stricts : tout autre champ refusé.
 
-S-10, mots de passe compromis : extension `haveIBeenPwned()` de Better Auth (`better-auth/plugins`, **aucune dépendance nouvelle**), sur `/sign-up/email` (puis `/reset-password` en 1.3, `/change-password` plus tard). Seuls les 5 premiers caractères hexadécimaux de l'empreinte SHA-1 partent vers `api.pwnedpasswords.com`, avec remplissage (`Add-Padding`). Service injoignable : l'inscription échoue (`erreur`), fermé par défaut. Question 2.
+S-10, mots de passe compromis : extension `haveIBeenPwned()` de Better Auth (`better-auth/plugins`, **aucune dépendance nouvelle**), sur `/sign-up/email` (puis `/reset-password` en 1.3, `/change-password` plus tard). Seuls les 5 premiers caractères hexadécimaux de l'empreinte SHA-1 partent vers `api.pwnedpasswords.com`, avec remplissage (`Add-Padding`). Service injoignable ou réponse en erreur : l'inscription est refusée (`erreur`), fermé par défaut (décision 2). Destinataire extérieur inscrit dans `THREATS.md` 7.5 et `STACK.md`.
+
+**Aucun test n'appelle le vrai service, et aucun interrupteur ne désactive l'extension.** Lu dans `node_modules` : l'extension appelle `betterFetch` (`@better-fetch/fetch`), qui prend `globalThis.fetch` **à chaque appel** (`getFetch`, `dist/index.js` ligne 236). D'où :
+
+- **Vitest** : la garde réseau (`tests/garde-reseau.ts`) remplace `globalThis.fetch` par une version qui lève pour l'hôte `api.pwnedpasswords.com` : un test qui oublie de simuler le service voit l'inscription refusée, jamais un appel réel. Les tests qui en ont besoin simulent la réponse par `vi.stubGlobal("fetch", ...)`, pour cet hôte seulement.
+- **Bout en bout** (PR 2) : `playwright.config.ts` lance chaque serveur avec `NODE_OPTIONS=--import ./e2e/simuler-hibp.mjs`, module de préchargement hors de `src/` qui remplace `globalThis.fetch` pour cet hôte seulement (empreinte d'un mot de passe compromis connu du test : réponse « compromis » ; sinon réponse vide). Rien dans `src/` ne sait qu'il est simulé.
 
 #### 5.3 `Referrer-Policy` et `Origin` (report de la 0.6)
 
@@ -321,7 +329,7 @@ Par le développeur, jamais par l'assistant (`envoi-emails.md`, section 9). L'as
 
 1. **Essai depuis le poste** (étape 4 de la 0.7), au début de la PR 2 : `npm run essai:email` avec le second compte, mot de passe saisi sans écho. Vérifier la réception, `From`, un seul destinataire, `SPF` et `DKIM` en `pass`, la copie dans « Messages envoyés », et toute alerte de Google. **Échec : on s'arrête là.**
 2. **Variables de prévisualisation**, limitées à la branche `feat/1.1-inscription` (champ « Preview Branch » de Vercel), posées seulement quand elle porte la PR 2 : `GMAIL_UTILISATEUR` et `GMAIL_MOT_DE_PASSE_APPLICATION` (second compte, Sensitive), `EMAIL_TRANSPORT=smtp`, `EMAIL_DESTINATAIRES_AUTORISES` (adresse personnelle du développeur).
-3. **Preuve** (étape 8 de la 0.7) : sur la prévisualisation, ouverte par l'adresse du déploiement (section 2.4), s'inscrire avec l'adresse autorisée ; recevoir `compte.verification` ; ouvrir le lien, confirmer ; arriver sur « Adresse vérifiée » avec un cookie de session. Mêmes vérifications qu'au point 1, et surtout les alertes de Google (connexion depuis Francfort, RR-10). Puis une seconde inscription avec la même adresse : `compte.existant` reçu, réponse identique à l'écran.
+3. **Preuve** (étape 8 de la 0.7) : sur la prévisualisation, ouverte par l'adresse du déploiement (section 2.4), s'inscrire avec l'adresse autorisée ; recevoir `compte.verification` ; ouvrir le lien, confirmer ; arriver sur « Adresse vérifiée » avec un cookie de session. Dans les journaux du déploiement, aucune requête ne porte le jeton. Mêmes vérifications qu'au point 1, et surtout les alertes de Google (connexion depuis Francfort, RR-10). Puis une seconde inscription avec la même adresse : `compte.existant` reçu, réponse identique à l'écran.
 4. **Essai de l'adresse IP** (section 3.4) sur le même déploiement.
 5. **Journal** : dans les journaux du déploiement (Vercel, « Logs »), aucune adresse email, aucun jeton, aucune ligne `[Better Auth]` ; seulement les lignes `[auth]` et `[email]` fixes.
 6. **Échec du point 3** : la 1.1 n'est pas fusionnée ; on passe à l'API web de Gmail en HTTPS (`envoi-emails.md`, section 8), par une fiche.
@@ -338,18 +346,21 @@ Résultats notés dans « Notes de l'implémentation ».
 | Inscription par une action serveur appelant `auth.api.signUpEmail`, sans route | La chaîne n'a pas de variante sans session ; la limitation de Better Auth ne s'applique pas aux appels serveur ; la vérification par lien demande de toute façon une route qui pose le cookie. À reconsidérer si une variante « publique » de la chaîne naît |
 | `logger.disabled: true` | Panne de Better Auth invisible au journal du serveur (section 1.2) |
 | Filtre des messages du journal | Une liste d'interdits : fuit toute forme non prévue (section 1.2) |
-| Redirection automatique de `/lien/verification/<jeton>` vers Better Auth | Les robots des messageries consomment la vérification (section 4.3) |
-| Lien `/api/auth/verify-email?...` dans l'email (option b de la 0.7) | Deux formes de lien ; `callbackURL` dans l'email ; aucune protection contre les robots |
+| Jeton dans le chemin (`/lien/verification/<jeton>`) ou dans la requête | L'adresse email encodée et un jeton valable 1 heure dans les journaux de requêtes (décision 3) |
+| Table de jetons opaques | Une table, une migration et une purge pour ce que le fragment obtient sans rien stocker (décision 3) |
+| Confirmation automatique à l'ouverture de la page | Les robots des messageries consomment la vérification (section 4.3) |
+| Lien `/api/auth/verify-email?...` dans l'email (option b de la 0.7) | Jeton dans l'adresse ; `callbackURL` dans l'email ; aucune protection contre les robots |
+| Interrupteur de l'extension Have I Been Pwned pour les tests | Un réglage qui désactive S-10 ; l'interception de `globalThis.fetch` suffit (section 5.2) |
 | Envoi attendu dans le rappel | La durée de réponse dirait si l'adresse a un compte ; une erreur d'envoi remonterait (T-07) |
 | Adresse de branche acceptée sur `preview` | Une variable et un réglage de plus, pour un confort d'essai (section 2.4) |
-| Liste locale de mots de passe compromis | Fichier lourd dans le dépôt, couverture bien moindre (question 2) |
+| Liste locale de mots de passe compromis | Fichier lourd dans le dépôt, couverture bien moindre (décision 2) |
 
 ## Règles de sécurité et permissions
 
 - **S-10** : 12 caractères au moins, 128 au plus, mots de passe compromis refusés (section 5.2).
 - **S-11** : limites par adresse IP sur les trois points d'entrée, par destinataire et globale sur les emails ; réponses et durées uniformes (sections 3 et 4.4).
 - **S-15** : le jeton de vérification est signé, expire en 1 heure, et ne sert qu'une fois en pratique (une adresse déjà vérifiée ne rouvre pas de session). Il n'est pas stocké : rien à hacher. S-15 vise les jetons d'invitation et de réinitialisation (2.3, 1.3).
-- **S-54, S-85** : journal de Better Auth réduit à une ligne fixe (section 1) ; aucune réponse ne contient de message de Better Auth ; aucune adresse dans le journal des emails.
+- **S-54, S-85** : journal de Better Auth réduit à une ligne fixe, erreurs relancées hors de `better-call` (section 1) ; aucune réponse ne contient de message de Better Auth ; aucune adresse dans le journal des emails ; le jeton de vérification, qui contient l'adresse, n'est jamais dans une adresse reçue (section 4.3).
 - **S-55** : `email.compte` et les limites de la 0.7.
 - **S-81** : `verifierOrigine` sur chaque `POST` de `/api/auth`, en plus du contrôle de Better Auth.
 - **S-82** : section 6.
@@ -382,7 +393,9 @@ Aucune. Les tables de Better Auth existent ; `compteur_debit` reçoit de nouvell
 - [ ] Inscription avec une adresse nouvelle et avec une adresse prise : même statut, même corps ; durée de 800 ms au moins dans les deux cas ; email `compte.verification` ou `compte.existant` selon le cas (T-07, UC-01 3a).
 - [ ] Mot de passe de 11 caractères, ou compromis : refusé avec la raison (UC-01 2a).
 - [ ] La sixième inscription en une heure depuis une même adresse IP reçoit `trop_de_requetes`, sans `X-Retry-After` ; aucune adresse IP en clair dans `compteur_debit`.
-- [ ] Le lien de vérification a la forme `<origine>/lien/verification/<jeton>` ; la page confirme par un bouton ; la vérification ouvre une session dont le cookie est `HttpOnly` et `SameSite=Lax`.
+- [ ] Le lien de vérification a la forme `<origine>/lien/verification#<jeton>` ; `GET /api/auth/verify-email?token=...` répond comme un chemin fermé ; la page confirme par un bouton qui envoie le jeton dans le corps ; la vérification ouvre une session dont le cookie est `HttpOnly` et `SameSite=Lax`.
+- [ ] En production (`VERCEL_ENV=production`), les trois points d'entrée répondent comme un chemin fermé, octet pour octet (décision 1).
+- [ ] Have I Been Pwned injoignable ou en erreur : inscription refusée ; aucun test n'appelle le vrai service (décision 2).
 - [ ] Un lien expiré ou altéré mène à « Ce lien n'est plus valable » et au renvoi (UC-01 4a) ; un lien déjà utilisé n'ouvre pas de nouvelle session.
 - [ ] Une session d'utilisateur non vérifié est lue comme absente.
 - [ ] `envoyerEmail` n'est importable que par `action.ts`, `auth/emails.ts` et les tests (règle T) ; aucune limite n'est écrite hors de `limites.ts`.
@@ -397,7 +410,7 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 11 relèven
 
 1. [ ] **T-39, journal** — `src/server/auth/journal.attaque.test.ts` (sans base, base injoignable) : section 1.3, test 1, avec son témoin.
 2. [ ] **T-55, liste fermée** — `src/server/auth/points-entree.attaque.test.ts` : pour chaque point d'entrée de `auth.api`, méthode et chemin, `traiterRequeteAuth` renvoie `reponseInexistante()` sauf les trois ouverts ; chaque point d'entrée `/organization/*` déclaré par l'instance est nommé dans le rapport d'échec ; méthode non admise sur un chemin ouvert, chemin avec barre finale, encodé (`%2F`), en majuscules, avec `..` : même réponse, octet pour octet, que `/api/auth/n-existe-pas` ; `auth.handler` n'est jamais appelé (espion).
-3. [ ] **Origine et entrée falsifiée** — même fichier : `Origin` absente, étrangère, `null`, `Sec-Fetch-Site: cross-site` ; `Content-Type` autre ; corps de 4 Kio + 1 ; JSON invalide ; champs `image`, `callbackURL`, `rememberMe`, champ inconnu ; `callbackURL` de `verify-email` autre que la valeur fixée ; jeton hors format. Refus, `auth.handler` jamais appelé.
+3. [ ] **Origine et entrée falsifiée** — même fichier : `Origin` absente, étrangère, `null`, `Sec-Fetch-Site: cross-site` ; `Content-Type` autre ; corps de 4 Kio + 1 ; JSON invalide ; champs `image`, `callbackURL`, `rememberMe`, champ inconnu ; jeton de `verify-email` hors format ou dans la requête plutôt que le corps. Refus, `auth.handler` jamais appelé.
 4. [ ] **Configuration** — `src/server/auth/config.test.ts`, ajouts : `logger.log` est `consignerAuth` ; `rateLimit.enabled` vaut `true`, `customStorage` est `stockageBetterAuth`, règles construites depuis `LIMITES` ; `ipAddressHeaders` vaut `["x-forwarded-for"]` ; `requireEmailVerification`, `sendOnSignUp`, `autoSignInAfterVerification` vrais, `expiresIn` 3600 ; `minPasswordLength` 12 ; extension `have-i-been-pwned` présente ; `trustedOrigins` absent ; adaptateur sans transaction ; attributs des cookies pour une `baseURL` en `https`.
 5. [ ] **Stockage du débit** — `src/server/debit/better-auth.test.ts` (compteur factice) : clé HMAC, adresse absente de la clé ; règle inconnue refusée ; `allowed` à la limite et au-delà ; `retryAfter` nul ; erreur du compteur propagée. `limites.test.ts` : chaque limite `auth.*` sous 24 h, `par: "adresse_ip"` ; `reglesBetterAuth()` couvre exactement les chemins ouverts.
 6. [ ] **Adresse IP** — `src/server/debit/adresse-ip-better-auth.test.ts` : comportement de `getIP` de la version installée (valeur unique, liste refusée, valeur invalide refusée, IPv6 normalisée, absente en production).
@@ -406,16 +419,19 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 11 relèven
 9. [ ] **Règle T** — `regles-import.test.ts` : `envoyerEmail` importable dans `auth/emails.ts`, refusé ailleurs dans `auth/` et dans `app/`.
 10. [ ] **Session non vérifiée** — `session.test.ts` : `emailVerified` faux, `lireSession` renvoie `null`.
 11. [ ] **Durée plancher** — `points-entree.test.ts`, horloge simulée : réponse rapide retenue jusqu'à 800 ms ; réponse lente non retardée davantage.
+11a. [ ] **Inscription fermée en production** — `points-entree.attaque.test.ts` : avec `estProduction` vrai, les trois `POST` reçoivent exactement `reponseInexistante()` (statut, en-têtes, corps), comme `/api/auth/n-existe-pas` ; `auth.handler` jamais appelé ; témoin : `estProduction` faux, ils sont ouverts.
+11b. [ ] **Jeton jamais dans l'adresse reçue** — `points-entree.attaque.test.ts` et `modeles.test.ts` : le lien construit par la porte n'a pas le jeton avant `#` ; `GET /verify-email?token=<jeton valide>` reçoit `reponseInexistante()` sans appel à Better Auth ; `POST /verify-email` avec le jeton dans le corps est transmis.
+11c. [ ] **Have I Been Pwned indisponible** — `src/server/auth/mots-de-passe.attaque.test.ts` (instance sur base injoignable, transport `memoire`) : `fetch` simulé qui lève, puis qui répond 503 : inscription refusée, raison `erreur` ; la garde réseau refuse un appel non simulé vers `api.pwnedpasswords.com`.
 
 ### Tests d'intégration, avec base (PR 1)
 
 - [ ] `src/server/debit/better-auth.integration.test.ts` : six `consume` pour une même clé et la règle `auth.inscription` : le sixième refusé ; ligne de `compteur_debit` sans l'adresse en clair ; nettoyage des clés.
 - [ ] `src/server/db/comptes.integration.test.ts` : `purgerComptesNonVerifies` supprime un non vérifié de 8 jours, garde un non vérifié de 6 jours et un vérifié de 8 jours ; sessions et comptes suivent.
-- [ ] `src/server/auth/inscription.integration.test.ts` (par `traiterRequeteAuth`, transport `memoire`, planificateur synchrone, recherche de mots de passe compromis simulée) : adresse nouvelle puis prise, réponses identiques, bon modèle chacun ; vérification par le jeton reçu : `emailVerified` vrai, `Set-Cookie` présent ; second usage : aucune nouvelle session ; jeton expiré : redirection avec `error=TOKEN_EXPIRED`. Nettoyage par `nettoyerMembres` (utilisateurs `test-<uuid>@exemple.test`).
+- [ ] `src/server/auth/inscription.integration.test.ts` (par `traiterRequeteAuth`, transport `memoire`, planificateur synchrone, recherche de mots de passe compromis simulée) : adresse nouvelle puis prise, réponses identiques, bon modèle chacun ; vérification par `POST /verify-email` avec le jeton reçu : `emailVerified` vrai, `Set-Cookie` présent ; second usage : aucune nouvelle session ; jeton expiré : `lien_invalide`. Nettoyage par `nettoyerMembres` (utilisateurs `test-<uuid>@exemple.test`).
 
 ### Tests de bout en bout (PR 2)
 
-12. [ ] **Parcours UC-01** — `e2e/inscription.spec.ts` (ordinateur-1280 et mobile-390) : formulaire, `/inscription/envoyee`, lecture de l'email dans le dossier du transport `fichier`, ouverture du lien, bouton, « Adresse vérifiée », cookie `HttpOnly` et `SameSite=Lax` ; la requête porte `Origin` (section 5.3). Chaque test pose un `X-Forwarded-For` propre (en local, accepté), pour ne pas épuiser `auth.inscription`. Adresses `e2e-<uuid>@exemple.invalid`, supprimées en fin de suite.
+12. [ ] **Parcours UC-01** — `e2e/inscription.spec.ts` (ordinateur-1280 et mobile-390) : formulaire, `/inscription/envoyee`, lecture de l'email dans le dossier du transport `fichier`, ouverture du lien, fragment effacé de la barre d'adresse, bouton, « Adresse vérifiée », aucune requête du navigateur ne porte le jeton dans son adresse, cookie `HttpOnly` et `SameSite=Lax` ; la requête porte `Origin` (section 5.3). Chaque test pose un `X-Forwarded-For` propre (en local, accepté), pour ne pas épuiser `auth.inscription`. Adresses `e2e-<uuid>@exemple.invalid`, supprimées en fin de suite.
 13. [ ] **T-07 en bout en bout** — même fichier : adresse prise et adresse nouvelle, même écran, même corps de réponse.
 14. [ ] **T-55 sur le site construit** — `e2e/auth.attaque.spec.ts` : `GET` et `POST` sur des chemins fermés, dont `/organization/update-member-role`, `/sign-in/email`, `/get-session` : réponse identique à `/api/auth/n-existe-pas`.
 15. [ ] **T-39 sur le site construit** — `e2e/erreurs.attaque.spec.ts` : section 1.3, test 2.
@@ -441,13 +457,17 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 11 relèven
 | `src/server/db/outils-test/panne.ts` | Nouveau : base injoignable pour les tests |
 | `src/schemas/compte.ts` | Nouveau : schémas des trois points d'entrée et du formulaire |
 | `src/app/api/auth/[...all]/route.ts` | Nouveau (PR 2) |
-| `src/app/(public)/inscription/**`, `src/app/lien/verification/[jeton]/page.tsx` | Nouveaux (PR 2) |
+| `src/app/(public)/inscription/**`, `src/app/lien/verification/page.tsx` | Nouveaux (PR 2) |
+| `tests/garde-reseau.ts` | Refus de `api.pwnedpasswords.com` sous Vitest |
+| `e2e/simuler-hibp.mjs` | Nouveau (PR 2) : interception de Have I Been Pwned pour les serveurs de bout en bout |
+| `src/server/db/outils-test/membres.ts` | `creerMembre` crée un utilisateur à l'adresse vérifiée (section 4.6) |
 | `src/textes/compte.ts` | Nouveau : textes des pages |
 | `eslint.config.mjs` | Règle T |
 | `src/server/actions/inventaire.test.ts` | Forme exacte de `route.ts` |
 | `playwright.config.ts`, `e2e/lancer-serveur-panne.mjs`, `e2e/*.spec.ts` | Sortie du serveur en panne dans un fichier ; nouveaux tests |
 | `scripts/controle-deploiement.mjs` | Contrôle T-55 |
-| `docs/DESIGN.md` 3.1, `docs/STRUCTURE.md` 2, 3 et 7, `docs/CONFIGURATION.md`, `docs/THREATS.md` 7.5 et 10.4, `docs/SPEC.md` 8.5, `docs/EXCEPTIONS-SECURITE.md` | Mises à jour (PR 2), selon les décisions |
+| `docs/THREATS.md` 7.5, `docs/STACK.md` | Have I Been Pwned, destinataire extérieur (PR 1, décision 2) |
+| `docs/DESIGN.md` 3.1, `docs/STRUCTURE.md` 2, 3 et 7, `docs/CONFIGURATION.md`, `docs/THREATS.md` 10.4 | Mises à jour (PR 2) |
 
 ## Reporté
 
@@ -459,27 +479,23 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 11 relèven
 ## Limites connues
 
 - **Pré-appropriation d'une adresse.** Quelqu'un peut créer un compte non vérifié avec l'adresse d'un autre. Le vrai titulaire reçoit `compte.existant` à sa propre inscription, et ne peut rien faire avant la 1.3 (réinitialisation) ou la purge à 7 jours. Le compte usurpé ne donne aucun accès : il n'est jamais vérifié sans la boîte de la victime.
-- **Jeton dans l'adresse.** Le JWT de vérification contient l'adresse email, encodée et non chiffrée, et figure dans le chemin `/lien/verification/<jeton>` puis dans la requête `/api/auth/verify-email?token=...`. Il apparaît donc dans les journaux de requêtes de Vercel (accès du seul développeur) et dans l'historique du navigateur. Valable une heure. Question 3.
+- **Jeton dans le fragment.** Il reste lisible dans l'email lui-même, dans « Messages envoyés » du compte d'envoi (RR-9), et par un script de la page `/lien/verification` (aucun script tiers, politique de sécurité du contenu stricte). La page l'efface de l'historique dès sa lecture.
+- **Page de vérification sans JavaScript** : impossible de confirmer ; message fixe.
 - **Durée au-delà du plancher.** Une base lente, ou un hachage plus long que 800 ms, rend de nouveau l'écart observable (T-07). Accepté : bruit du réseau, et limite de 5 essais par heure et par adresse IP.
 - **Copie dans « Messages envoyés ».** Chaque lien de vérification y reste (RR-9) : quiconque lit cette boîte dans l'heure peut vérifier un compte et ouvrir sa session. Purge manuelle mensuelle ; liens d'une heure.
-- **Recherche de mots de passe compromis.** Dépend d'un service tiers ; injoignable, l'inscription échoue.
+- **Recherche de mots de passe compromis.** Dépend d'un service tiers ; injoignable, l'inscription est refusée (décision 2).
 - **Plusieurs adresses IP.** La limite par adresse IP ne freine pas un attaquant qui en a beaucoup ; `email.compte` (100 par 24 h) borne alors les emails, au prix de bloquer les inscriptions de tous jusqu'à la fin de la fenêtre.
 - **Adresse de branche** : l'inscription y est refusée (section 2.4).
 
-## Questions (les trois vrais choix)
+## Décisions
 
-1. **Inscription ouverte en production dès la fusion de la PR 2 ?** (sécurité, coût)
-   - a. Oui. Toute personne peut s'inscrire en production ; le compte d'envoi de production écrit à des adresses inconnues.
-   - b. **Non, jusqu'à la 1.3.** `POST /sign-up/email` et `POST /send-verification-email` fermés quand `VERCEL_ENV === "production"`, par une constante du code dans `points-entree.ts` (aucune variable), retirée par la PR de la 1.3. Ouverts en local, en test et en prévisualisation (où la porte n'écrit qu'aux adresses autorisées).
-   - **Recommandation : b.** `PLAN.md` exclut de vrais utilisateurs avant la 7.4 : l'ouverture n'apporte rien en production avant la fin du jalon 1, et expose le seul compte Gmail de production à des inscriptions vers des adresses inexistantes (non-remises, blocage de 24 h, RR-10), et un titulaire usurpé à une impasse sans réinitialisation (« Limites connues »). La preuve de la section 7 se fait sur la prévisualisation de toute façon.
-2. **Mots de passe compromis par Have I Been Pwned ?** (sécurité, donnée envoyée à un tiers)
-   - a. **Extension `haveIBeenPwned` de Better Auth**, fermée par défaut si le service ne répond pas. Nouveau destinataire extérieur dans `THREATS.md` 7.5 : Cloudflare (service `api.pwnedpasswords.com`), 5 caractères d'empreinte, sans adresse ni mot de passe. Sous Vitest, réponse simulée ; les tests de bout en bout (local et CI) appellent le vrai service.
-   - b. Liste locale des mots de passe les plus courants (quelques dizaines de milliers), dans le dépôt : aucun appel externe, couverture bien moindre.
-   - **Recommandation : a.** C'est l'esprit de S-10 (« listes de mots de passe compromis ») ; l'anonymat par préfixe ne fait rien sortir d'exploitable.
-3. **Jeton de vérification dans l'adresse, avec l'email encodé dedans ?** (S-54)
-   - a. **Accepter**, et l'inscrire dans `docs/EXCEPTIONS-SECURITE.md` : le JWT de Better Auth reste dans le chemin `/lien/verification/` et la requête de vérification ; journaux de requêtes de Vercel lisibles du seul développeur, jeton d'une heure.
-   - b. Jeton opaque : une table de correspondance (jeton aléatoire de 43 caractères, haché, vers le JWT), une migration, une purge. L'adresse ne paraît plus dans aucune adresse web.
-   - **Recommandation : a.** Le risque est faible et borné dans le temps ; b ajoute une table et une migration à une fonctionnalité déjà de taille M. À revoir si un service de suivi tiers (8.1) reçoit un jour les adresses des requêtes.
+Prises par le développeur le 2026-10-13, sur les trois vrais choix de la fiche.
+
+1. **Inscription fermée en production jusqu'à la 1.3**, par une constante du code (`INSCRIPTION_OUVERTE_EN_PRODUCTION`), jamais une variable d'environnement. Ouverte en prévisualisation et en local. Fermée : la même réponse qu'un chemin fermé, octet pour octet, prouvée par un test (section 2.3).
+2. **Have I Been Pwned** : oui, extension intégrée, refus si le service ne répond pas. Aucun test n'appelle le vrai service ; interception de `globalThis.fetch` sous Vitest et en bout en bout ; aucun interrupteur de désactivation (section 5.2). Destinataire inscrit dans `THREATS.md` 7.5 et `STACK.md`.
+3. **Jeton dans le fragment** : `/lien/verification#<jeton>` ; le serveur ne le voit jamais dans une adresse ; la page le lit et l'envoie dans le corps du `POST` du bouton de confirmation. Pas d'exception de sécurité, pas de table (section 4.3). Vérifié avant de l'écrire : aucune règle écrite ne l'interdit. La règle 17 et T-65 exigent un lien construit par la porte depuis un jeton, sur l'origine de l'application et sous `/lien/` : c'est le cas.
+
+Ordre retenu : PR 1 maintenant, puis fiche et PR de la tâche quotidienne (8.3 avancée), puis PR 2.
 
 ## Décisions par défaut
 
@@ -494,13 +510,14 @@ Appliquées par l'assistant le 2026-10-13, selon sa recommandation, sauf avis co
 7. **En-tête de l'adresse IP** : `x-forwarded-for`, valeur unique, à confirmer sur `preview` ; repli `x-real-ip` (section 3.4).
 8. **Toutes les tentatives comptent** ; `DESIGN.md` 3.1 corrigée (section 3.5).
 9. **Envoi après la réponse** par `after()`, rappels qui ne lèvent jamais (section 4.1).
-10. **Liens** : `/lien/verification/<jeton>`, page à bouton, formulaire `GET` sans JavaScript (section 4.3).
+10. **Liens** : remplacée par la décision 3.
 11. **Durée plancher** : 800 ms sur les deux `POST` (section 4.4).
 12. **Connexion automatique après vérification** : oui, comme UC-01 étape 5 ; jeton d'une heure.
 13. **Purge des comptes non vérifiés** à 7 jours, par la tâche quotidienne (section 4.6).
 14. **`@axe-core/playwright`** : toujours pas (aucune dépendance nouvelle) ; la règle Q et la vérification à 390 et 1280 px restent.
 15. **Découpage** : deux PR, la première sans exposition (« Découpage en PR »).
 16. **Évènements de compte** : rien au journal d'audit, rien de plus au journal technique que les lignes fixes ; lieu tranché en 1.2.
+17. **`onAPIError: { throw: true }`** : aucune erreur écrite par `better-call` (section 1.2).
 
 ## Notes de l'implémentation
 
