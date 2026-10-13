@@ -26,6 +26,9 @@ const MEMOIRE = "src/server/modules/email/memoire.ts";
 const ACTION = "src/server/actions/action.ts";
 const SERVICE = "src/server/services/essai.ts";
 const CONFIG_AUTH = "src/server/auth/config.ts";
+// 1.1 : les rappels d'envoi de Better Auth (docs/features/inscription.md,
+// section 4.2).
+const EMAILS_AUTH = "src/server/auth/emails.ts";
 const PAGE = "src/app/essai/page.tsx";
 const ENV_SCHEMA = "src/server/env-schema.ts";
 
@@ -116,12 +119,17 @@ describe(
       ["page", ALIAS, PAGE],
       ["configuration de Better Auth, avant la 1.1", ALIAS, CONFIG_AUTH],
       ["autre fichier de actions/", RELATIF_ACTION, "src/server/actions/exposer.ts"],
+      ["autre fichier de auth/ (session)", ALIAS, "src/server/auth/session.ts"],
+      ["autre fichier de auth/ (points d'entrée)", ALIAS, "src/server/auth/points-entree.ts"],
+      ["page de l'inscription", ALIAS, "src/app/(public)/inscription/page.tsx"],
     ])("%s : refusé", async (_nom, code, fichier) => {
       expect(await refusT(code, fichier)).not.toEqual([]);
     });
 
     test.each([
       ["actions/action.ts", RELATIF_ACTION, ACTION],
+      ["auth/emails.ts, rappels de Better Auth (1.1)", ALIAS, EMAILS_AUTH],
+      ["auth/emails.ts, chemin relatif (1.1)", RELATIF_ACTION, EMAILS_AUTH],
       ["test de actions/", RELATIF_ACTION, "src/server/actions/action-email.test.ts"],
       ["test d'intégration de db/", ALIAS, "src/server/db/chaine-email.integration.test.ts"],
       ["types seulement, depuis un service", TYPES, SERVICE],

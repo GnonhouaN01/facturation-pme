@@ -277,7 +277,7 @@ Date de naissance, pièce d'identité, données bancaires des clients, géolocal
 
 ### 7.5 Destinataires extérieurs
 
-Les données ne quittent l'application que vers l'hébergeur, le fournisseur de base de données, le service d'envoi d'emails et, à terme, la plateforme de certification.
+Les données ne quittent l'application que vers l'hébergeur, le fournisseur de base de données, le service d'envoi d'emails, le service de vérification des mots de passe compromis (un préfixe d'empreinte, jamais le mot de passe) et, à terme, la plateforme de certification.
 
 | Destinataire | Rôle | Hébergement |
 |---|---|---|
@@ -285,6 +285,7 @@ Les données ne quittent l'application que vers l'hébergeur, le fournisseur de 
 | Vercel | Serveur applicatif | Allemagne (Francfort) pour les fonctions. Les pages statiques sont distribuées par un réseau mondial |
 | GitHub | Code source, sans secret ni donnée réelle | États-Unis |
 | Google (Gmail), compte d'envoi dédié | Adresses des destinataires et contenu des emails (texte brut, sans donnée sensible), copie dans « Messages envoyés », réponses des destinataires | États-Unis et réseau mondial de Google, à confirmer |
+| Have I Been Pwned (service de Cloudflare), vérification des mots de passe compromis (S-10, fonctionnalité 1.1) | Les 5 premiers caractères de l'empreinte SHA-1 d'un mot de passe saisi, sans adresse email ni autre donnée du compte | Réseau mondial de Cloudflare |
 | Sentry | Non encore configuré | À relever lors de sa mise en place |
 
 ---

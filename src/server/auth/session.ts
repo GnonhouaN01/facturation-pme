@@ -8,10 +8,11 @@ import { auth } from "./config";
 // Le cache de session dans un cookie est désactivé (défaut) : la session est
 // relue en base à chaque appel. Cookie absent, falsifié, jeton inconnu ou
 // session expirée : null. Fiche : docs/features/chaine-controles.md,
-// section 5, étape 2.
+// section 5, étape 2. Un utilisateur dont l'adresse n'est pas vérifiée n'a
+// pas de session (F-001, docs/features/inscription.md, section 4.6).
 export async function lireSession(entetes: Headers): Promise<SessionLue | null> {
   const lue = await auth.api.getSession({ headers: entetes });
-  if (!lue) return null;
+  if (!lue || lue.user.emailVerified !== true) return null;
   return {
     utilisateurId: lue.user.id,
     organisationActiveId: lue.session.activeOrganizationId ?? null,

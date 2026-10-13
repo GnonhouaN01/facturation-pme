@@ -9,7 +9,7 @@ import { DROITS, perimetre, peut, ROLES, type Droit, type Role } from "../autori
 import { executerDansOrganisation, type TransactionOrganisation } from "../db/client";
 import { lireAdhesion } from "../db/requetes/adhesions";
 import { verifierDebit } from "../debit/debit";
-import { LIMITES, type NomLimite } from "../debit/limites";
+import { LIMITES, VALEUR_APPLICATION, type NomLimite } from "../debit/limites";
 import { adressePourCompteur } from "../email/adresse";
 import {
   envoyerEmail,
@@ -282,9 +282,6 @@ function classeErreur(erreur: unknown): string {
   if (!(erreur instanceof Error)) return typeof erreur;
   return CLASSE.test(erreur.name) ? erreur.name : "inconnue";
 }
-
-// Valeur de la clé du compteur « application » : un seul compte d'envoi.
-const VALEUR_APPLICATION = "gmail";
 
 export function creerChaine(dependances: DependancesChaine): Chaine {
   // Étapes 2 à 6 de la section 5, puis travail dans la transaction. Un refus

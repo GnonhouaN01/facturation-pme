@@ -51,3 +51,42 @@ net.Socket.prototype.connect = garder(net.Socket.prototype.connect);
 
 // Les imports « import * as net from "node:net" » voient les fonctions gardées.
 syncBuiltinESMExports();
+
+// Have I Been Pwned (S-10, fonctionnalité 1.1) : aucun test n'appelle le vrai
+// service. L'extension de Better Auth prend globalThis.fetch à chaque appel
+// (@better-fetch/fetch) : un appel non simulé vers cet hôte lève ici, et
+// l'inscription est refusée, jamais acceptée par un appel réel. Un test qui a
+// besoin du service le simule par vi.stubGlobal("fetch", ...). Fiche :
+// docs/features/inscription.md, section 5.2.
+const HOTES_REFUSES = new Set(["api.pwnedpasswords.com"]);
+
+class ServiceExterneRefuse extends Error {
+  constructor() {
+    super("Garde réseau : appel vers un service externe refusé pendant les tests.");
+    this.name = "ServiceExterneRefuse";
+  }
+}
+
+function hoteDemande(entree: unknown): string | null {
+  try {
+    if (entree instanceof Request) return new URL(entree.url).hostname;
+    if (entree instanceof URL) return entree.hostname;
+    if (typeof entree === "string") return new URL(entree).hostname;
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+const fetchOrigine = globalThis.fetch;
+const fetchGarde = Object.assign(
+  function (...args: Parameters<typeof fetch>): ReturnType<typeof fetch> {
+    const hote = hoteDemande(args[0]);
+    if (hote !== null && HOTES_REFUSES.has(hote)) {
+      return Promise.reject(new ServiceExterneRefuse());
+    }
+    return fetchOrigine(...args);
+  },
+  { gardeReseau: true },
+);
+globalThis.fetch = fetchGarde as typeof fetch;
