@@ -10,8 +10,11 @@ import {
   LONGUEUR_JETON,
   LONGUEUR_MAX_CORPS,
   ligneEnTete,
+  lienFragment,
   lienPublic,
+  LONGUEUR_MAX_JETON_VERIFICATION,
   MODELES_EMAIL,
+  MOTIF_JETON_VERIFICATION,
   type ModeleEmail,
 } from "./modeles";
 
@@ -25,6 +28,11 @@ const ORIGINE = "https://facturation.exemple.invalid";
 // exemple ne compile pas, et ce fichier le teste avec les autres.
 const EXEMPLES = {
   "essai.verification_envoi": {},
+  "compte.verification": {
+    jeton:
+      "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6ImF3YUBleGVtcGxlLmludmFsaWQifQ.c2lnbmF0dXJlLWZhY3RpY2U",
+  },
+  "compte.existant": {},
 } as const satisfies Record<ModeleEmail, Record<string, unknown>>;
 
 const NOMS = Object.keys(MODELES_EMAIL) as ModeleEmail[];
@@ -43,8 +51,10 @@ function jeton(): string {
 }
 
 describe("la liste fermée", () => {
-  test("0.7 : un seul modèle, essai.verification_envoi (section 4)", () => {
-    expect(NOMS).toEqual(["essai.verification_envoi"]);
+  // 0.7 : un seul modèle. 1.1 : les deux emails de compte
+  // (docs/features/inscription.md, section 4.5).
+  test("1.1 : trois modèles, l'essai et les deux emails de compte", () => {
+    expect(NOMS).toEqual(["essai.verification_envoi", "compte.verification", "compte.existant"]);
   });
 
   test.each(NOMS)("%s : nom au format domaine.action", (nom) => {
@@ -63,6 +73,13 @@ describe("paramètres : schéma strict, briques admises seulement", () => {
     if (propriete.type === "boolean") return "booleen";
     if (propriete.type === "string" && propriete.pattern === `^[A-Za-z0-9_-]{${LONGUEUR_JETON}}$`) {
       return "jeton";
+    }
+    if (
+      propriete.type === "string" &&
+      propriete.pattern === MOTIF_JETON_VERIFICATION &&
+      propriete.maxLength === LONGUEUR_MAX_JETON_VERIFICATION
+    ) {
+      return "jetonVerification";
     }
     if (
       propriete.type === "string" &&
@@ -119,6 +136,7 @@ describe("paramètres : schéma strict, briques admises seulement", () => {
       entier: briques.entier(),
       booleen: briques.booleen(),
       jeton: briques.jeton(),
+      jetonVerification: briques.jetonVerification(),
       texte: briques.texteAffichable(80),
     };
     for (const [nom, schema] of Object.entries(admises)) {
@@ -260,5 +278,102 @@ describe("lienPublic (T-65) : toujours <origine>/lien/<type>/<jeton>", () => {
     const valide = jeton();
     expect(lienPublic(ORIGINE, "devis", valide)).toBe(`${ORIGINE}/lien/devis/${valide}`);
     expect(() => lienPublic(ORIGINE, type, jeton())).toThrow();
+  });
+});
+
+// Jeton de vérification de Better Auth (un JWT) et lien en fragment : le
+// jeton ne figure jamais dans une adresse reçue par le serveur (décision 3).
+// Fiche : docs/features/inscription.md, section 4.3.
+const JWT =
+  "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6ImF3YUBleGVtcGxlLmludmFsaWQifQ.c2lnbmF0dXJlLWZhY3RpY2U";
+
+describe("jetonVerification : un JWT, trois segments base64url", () => {
+  test("forme admise, et longueur maximale", () => {
+    const schema = briques.jetonVerification();
+    expect(schema.safeParse(JWT).success).toBe(true);
+    expect(LONGUEUR_MAX_JETON_VERIFICATION).toBe(1024);
+    const long = `${"a".repeat(500)}.${"b".repeat(400)}.${"c".repeat(1024 - 902)}`;
+    expect(long).toHaveLength(1024);
+    expect(schema.safeParse(long).success).toBe(true);
+    expect(schema.safeParse(`${long}c`).success).toBe(false);
+  });
+
+  test.each([
+    ["deux segments", "aaa.bbb"],
+    ["quatre segments", "aaa.bbb.ccc.ddd"],
+    ["segment vide", "aaa..ccc"],
+    [
+      "retour à la ligne",
+      `${JWT}
+`,
+    ],
+    ["espace", `${JWT} `],
+    ["barre oblique", "aaa.b/b.ccc"],
+    ["plus", "aaa.b+b.ccc"],
+    ["égal", "aaa.bbb.ccc="],
+    ["dièse", "aaa.bbb.c#c"],
+    ["adresse", "https://attaquant.invalid/a.b"],
+  ])("refusé : %s", (_nom, valeur) => {
+    expect(briques.jetonVerification().safeParse(valeur).success).toBe(false);
+  });
+});
+
+describe("lienFragment (T-65, décision 3) : <origine>/lien/<type>#<jeton>", () => {
+  test("forme produite", () => {
+    expect(lienFragment(ORIGINE, "verification", JWT)).toBe(`${ORIGINE}/lien/verification#${JWT}`);
+  });
+
+  test("le jeton n'est ni dans le chemin ni dans la requête : seulement dans le fragment", () => {
+    const lien = new URL(lienFragment(ORIGINE, "verification", JWT));
+    expect(lien.origin).toBe(ORIGINE);
+    expect(lien.pathname).toBe("/lien/verification");
+    expect(lien.search).toBe("");
+    expect(lien.hash).toBe(`#${JWT}`);
+    // Ce qu'un navigateur envoie au serveur : origine, chemin et requête.
+    expect(`${lien.origin}${lien.pathname}${lien.search}`).not.toContain(JWT.slice(0, 20));
+  });
+
+  test("seule l'origine de l'adresse de configuration est gardée", () => {
+    expect(lienFragment(`${ORIGINE}/un/chemin?x=1#y`, "verification", JWT)).toBe(
+      `${ORIGINE}/lien/verification#${JWT}`,
+    );
+  });
+
+  test.each([
+    ["jeton invalide", ORIGINE, "verification", "a.b"],
+    ["jeton adresse", ORIGINE, "verification", "https://attaquant.invalid/a.b.c"],
+    ["type invalide", ORIGINE, "Verification", JWT],
+    ["type remontant", ORIGINE, "..", JWT],
+    ["origine non web", "javascript:alert(1)", "verification", JWT],
+  ])("refusé : %s", (_nom, origine, type, valeur) => {
+    expect(lienFragment(ORIGINE, "verification", JWT)).toBe(`${ORIGINE}/lien/verification#${JWT}`);
+    expect(() => lienFragment(origine, type, valeur)).toThrow();
+  });
+});
+
+describe("modèles de compte (1.1)", () => {
+  test("compte.verification : le lien en fragment, construit depuis le jeton seul", () => {
+    const { corps } = MODELES_EMAIL["compte.verification"].construire(
+      { jeton: JWT },
+      { origine: ORIGINE },
+    );
+    expect(corps).toContain(`${ORIGINE}/lien/verification#${JWT}`);
+    expect(corps).not.toContain(`/lien/verification/${JWT.slice(0, 10)}`);
+    expect(corps).not.toContain("/api/auth");
+    expect(corps).not.toContain("token=");
+  });
+
+  test("compte.verification : jeton hors format refusé par le schéma", () => {
+    expect(MODELES_EMAIL["compte.verification"].parametres.safeParse({ jeton: "x" }).success).toBe(
+      false,
+    );
+  });
+
+  test("compte.existant : aucun paramètre, aucun lien", () => {
+    const { corps } = MODELES_EMAIL["compte.existant"].construire({}, { origine: ORIGINE });
+    expect(corps).not.toMatch(/https?:/u);
+    expect(MODELES_EMAIL["compte.existant"].parametres.safeParse({ jeton: JWT }).success).toBe(
+      false,
+    );
   });
 });

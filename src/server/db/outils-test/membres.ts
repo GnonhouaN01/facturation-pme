@@ -52,6 +52,9 @@ export async function creerMembre(options: OptionsMembre): Promise<Membre> {
     id: utilisateurId,
     name: "Membre de test",
     email: `test-${utilisateurId}@exemple.test`,
+    // Un vrai membre a vérifié son adresse : sans elle, lireSession ne lit
+    // aucune session (docs/features/inscription.md, section 4.6).
+    emailVerified: true,
   });
 
   const [adhesion] = await db
