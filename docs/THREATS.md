@@ -145,6 +145,7 @@ Le navigateur n'est **jamais** une zone de confiance : tout ce qui s'y trouve pe
 | T-42 | Saturer le serveur par des requêtes ou des fichiers énormes | P1, P3 | 2 | 2 | Moyenne | S-53, S-84 | Une liste est toujours paginée. Un envoi trop gros est refusé |
 | T-43 | Bloquer le compte d'un tiers en provoquant des échecs de connexion | P1 | 1 | 2 | Faible | S-11 | Le blocage est temporaire et limité |
 | T-44 | Supprimer l'organisation depuis un compte compromis | P6 | 3 | 1 | Moyenne | S-14, R-15 | La suppression reste annulable 30 jours |
+| T-45 | Appeler la tâche quotidienne sans autorisation, pour consommer le calcul et les connexions, ou provoquer des suppressions | P1 | 1 | 2 | Faible | S-02, S-83, S-84 | Un appel sans le secret, avec un secret forgé ou mal formé, reçoit la réponse d'une tâche inexistante, sans aucune étape lancée ; même autorisé, un appel ne supprime que ce qui a dépassé sa durée de conservation (`docs/features/tache-quotidienne.md`) |
 
 ### 5.6 Élévation de privilèges
 

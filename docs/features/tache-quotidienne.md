@@ -1,6 +1,6 @@
 # Fonctionnalité : tâche quotidienne (première version)
 
-Statut : validée, en cours. Fiche rédigée le 2026-10-13 par l'assistant ; trois décisions prises par le développeur le même jour (section « Décisions »), les autres points selon la recommandation de l'assistant (section « Décisions par défaut »).
+Statut : validée, implémentée en local (non poussée), preuves sur Vercel à faire. Fiche rédigée le 2026-10-13 par l'assistant ; trois décisions prises par le développeur le même jour (section « Décisions »), les autres points selon la recommandation de l'assistant (section « Décisions par défaut »).
 
 Fonctionnalité 8.3 de `docs/PLAN.md`, avancée au jalon 1 (`limitation-debit.md`, décision 6). Taille S. Prérequis de la PR 2 de la 1.1 (`inscription.md`, « Contexte » et « Découpage en PR »). Cas d'utilisation : aucun. Exigences : S-54, S-83, S-84, S-85 ; durées de conservation de `THREATS.md` 7.2. Menaces : T-35, T-41 ; nouvelle T-45 (section « Règles de sécurité »).
 
@@ -268,17 +268,17 @@ Aucune. Le dossier `drizzle/` n'est pas touché.
 
 ## Critères d'acceptation
 
-- [ ] `vercel.json` ne contient que `crons`, une entrée, `/api/taches/quotidienne`, une expression quotidienne.
-- [ ] Sans `Authorization`, avec un secret forgé, avec `bearer` en minuscules, avec un espace en trop, avec le secret seul ou dans la requête : même statut, mêmes en-têtes propres, même corps qu'une tâche inexistante ; aucune étape lancée ; aucune ligne au journal.
-- [ ] Secret non configuré : tout appel est refusé, `Bearer `, `Bearer null` et `Bearer undefined` compris.
-- [ ] Comparaison sur deux empreintes SHA-256 par `timingSafeEqual` ; aucune exception pour un en-tête de longueur quelconque.
-- [ ] En production, `CRON_SECRET` absente, vide, de moins de 43 caractères ou hors de l'alphabet `base64url` : configuration refusée, message sans la valeur ; hors production, absente : `null`, et tout appel est refusé.
-- [ ] Appel autorisé : les deux étapes, dans l'ordre, chacune lancée même si l'autre échoue ; 200 `{"ok":true}` ou 500 `{"ok":false}` ; `Cache-Control: no-store`.
-- [ ] Journal : une ligne par étape, champs de la section 3.3 seulement ; une erreur dont le message contient une adresse email et une requête SQL n'en laisse rien passer.
-- [ ] Deux appels successifs ou simultanés : aucune erreur, même état final.
-- [ ] `controle-deploiement.mjs` : les contrôles `tache:*` passent sur le site construit en local et échouent seuls sur le défaut correspondant d'un serveur factice.
-- [ ] Route sur la liste admise du test d'inventaire, forme exacte vérifiée ; règle U vérifiée.
-- [ ] `npm run verifier` et `npm run test:integration` verts, sorties montrées.
+- [x] `vercel.json` ne contient que `crons`, une entrée, `/api/taches/quotidienne`, une expression quotidienne.
+- [x] Sans `Authorization`, avec un secret forgé, avec `bearer` en minuscules, avec un espace en trop, avec le secret seul ou dans la requête : même statut, mêmes en-têtes propres, même corps qu'une tâche inexistante ; aucune étape lancée ; aucune ligne au journal.
+- [x] Secret non configuré : tout appel est refusé, `Bearer `, `Bearer null` et `Bearer undefined` compris.
+- [x] Comparaison sur deux empreintes SHA-256 par `timingSafeEqual` ; aucune exception pour un en-tête de longueur quelconque.
+- [x] En production, `CRON_SECRET` absente, vide, de moins de 43 caractères ou hors de l'alphabet `base64url` : configuration refusée, message sans la valeur ; hors production, absente : `null`, et tout appel est refusé.
+- [x] Appel autorisé : les deux étapes, dans l'ordre, chacune lancée même si l'autre échoue ; 200 `{"ok":true}` ou 500 `{"ok":false}` ; `Cache-Control: no-store`.
+- [x] Journal : une ligne par étape, champs de la section 3.3 seulement ; une erreur dont le message contient une adresse email et une requête SQL n'en laisse rien passer.
+- [x] Deux appels successifs ou simultanés : aucune erreur, même état final.
+- [x] `controle-deploiement.mjs` : les contrôles `tache:*` passent sur le site construit en local et échouent seuls sur le défaut correspondant d'un serveur factice.
+- [x] Route sur la liste admise du test d'inventaire, forme exacte vérifiée ; règle U vérifiée.
+- [x] `npm run verifier` et `npm run test:integration` verts, sorties montrées.
 - [ ] Preuves sur Vercel faites et notées (section 5, points 3 à 5).
 
 ## Tests à écrire
@@ -287,23 +287,23 @@ Dans cet ordre, chacun vu en échec avant le code.
 
 ### Tests unitaires et d'attaque, sans base
 
-1. [ ] **Comparaison du secret** — `src/server/taches/secret.test.ts` : `secretValide` vrai pour `Bearer <secret>` exact ; faux pour en-tête absent, vide, `Bearer`, `Bearer `, `bearer <secret>`, `Bearer  <secret>`, `Bearer <secret> `, `<secret>` seul, préfixe du secret, secret suivi d'un caractère, secret de même longueur différent au dernier caractère, en-tête de 64 Kio ; secret `null` : faux pour `Bearer `, `Bearer null`, `Bearer undefined` ; aucune exception. Espion sur `timingSafeEqual` : appelé une fois par comparaison, sur deux tampons de 32 octets, secret `null` compris.
-2. [ ] **Refus indiscernable** — `src/server/taches/quotidienne.attaque.test.ts` (étapes factices espionnées, console espionnée) : pour chaque refus du critère 2, plus secret correct sur une tâche inconnue, sur `QUOTIDIENNE`, `quotidienne.`, `__proto__`, `constructor` (liste fermée lue par `Object.hasOwn`) : réponse égale à celle de `/api/taches/<nom aléatoire>` sans secret (statut, en-têtes, corps lu en octets) ; étapes jamais appelées ; aucune écriture sur la console. Témoin : le secret correct sur `quotidienne` lance les étapes (sinon le test ne prouverait rien).
-3. [ ] **Configuration** — `src/server/env-schema.test.ts`, ajouts : `validerSecretTache` en production sans variable, vide, de 42 caractères (trop court, refusé aussi en prévisualisation), avec espace, retour à la ligne, guillemet : refus, message `CRON_SECRET : <raison>` sans la valeur ; 43 et 256 caractères valides acceptés, 257 refusé ; en prévisualisation, absente : `null` ; `VERCEL_ENV` absent (local) : `null`.
-3a. [ ] **Absente en prévisualisation, tout refusé** — `quotidienne.attaque.test.ts` : traitement construit avec le secret lu par `validerSecretTache({ VERCEL_ENV: "preview" })` ; aucun en-tête, `Bearer `, `Bearer null`, `Bearer undefined`, un secret quelconque de 43 caractères : réponse inexistante, aucune étape lancée.
-4. [ ] **Exécution** — `src/server/taches/quotidienne.test.ts` : ordre des étapes ; première étape qui lève, la seconde est lancée, 500 `{"ok":false}` ; les deux réussissent : 200 `{"ok":true}` ; `Cache-Control: no-store` sur toutes les réponses ; lignes de journal exactes (champs, types) ; erreur levée avec `message` contenant `awa.kone@exemple.invalid`, `delete from "user"`, `params:` et une pile : aucun de ces textes dans la sortie ; erreur hostile (accesseur `constructor` qui lève, `Proxy`) et console qui lève : la tâche ne lève pas, ligne de repli fixe.
-5. [ ] **Planification** — `src/server/taches/vercel-json.test.ts` : `vercel.json` lu et analysé ; seules les clés `$schema` et `crons` ; une entrée ; `path` égal à `/api/taches/quotidienne` ; `schedule` de la forme `<minute> <heure> * * *` avec minute 0 à 59 et heure 0 à 23 (une expression plus fréquente ferait échouer le déploiement Hobby) ; le nom de la tâche figure dans `TACHES`.
-6. [ ] **Inventaire** — `src/server/actions/inventaire.test.ts` : `api/taches/[tache]` remplace `api/taches/quotidienne` dans la liste admise, avec cette fiche ; `route.ts` de cette route a exactement la forme de la section 2.1 (seul export `GET`, égal à `traiterTache`).
-7. [ ] **Règle U** — `regles-import.test.ts` : `server/taches/` importé depuis `route.ts` de `api/taches/` : accepté ; depuis une page, une action, `server/services/` : refusé ; `db/comptes.ts` et `purgerCompteurs` importés depuis `server/taches/` : acceptés ; ailleurs : refusés ; chargement dynamique compris.
+1. [x] **Comparaison du secret** — `src/server/taches/secret.test.ts` : `secretValide` vrai pour `Bearer <secret>` exact ; faux pour en-tête absent, vide, `Bearer`, `Bearer `, `bearer <secret>`, `Bearer  <secret>`, `Bearer <secret> `, `<secret>` seul, préfixe du secret, secret suivi d'un caractère, secret de même longueur différent au dernier caractère, en-tête de 64 Kio ; secret `null` : faux pour `Bearer `, `Bearer null`, `Bearer undefined` ; aucune exception. Espion sur `timingSafeEqual` : appelé une fois par comparaison, sur deux tampons de 32 octets, secret `null` compris.
+2. [x] **Refus indiscernable** — `src/server/taches/quotidienne.attaque.test.ts` (étapes factices espionnées, console espionnée) : pour chaque refus du critère 2, plus secret correct sur une tâche inconnue, sur `QUOTIDIENNE`, `quotidienne.`, `__proto__`, `constructor` (liste fermée lue par `Object.hasOwn`) : réponse égale à celle de `/api/taches/<nom aléatoire>` sans secret (statut, en-têtes, corps lu en octets) ; étapes jamais appelées ; aucune écriture sur la console. Témoin : le secret correct sur `quotidienne` lance les étapes (sinon le test ne prouverait rien).
+3. [x] **Configuration** — `src/server/env-schema.test.ts`, ajouts : `validerSecretTache` en production sans variable, vide, de 42 caractères (trop court, refusé aussi en prévisualisation), avec espace, retour à la ligne, guillemet : refus, message `CRON_SECRET : <raison>` sans la valeur ; 43 et 256 caractères valides acceptés, 257 refusé ; en prévisualisation, absente : `null` ; `VERCEL_ENV` absent (local) : `null`.
+3a. [x] **Absente en prévisualisation, tout refusé** — `quotidienne.attaque.test.ts` : traitement construit avec le secret lu par `validerSecretTache({ VERCEL_ENV: "preview" })` ; aucun en-tête, `Bearer `, `Bearer null`, `Bearer undefined`, un secret quelconque de 43 caractères : réponse inexistante, aucune étape lancée.
+4. [x] **Exécution** — `src/server/taches/quotidienne.test.ts` : ordre des étapes ; première étape qui lève, la seconde est lancée, 500 `{"ok":false}` ; les deux réussissent : 200 `{"ok":true}` ; `Cache-Control: no-store` sur toutes les réponses ; lignes de journal exactes (champs, types) ; erreur levée avec `message` contenant `awa.kone@exemple.invalid`, `delete from "user"`, `params:` et une pile : aucun de ces textes dans la sortie ; erreur hostile (accesseur `constructor` qui lève, `Proxy`) et console qui lève : la tâche ne lève pas, ligne de repli fixe.
+5. [x] **Planification** — `src/server/taches/vercel-json.test.ts` : `vercel.json` lu et analysé ; seules les clés `$schema` et `crons` ; une entrée ; `path` égal à `/api/taches/quotidienne` ; `schedule` de la forme `<minute> <heure> * * *` avec minute 0 à 59 et heure 0 à 23 (une expression plus fréquente ferait échouer le déploiement Hobby) ; le nom de la tâche figure dans `TACHES`.
+6. [x] **Inventaire** — `src/server/actions/inventaire.test.ts` : `api/taches/[tache]` remplace `api/taches/quotidienne` dans la liste admise, avec cette fiche ; `route.ts` de cette route a exactement la forme de la section 2.1 (seul export `GET`, égal à `traiterTache`).
+7. [x] **Règle U** — `regles-import.test.ts` : `server/taches/` importé depuis `route.ts` de `api/taches/` : accepté ; depuis une page, une action, `server/services/` : refusé ; `db/comptes.ts` et `purgerCompteurs` importés depuis `server/taches/` : acceptés ; ailleurs : refusés ; chargement dynamique compris.
 
 ### Tests d'intégration, avec base
 
-8. [ ] `src/server/db/tache-quotidienne.integration.test.ts` (dans `db/`, qui peut importer `db` pour préparer les lignes) : gestionnaire réel avec un secret de test injecté et les vraies étapes. Préparation : une ligne de `compteur_debit` expirée et une en cours, sous des clés propres au test ; un utilisateur non vérifié de 8 jours, un de 6 jours, un vérifié de 8 jours (`test-<uuid>@exemple.test`). Appel autorisé : 200 ; seules la ligne expirée et le non vérifié de 8 jours disparaissent. Second appel : 200, état inchangé. Deux appels simultanés sur une nouvelle préparation : deux 200, même état final. Appel refusé : rien ne disparaît. Nettoyage par `nettoyerMembres` et suppression des clés du test, dans un `finally` ; un seul `Pool`, aucun `Pool` dédié.
+8. [x] `src/server/db/comptes.integration.test.ts`, describe « tâche quotidienne, vraie base » (dans `db/`, qui peut importer `db` pour préparer les lignes ; dans le fichier de `purgerComptesNonVerifies`, et non dans un fichier à part, voir « Notes de l'implémentation ») : gestionnaire réel avec un secret de test injecté et les vraies étapes. Préparation : une ligne de `compteur_debit` expirée et une en cours, sous des clés propres au test ; un utilisateur non vérifié de 8 jours, un de 6 jours, un vérifié de 8 jours (`test-<uuid>@exemple.test`). Appel autorisé : 200 ; seules la ligne expirée et le non vérifié de 8 jours disparaissent. Second appel : 200, état inchangé. Deux appels simultanés sur une nouvelle préparation : deux 200, même état final. Appel refusé : rien ne disparaît. Nettoyage des utilisateurs par leur identifiant et des clés du test, dans un `finally` (`nettoyerMembres` ne connaît que les membres de `creerMembre`) ; un seul `Pool`, aucun `Pool` dédié.
 
 ### Tests de bout en bout
 
-9. [ ] `e2e/tache-quotidienne.attaque.spec.ts` (`ordinateur-1280`, site construit) : `playwright.config.ts` tire un `CRON_SECRET` aléatoire à chaque exécution (jamais écrit) et le passe au serveur du port 3000 et aux tests. Refus du critère 2 et tâche inconnue : même statut, même corps, mêmes en-têtes hors politique (nonce) ; `POST`, `PUT`, `DELETE` sur `quotidienne` et sur une tâche inconnue : même réponse l'une que l'autre. Appel autorisé : 200 `{"ok":true}`. Le serveur du port 3101 (configuration factice, base injoignable) : appel sans secret, 404 identique ; ce serveur n'a pas de secret, l'appel « autorisé » y est donc impossible.
-10. [ ] **Contrôle après déploiement** — `e2e/controle-deploiement.spec.ts`, serveur factice : conforme, les contrôles `tache:*` passent ; défauts, chacun faisant échouer le seul contrôle attendu : `quotidienne` en 200 sans secret, en 401 (réponse de l'exemple de Vercel), corps différent avec le secret forgé, corps différent de la tâche inconnue, `X-Powered-By` sur cette seule réponse, chemin de fichier dans son corps ; l'en-tête `Authorization` n'est envoyé qu'à `/api/taches/quotidienne`, avec une valeur différente à chaque passage, jamais affichée (`--detail` compris). Site construit en local : tout passe.
+9. [x] `e2e/tache-quotidienne.attaque.spec.ts` (`ordinateur-1280`, site construit) : `playwright.config.ts` tire un `CRON_SECRET` aléatoire à chaque exécution (jamais écrit) et le passe au serveur du port 3000 et aux tests. Refus du critère 2 et tâche inconnue : même statut, même corps, mêmes en-têtes hors politique (nonce) ; `POST`, `PUT`, `DELETE` sur `quotidienne` et sur une tâche inconnue : même réponse l'une que l'autre. Appel autorisé : 200 `{"ok":true}`. Le serveur du port 3101 (configuration factice, base injoignable) : appel sans secret, 404 identique ; ce serveur n'a pas de secret, l'appel « autorisé » y est donc impossible.
+10. [x] **Contrôle après déploiement** — `e2e/controle-deploiement.spec.ts`, serveur factice : conforme, les contrôles `tache:*` passent ; défauts, chacun faisant échouer le seul contrôle attendu : `quotidienne` en 200 sans secret, en 401 (réponse de l'exemple de Vercel), corps différent avec le secret forgé, corps différent de la tâche inconnue, `X-Powered-By` sur cette seule réponse, chemin de fichier dans son corps ; l'en-tête `Authorization` n'est envoyé qu'à `/api/taches/quotidienne`, avec une valeur différente à chaque passage, jamais affichée (`--detail` compris). Site construit en local : tout passe.
 
 ### Vérifications manuelles (développeur)
 
@@ -320,6 +320,9 @@ Dans cet ordre, chacun vu en échec avant le code.
 | `src/server/taches/secret.ts` | Nouveau : `secretValide` |
 | `src/server/taches/etapes.ts` | Nouveau : les deux étapes, consignation |
 | `src/server/env-schema.ts`, `src/server/env.ts` | `validerSecretTache`, `secretTache` |
+| `src/server/erreurs/consigner.ts` | `classeDe` exportée, partagée avec `etapes.ts` (même filtre de la classe) |
+| `src/server/env-schema.tache.test.ts`, `src/server/env.test.ts` | Tests de `CRON_SECRET` |
+| `src/server/db/comptes.integration.test.ts` | Test 8 |
 | `.env.example` | `# CRON_SECRET=`, en commentaire |
 | `eslint.config.mjs` | Règle U |
 | `src/server/actions/inventaire.test.ts` | Liste admise, forme exacte de la route |
@@ -377,4 +380,24 @@ Appliquées par l'assistant le 2026-10-13, selon sa recommandation, sauf avis co
 
 ## Notes de l'implémentation
 
-Aucune pour l'instant.
+### Implémentation, le 2026-10-13
+
+**Phase rouge** (commit `test(8.3)`). Tests unitaires : 52 en échec, 8 fichiers. `secret.test.ts`, `quotidienne.attaque.test.ts`, `quotidienne.test.ts` et `vercel-json.test.ts` non chargés (modules `secret`, `quotidienne`, `etapes` absents) ; `env-schema.tache.test.ts` : 22 sur 23 (`validerSecretTache` absente) ; `env.test.ts` : les 5 nouveaux (`secretTache` absent, chargement de production sans `CRON_SECRET` qui réussit) ; `inventaire.test.ts` : les 3 nouveaux (route absente) ; `regles-import.test.ts` : les 22 cas « refusé » de la règle U (aucune règle). Intégration : `comptes.integration.test.ts` non chargé (`../taches/etapes` absent). Bout en bout, sur le site construit depuis le code de `HEAD` (les tests mis de côté le temps de la construction, qui vérifie aussi les types des tests) : 32 en échec, dont les 15 de `tache-quotidienne.attaque.spec.ts` (aucune route : page « introuvable » de Next.js, au nonce différent d'une requête à l'autre) et 17 de `controle-deploiement.spec.ts` (contrôles `tache:*` attendus, absents du script).
+
+**Passaient avant le code, et pourquoi** : les 9 cas « autorisé » de la règle U (garde-fous : la règle ne doit pas les refuser) ; « les longueurs de référence » d'`env-schema.tache.test.ts` (vérifie les valeurs factices du test) ; « chaque route admise cite sa fiche » (nouvelle entrée de la liste) ; les chargements de production d'`env.test.ts` qui reçoivent désormais `CRON_SECRET` (variable ignorée avant le code) ; dans `controle-deploiement.spec.ts`, les cas sans rapport avec la page `tache` et « site construit en local : tous les contrôles passent », que le script sans page `tache` passait encore (il passe aussi après, page `tache` comprise).
+
+**Tests modifiés, sans changer ce qu'ils prouvent** :
+
+- `controle-deploiement.spec.ts`, « serveur conforme » : 20 requêtes au lieu de 14, et l'en-tête `Authorization` attendu sur `/api/taches/quotidienne` seulement, au lieu de nulle part (seconde exception de la section 6) ; les défauts d'en-têtes et de politique échouent aussi sur `tache:*`.
+- `env.test.ts` : les chargements de production qui doivent réussir reçoivent `CRON_SECRET` (obligatoire depuis la décision 1).
+- `inventaire.test.ts` : la liste admise nomme `api/taches/[tache]` au lieu de `api/taches/quotidienne` (décision 2), et le simulacre d'`env.ts` fournit `secretTache`.
+- Test 8 placé dans `comptes.integration.test.ts` au lieu d'un fichier à part : lancé en parallèle, un autre fichier purgerait le compte de 8 jours de « purgerComptesNonVerifies » entre sa création et l'appel, et `supprimes >= 1` échouerait par moments. Les tests d'un même fichier s'exécutent l'un après l'autre ; aucune assertion n'est affaiblie.
+
+**Constats** :
+
+- `VERCEL_ENV=production npx next build` sans `CRON_SECRET` (variables Gmail factices) : échec, `Failed to collect configuration for /api/taches/[tache]`, `- CRON_SECRET : absente`. Décision 1 confirmée.
+- Le proxy pose la politique de sécurité du contenu, et `next.config.ts` les en-têtes de la section 6, sur la réponse de la route : `tache:politique` et `tache:entetes` passent sur le site construit.
+- Le motif « nom de variable d'environnement » du contrôle `fuite` reconnaît aussi `CRON_SECRET`.
+- Les lignes `[tache]` réussies partent sur `console.info` (sortie standard), que Playwright n'affiche pas pour ses serveurs ; aucune occurrence du secret dans la sortie de `npm run verifier`.
+
+**Vérifications** : `npm run verifier` vert (lint, typecheck, 56 fichiers et 1 834 tests unitaires, construction avec `ƒ /api/taches/[tache]`, 163 tests de bout en bout, ports 3000 et 3101 libres) ; `npm run test:integration` sur `dev` : 21 fichiers, 185 réussis et 1 échec attendu (déjà présent avant).

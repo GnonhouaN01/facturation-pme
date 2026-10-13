@@ -27,6 +27,10 @@ const SMTP = "src/server/modules/email/smtp.ts";
 // Rappels d'envoi de Better Auth (1.1) : seul fichier de auth/ qui importe
 // envoyerEmail (règle T, docs/features/inscription.md, section 4.2).
 const EMAILS_AUTH = "src/server/auth/emails.ts";
+// Tâche quotidienne (8.3) : son dossier et sa route, seuls à importer les
+// purges (règle U, docs/features/tache-quotidienne.md).
+const TACHES = "src/server/taches/**";
+const ROUTE_TACHES = "src/app/api/taches/*/route.ts";
 // Écrans : pages et composants, où s'affiche le texte (règle R). Les
 // composants de ui/, générés par shadcn, ne portent pas de texte affiché.
 const ECRANS = ["src/app/**", "src/components/**"];
@@ -435,6 +439,40 @@ const SYNTAXE_T_HOTE = [
 const IMPORTS_T = [IMPORTS_T_NODEMAILER, IMPORTS_T_MODULES, IMPORTS_T_ENVOYER];
 const SYNTAXE_T = [SYNTAXE_T_NODEMAILER, SYNTAXE_T_MODULES, SYNTAXE_T_ENVOYER, SYNTAXE_T_HOTE];
 
+// U. Tâche quotidienne (8.3) : src/server/taches/ ne s'importe que dans la
+// route src/app/api/taches/[tache]/route.ts et les tests ; db/comptes.ts
+// (purge des comptes non vérifiés) et purgerCompteurs que dans
+// src/server/taches/ et les tests. Chargement dynamique de server/taches/ et
+// de db/comptes refusé en entier. Fiche : docs/features/tache-quotidienne.md,
+// « Règles de sécurité ».
+const MESSAGE_U_TACHES =
+  "src/server/taches/ ne s'importe que dans src/app/api/taches/[tache]/route.ts et les tests (docs/features/tache-quotidienne.md, règle U).";
+const MESSAGE_U_PURGES =
+  "purgerComptesNonVerifies (src/server/db/comptes.ts) et purgerCompteurs ne s'importent que dans src/server/taches/ et les tests : les purges passent par la tâche quotidienne (docs/features/tache-quotidienne.md, règle U).";
+const IMPORTS_U_TACHES = {
+  patterns: [{ regex: "(^|/)taches(/|$)", message: MESSAGE_U_TACHES }],
+};
+const IMPORTS_U_COMPTES = {
+  patterns: [{ regex: "(^|/)db/comptes$", message: MESSAGE_U_PURGES }],
+};
+// Depuis db/, « ./comptes » et « ../comptes » désignent db/comptes.ts.
+const IMPORTS_U_COMPTES_DB = {
+  patterns: [{ regex: "^\\.\\.?/comptes$", message: MESSAGE_U_PURGES }],
+};
+const IMPORTS_U_PURGER = {
+  patterns: [
+    { regex: "(^|/)debit/debit$", importNames: ["purgerCompteurs"], message: MESSAGE_U_PURGES },
+  ],
+};
+const SYNTAXE_U_TACHES = chargementsDynamiques("/(^|\\u002F)taches\\u002F/", MESSAGE_U_TACHES);
+const SYNTAXE_U_COMPTES = chargementsDynamiques("/(^|\\u002F)db\\u002Fcomptes$/", MESSAGE_U_PURGES);
+const SYNTAXE_U_COMPTES_DB = chargementsDynamiques(
+  "/((^|\\u002F)db\\u002Fcomptes|^\\.\\.?\\u002Fcomptes)$/",
+  MESSAGE_U_PURGES,
+);
+const IMPORTS_U = [IMPORTS_U_TACHES, IMPORTS_U_COMPTES, IMPORTS_U_PURGER];
+const SYNTAXE_U = [SYNTAXE_U_TACHES, SYNTAXE_U_COMPTES];
+
 const restreindreImports = (...listes) => [
   "error",
   {
@@ -459,6 +497,7 @@ const IMPORTS_GENERAUX = [
   IMPORTS_N_TABLE,
   IMPORTS_N_COMPTEUR,
   ...IMPORTS_T,
+  ...IMPORTS_U,
 ];
 
 // Propriétés interdites du cas général de src/. Celles de src/proxy.ts en
@@ -487,6 +526,7 @@ const SYNTAXE_GENERALE = [
   SYNTAXE_M,
   SYNTAXE_N,
   ...SYNTAXE_T,
+  ...SYNTAXE_U,
 ];
 
 const eslintConfig = defineConfig([
@@ -514,9 +554,32 @@ const eslintConfig = defineConfig([
       PORTE,
       SMTP,
       EMAILS_AUTH,
+      TACHES,
+      ROUTE_TACHES,
     ],
     rules: {
       "no-restricted-imports": restreindreImports(...IMPORTS_GENERAUX),
+    },
+  },
+  // La tâche quotidienne : le cas général, sauf les purges (règle U).
+  {
+    files: [TACHES],
+    rules: {
+      "no-restricted-imports": restreindreImports(
+        ...IMPORTS_GENERAUX.filter(
+          (liste) => liste !== IMPORTS_U_COMPTES && liste !== IMPORTS_U_PURGER,
+        ),
+      ),
+    },
+  },
+  // La route de la tâche quotidienne : le cas général, sauf server/taches/
+  // (règle U).
+  {
+    files: [ROUTE_TACHES],
+    rules: {
+      "no-restricted-imports": restreindreImports(
+        ...IMPORTS_GENERAUX.filter((liste) => liste !== IMPORTS_U_TACHES),
+      ),
     },
   },
   // La porte d'envoi : le cas général, sauf modules/email/ (règle T).
@@ -570,6 +633,7 @@ const eslintConfig = defineConfig([
         IMPORTS_M,
         IMPORTS_N_TABLE,
         ...IMPORTS_T,
+        ...IMPORTS_U,
       ),
     },
   },
@@ -590,6 +654,7 @@ const eslintConfig = defineConfig([
         IMPORTS_N_TABLE,
         IMPORTS_N_COMPTEUR,
         ...IMPORTS_T,
+        ...IMPORTS_U,
       ),
     },
   },
@@ -607,6 +672,7 @@ const eslintConfig = defineConfig([
         IMPORTS_N_COMPTEUR,
         IMPORTS_T_NODEMAILER,
         IMPORTS_T_MODULES,
+        ...IMPORTS_U,
       ),
     },
   },
@@ -625,6 +691,7 @@ const eslintConfig = defineConfig([
         IMPORTS_N_TABLE,
         IMPORTS_N_COMPTEUR,
         ...IMPORTS_T,
+        ...IMPORTS_U,
       ),
     },
   },
@@ -642,6 +709,7 @@ const eslintConfig = defineConfig([
         IMPORTS_N_TABLE,
         IMPORTS_N_COMPTEUR,
         ...IMPORTS_T,
+        ...IMPORTS_U,
       ),
     },
   },
@@ -659,6 +727,7 @@ const eslintConfig = defineConfig([
         IMPORTS_N_TABLE,
         IMPORTS_N_COMPTEUR,
         ...IMPORTS_T,
+        ...IMPORTS_U,
       ),
     },
   },
@@ -681,6 +750,7 @@ const eslintConfig = defineConfig([
         IMPORTS_N_TABLE,
         IMPORTS_N_COMPTEUR,
         ...IMPORTS_T,
+        ...IMPORTS_U,
       ),
     },
   },
@@ -699,6 +769,8 @@ const eslintConfig = defineConfig([
         IMPORTS_N_COMPTEUR,
         IMPORTS_N_COMPTEUR_DB,
         ...IMPORTS_T,
+        ...IMPORTS_U,
+        IMPORTS_U_COMPTES_DB,
       ),
     },
   },
@@ -713,6 +785,8 @@ const eslintConfig = defineConfig([
         IMPORTS_J,
         IMPORTS_M,
         ...IMPORTS_T,
+        ...IMPORTS_U,
+        IMPORTS_U_COMPTES_DB,
       ),
     },
   },
@@ -785,6 +859,7 @@ const eslintConfig = defineConfig([
         SYNTAXE_M,
         SYNTAXE_N,
         ...SYNTAXE_T,
+        ...SYNTAXE_U,
       ),
     },
   },
@@ -809,6 +884,7 @@ const eslintConfig = defineConfig([
         SYNTAXE_M,
         SYNTAXE_N,
         ...SYNTAXE_T,
+        ...SYNTAXE_U,
       ),
     },
   },
@@ -831,6 +907,7 @@ const eslintConfig = defineConfig([
         SYNTAXE_T_NODEMAILER,
         SYNTAXE_T_MODULES,
         SYNTAXE_T_HOTE,
+        ...SYNTAXE_U,
       ),
     },
   },
@@ -852,6 +929,7 @@ const eslintConfig = defineConfig([
         SYNTAXE_K,
         SYNTAXE_N,
         ...SYNTAXE_T,
+        ...SYNTAXE_U,
       ),
     },
   },
@@ -887,6 +965,7 @@ const eslintConfig = defineConfig([
         SYNTAXE_M,
         SYNTAXE_N,
         ...SYNTAXE_T,
+        ...SYNTAXE_U,
       ),
     },
   },
@@ -908,6 +987,8 @@ const eslintConfig = defineConfig([
         SYNTAXE_M,
         SYNTAXE_N_DB,
         ...SYNTAXE_T,
+        SYNTAXE_U_TACHES,
+        SYNTAXE_U_COMPTES_DB,
       ),
     },
   },
@@ -927,6 +1008,8 @@ const eslintConfig = defineConfig([
         SYNTAXE_M,
         SYNTAXE_N_DB,
         ...SYNTAXE_T,
+        SYNTAXE_U_TACHES,
+        SYNTAXE_U_COMPTES_DB,
       ),
     },
   },

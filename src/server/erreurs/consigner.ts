@@ -24,7 +24,8 @@ function digestDe(erreur: unknown): string | undefined {
 }
 
 // Le nom du constructeur, jamais name, que le code qui lève peut fixer.
-function classeDe(erreur: unknown): string {
+// Partagée avec la tâche quotidienne (server/taches/etapes.ts).
+export function classeDe(erreur: unknown): string {
   if (erreur === null) return "null";
   if (typeof erreur !== "object") return typeof erreur;
   const nom: unknown = (erreur as { constructor?: { name?: unknown } }).constructor?.name;

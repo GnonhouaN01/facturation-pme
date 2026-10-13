@@ -60,7 +60,7 @@ Aucun écran métier. Ce jalon construit ce dont toutes les fonctionnalités aur
 | 1.5 | Sessions actives | UC-05 | F-004, S-17 | S |
 | 1.6 | Nouvelle authentification avant une action sensible | UC-07, UC-10, UC-13, UC-30 | S-14, T-12, T-44 | M |
 
-La tâche quotidienne (8.3) est avancée au jalon 1 : sa route et la purge des compteurs de débit (`purgerCompteurs`, livrée par la 0.5) sont mises en service avant la 1.1, première limitation par adresse IP ou par email (`docs/features/limitation-debit.md`, décision 6). Le reste de la 8.3 s'y ajoute ensuite.
+La tâche quotidienne (8.3) est avancée au jalon 1 : sa route et la purge des compteurs de débit (`purgerCompteurs`, livrée par la 0.5) sont mises en service avant la 1.1, première limitation par adresse IP ou par email (`docs/features/limitation-debit.md`, décision 6). Première version, avec la purge des comptes non vérifiés : `docs/features/tache-quotidienne.md`, avant la PR 2 de la 1.1. Le reste de la 8.3 s'y ajoute ensuite.
 
 La 1.6 livre le mécanisme qu'attend la chaîne de contrôles : jusque-là, toute action déclarée avec `nouvelleAuthentification: true` est refusée (`docs/features/chaine-controles.md`). Elle précède donc les fonctionnalités 2.2, 2.4, 2.5 et 7.2. La 1.4 active, dans la chaîne, l'exigence de double authentification par rôle (S-12, S-13) et écrit le test de T-02.
 

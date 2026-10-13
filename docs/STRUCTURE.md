@@ -68,7 +68,7 @@ src/app/
 │   └── facture/[jeton]/
 ├── api/
 │   ├── auth/[...all]/       Route de Better Auth
-│   └── taches/quotidienne/  Tâche planifiée
+│   └── taches/[tache]/      Tâche planifiée (liste fermée de tâches, 8.3)
 ├── layout.tsx               Structure commune : polices, lang="fr", rendu dynamique
 ├── not-found.tsx            « Cette page est introuvable » (absent, refusé, non connecté)
 ├── error.tsx                « Une erreur est survenue. » et l'identifiant d'incident
@@ -148,6 +148,10 @@ src/server/
 ├── journal/
 │   ├── actions.ts           Liste fermée des actions, schémas stricts des détails
 │   └── audit.ts             journaliser : seule écriture au journal d'audit
+├── taches/
+│   ├── quotidienne.ts       Contrôle de l'appel (secret), liste fermée des tâches, réponses
+│   ├── secret.ts            Comparaison du secret en temps constant
+│   └── etapes.ts            Étapes de la tâche quotidienne (purges), journal
 └── env.ts                   Lecture et validation des variables d'environnement
 ```
 
@@ -280,6 +284,7 @@ Ces règles seront vérifiées automatiquement par l'analyse du code, en phase 9
 | `server/modules/email/` | Son propre dossier ; `nodemailer` (`smtp.ts` seulement, PR 2) | Tout le reste du projet |
 | `server/db/` | `drizzle-orm`, `pg`, `server/env.ts` | Tout le reste de `server/` |
 | `server/erreurs/` | Rien du projet, sauf entre eux (fonctionnalité 0.6 : `onRequestError` ne charge pas `env.ts`) | Tout le reste du projet |
+| `server/taches/` | `server/debit/debit.ts` (`purgerCompteurs`), `server/db/comptes.ts`, `server/env.ts`, `server/erreurs/` (`code-postgres.ts`, `consigner.ts`), `node:crypto` | Tout le reste du projet |
 | `schemas/`, `lib/`, `textes/` | Rien du projet, sauf entre eux | `server/`, `app/`, `components/` |
 
 Règles de la chaîne de contrôles (fonctionnalité 0.4, vérifiées par ESLint, règles G à M de `docs/features/chaine-controles.md`, section 7) :
@@ -293,6 +298,8 @@ Règles de la chaîne de contrôles (fonctionnalité 0.4, vérifiées par ESLint
 - `creerChaine` ne s'importe que dans les tests.
 
 Règle du compteur de débit (fonctionnalité 0.5, règle N de `docs/features/limitation-debit.md`, section 7) : `compteurDebit` ne s'importe que dans `server/db/debit.ts` et les tests, et `server/db/debit.ts` ne s'importe que dans `server/debit/` et les tests. Le chargement dynamique de `db/debit` et de `schema/technique` est refusé.
+
+Règle de la tâche quotidienne (8.3, règle U de `docs/features/tache-quotidienne.md`), chargement dynamique compris : `server/taches/` ne s'importe que dans `app/api/taches/[tache]/route.ts` et les tests ; `server/db/comptes.ts` et `purgerCompteurs` que dans `server/taches/` et les tests.
 
 Règle de l'envoi d'emails (fonctionnalité 0.7, règle T de `docs/features/envoi-emails.md`, section 1.2), chargement dynamique compris : `nodemailer` ne s'importe que dans `server/modules/email/smtp.ts` ; `server/modules/email/` ne s'importe que dans `server/email/envoi.ts`, son propre dossier, `server/db/outils-test/` et les tests ; `envoyerEmail` ne s'importe que dans `server/actions/action.ts` et les tests (un service demande un envoi par `ctx.preparerEmail`) ; la chaîne `smtp.gmail.com` n'apparaît que dans `server/modules/email/smtp.ts` et les tests.
 - Aucun commentaire `eslint-disable` n'a d'effet dans `src/` : une exception passe par `eslint.config.mjs`.
