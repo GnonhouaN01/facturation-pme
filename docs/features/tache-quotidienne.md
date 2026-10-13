@@ -1,6 +1,6 @@
 # Fonctionnalité : tâche quotidienne (première version)
 
-Statut : brouillon. Fiche rédigée le 2026-10-13 par l'assistant ; points ouverts tranchés selon sa recommandation (section « Décisions par défaut »), sauf deux, soumis au développeur (section « Décisions à prendre »).
+Statut : validée, en cours. Fiche rédigée le 2026-10-13 par l'assistant ; trois décisions prises par le développeur le même jour (section « Décisions »), les autres points selon la recommandation de l'assistant (section « Décisions par défaut »).
 
 Fonctionnalité 8.3 de `docs/PLAN.md`, avancée au jalon 1 (`limitation-debit.md`, décision 6). Taille S. Prérequis de la PR 2 de la 1.1 (`inscription.md`, « Contexte » et « Découpage en PR »). Cas d'utilisation : aucun. Exigences : S-54, S-83, S-84, S-85 ; durées de conservation de `THREATS.md` 7.2. Menaces : T-35, T-41 ; nouvelle T-45 (section « Règles de sécurité »).
 
@@ -92,7 +92,7 @@ export const GET = traiterTache;
 3. **Refus** (secret faux, absent, non configuré, ou tâche inconnue) : `reponseInexistante()`, construite par une seule fonction : statut 404, corps vide, `Cache-Control: no-store`, aucun autre en-tête propre. Aucune étape n'est lancée, rien n'est lu en base, **aucune ligne au journal** (un appel refusé en boucle ne remplit pas le journal, et ne coûte qu'une empreinte).
 4. **Exécution** (section 3), puis réponse fixe : 200 `{"ok":true}` si toutes les étapes ont réussi, 500 `{"ok":false}` sinon ; `Cache-Control: no-store`. Le corps ne dit rien des nombres ni des erreurs : ils sont au journal.
 
-**Pourquoi un segment dynamique `[tache]`.** Une route fixe `api/taches/quotidienne` ne peut pas répondre comme une adresse inexistante : une adresse sans page reçoit la page « introuvable » rendue par le serveur (HTML de quelques Kio, nonce), une route qui refuse reçoit ce que la route renvoie. `notFound()` dans un gestionnaire de route renvoie un 404 (`node_modules/next/dist/docs/01-app/03-api-reference/04-functions/not-found.md`), mais rien ne garantit qu'il soit identique à la page rendue pour une adresse sans page ; `controle-deploiement.md` (section 5) a montré qu'une telle égalité, vraie sur `next start`, peut être fausse sur Vercel. Avec `[tache]`, un appel refusé à `/api/taches/quotidienne` et un appel à `/api/taches/<nom inconnu>` passent par le même gestionnaire et reçoivent `reponseInexistante()`, octet pour octet, par construction, en local comme sur Vercel. C'est la portée de S-02 précisée le 2026-10-13 (`THREATS.md` 5.4) : l'indiscernabilité sous une même route. Le nom `/api/taches/quotidienne` est public de toute façon (`vercel.json`, dépôt public). Décision à prendre 2.
+**Pourquoi un segment dynamique `[tache]`.** Une route fixe `api/taches/quotidienne` ne peut pas répondre comme une adresse inexistante : une adresse sans page reçoit la page « introuvable » rendue par le serveur (HTML de quelques Kio, nonce), une route qui refuse reçoit ce que la route renvoie. `notFound()` dans un gestionnaire de route renvoie un 404 (`node_modules/next/dist/docs/01-app/03-api-reference/04-functions/not-found.md`), mais rien ne garantit qu'il soit identique à la page rendue pour une adresse sans page ; `controle-deploiement.md` (section 5) a montré qu'une telle égalité, vraie sur `next start`, peut être fausse sur Vercel. Avec `[tache]`, un appel refusé à `/api/taches/quotidienne` et un appel à `/api/taches/<nom inconnu>` passent par le même gestionnaire et reçoivent `reponseInexistante()`, octet pour octet, par construction, en local comme sur Vercel. C'est la portée de S-02 précisée le 2026-10-13 (`THREATS.md` 5.4) : l'indiscernabilité sous une même route. Le nom `/api/taches/quotidienne` est public de toute façon (`vercel.json`, dépôt public). Décision 2.
 
 - **Seul `GET` est exporté.** Les autres méthodes reçoivent la réponse de Next.js (405 ; `OPTIONS` automatique), identique pour toute tâche, connue ou non (test).
 - **Rien d'autre n'est lu** : ni paramètre de requête, ni corps, ni cookie, ni `User-Agent` (falsifiable), ni `x-vercel-cron-schedule`. Un secret placé dans la requête (`?secret=...`) est donc refusé comme un appel sans secret.
@@ -123,10 +123,12 @@ export const secretTache = validerSecretTache(process.env);
 
 | Environnement (`VERCEL_ENV`) | `CRON_SECRET` absente | Présente |
 |---|---|---|
-| `production` | **Configuration refusée** : chaque requête échoue (décision à prendre 1) | Validée |
-| `preview`, local, tests | `secret: null` : la route refuse tout appel | Validée |
+| `production` | **Configuration refusée** (décision 1) : la construction échoue | Validée |
+| `preview`, local, tests | `secret: null` : la route refuse tout appel (test dédié) | Validée |
 
-Validation : 32 à 256 caractères, alphabet `base64url` seul (`A-Z`, `a-z`, `0-9`, `-`, `_`). Une espace, un retour à la ligne (collage d'une ligne entière) ou un guillemet sont refusés au démarrage, plutôt que de rendre la tâche silencieusement inappelable. Message : `- CRON_SECRET : <raison>`, jamais la valeur (S-54), comme les autres variables. Une variable présente mais vide est refusée, comme `EMAIL_*`.
+**Construction refusée, constatée le 2026-10-13** : `VERCEL_ENV=production npx next build`, sans les variables `GMAIL_*`, échoue à « Collecting page data » (`Failed to collect configuration for /tableau-de-bord`, `GMAIL_UTILISATEUR : absente`) : la collecte des pages charge `env.ts`. `secretTache` étant calculé au chargement de `env.ts`, une `CRON_SECRET` absente ou invalide en production fait échouer la construction de la même façon. Sur Vercel, le déploiement est alors en échec et **l'ancien déploiement reste en service** : la production ne tombe pas, elle ne reçoit pas la nouvelle version. Si la construction passait quand même (module non chargé), `register` refuserait le démarrage, et chaque requête échouerait.
+
+Validation (décision 1) : **43 à 256 caractères** (43 = 32 octets aléatoires en `base64url`, sans remplissage), alphabet `base64url` seul (`A-Z`, `a-z`, `0-9`, `-`, `_`). Une espace, un retour à la ligne (collage d'une ligne entière) ou un guillemet sont refusés au démarrage, plutôt que de rendre la tâche silencieusement inappelable. Message : `- CRON_SECRET : <raison>`, jamais la valeur (S-54), comme les autres variables. Une variable présente mais vide est refusée, comme `EMAIL_*`.
 
 `.env.example` gagne une ligne en commentaire (`# CRON_SECRET=`), avec la mention « Vercel seulement ; en local, la tâche refuse tout appel ». Le développeur n'a rien à ajouter à `.env.local`.
 
@@ -170,19 +172,18 @@ Une ligne par étape, par `console.info` pour une réussite et `console.error` p
 
 L'assistant ne voit jamais la valeur, ne lance aucune de ces commandes, et aucune n'écrit de fichier. Vercel range désormais les variables en **Config** et **Secret** ; une variable « Sensitive » existante est traitée comme Secret (documentation du 2026-08-28) : on choisit **Secret**, valeur illisible après l'enregistrement.
 
-**Quand** : la valeur de production **avant la fusion** de la PR de cette fiche (décision à prendre 1 : sans elle, la production tombe au déploiement de la fusion). Une variable de Vercel ne s'applique qu'au déploiement suivant (`envoi-emails.md`, section 9) : la poser avant la fusion suffit, le déploiement de la fusion la prend.
+**Quand** : la valeur de production **avant la fusion** de la PR de cette fiche (décision 1 : sans elle, la construction du déploiement de la fusion échoue, et la production reste sur l'ancienne version). Une variable de Vercel ne s'applique qu'au déploiement suivant (`envoi-emails.md`, section 9) : la poser avant la fusion suffit, le déploiement de la fusion la prend.
 
 **Deux valeurs distinctes** (S-83), une pour Production, une pour Preview, chacune tirée à part :
 
-1. Dans Git Bash, sur le poste :
+1. Dans Git Bash, sur le poste, **une seule commande**, qui écrit la valeur directement dans le presse-papiers :
    ```sh
-   S=$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64url'))")
-   printf %s "$S" | clip.exe
+   node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64url'))" | clip.exe
    ```
-   43 caractères `base64url`. La valeur reste dans une variable du terminal et dans le presse-papiers ; l'historique du terminal ne garde que la commande.
+   43 caractères `base64url`, sans retour à la ligne. La valeur n'est jamais affichée à l'écran et n'entre dans aucune variable du terminal ni aucun fichier ; l'historique du terminal ne garde que la commande, qui ne la contient pas.
 2. Vercel → projet → **Settings → Environment Variables → Add** : clé `CRON_SECRET`, type **Secret**, environnement **Production** seul, coller la valeur, enregistrer.
-3. Vider le presse-papiers (`printf ' ' | clip.exe`) ; si l'historique du presse-papiers de Windows est actif (Win+V), y supprimer l'entrée. `unset S`. La valeur de production n'a plus jamais à être connue : Vercel l'envoie lui-même.
-4. Recommencer les étapes 1 à 3 pour **Preview** (toutes les branches), avec une nouvelle valeur. Garder `S` dans le terminal seulement si l'essai de la section 5, point 2, est fait dans la foulée.
+3. Vider le presse-papiers (`printf ' ' | clip.exe`) ; si l'historique du presse-papiers de Windows est actif (Win+V), y supprimer l'entrée. La valeur de production n'a plus jamais à être connue : Vercel l'envoie lui-même.
+4. Recommencer les étapes 1 à 3 pour **Preview** (toutes les branches), avec une nouvelle valeur. Si l'essai de la section 5, point 2, est fait, il se fait avant l'étape 3, depuis le presse-papiers.
 
 **Pourquoi Preview** : Vercel n'y appelle jamais la tâche. La valeur sert à un essai à la main sur la prévisualisation de cette PR (section 5) et donne à la prévisualisation la même configuration que la production. Sans elle, la route y refuserait tout, ce qui est sûr aussi.
 
@@ -195,7 +196,7 @@ L'assistant ne voit jamais la valeur, ne lance aucune de ces commandes, et aucun
 Jamais par l'assistant (`CLAUDE.md`).
 
 1. **Avant la fusion** : `CRON_SECRET` posée en Production et en Preview (section 4).
-2. **Prévisualisation de la PR**, facultatif : `printf 'Authorization: Bearer %s' "$S" | curl -s -o /dev/null -w '%{http_code}\n' -H @- https://<adresse du déploiement>/api/taches/quotidienne` (l'en-tête est lu sur l'entrée standard, jamais dans la ligne de commande) ; attendu `200`, puis une ligne `[tache]` par étape dans les journaux du déploiement. Puis `unset S`. Si la protection des déploiements de Vercel répond 401, l'essai est sauté : la preuve se fait en production.
+2. **Prévisualisation de la PR**, facultatif, la valeur de Preview encore dans le presse-papiers : `{ printf 'Authorization: Bearer '; powershell.exe -NoProfile -Command '[Console]::Out.Write((Get-Clipboard -Raw))'; } | curl -s -o /dev/null -w '%{http_code}\n' -H @- https://<adresse du déploiement>/api/taches/quotidienne`. L'en-tête est lu par `curl` sur son entrée standard : la valeur n'est ni affichée, ni dans une variable, ni dans la ligne de commande. Attendu `200`, puis une ligne `[tache]` par étape dans les journaux du déploiement. Puis vider le presse-papiers (section 4, étape 3). Si la protection des déploiements de Vercel répond 401, l'essai est sauté : la preuve se fait en production.
 3. **Après la fusion** : le workflow `controle-deploiement.yml` passe, contrôles `tache:*` compris (section 6). `/` en 200 prouve que `CRON_SECRET` a été acceptée.
 4. **Settings → Cron Jobs** : une seule tâche, `/api/taches/quotidienne`, `0 3 * * *`. Bouton « Run » : la documentation ne dit pas si ce lancement envoie `CRON_SECRET`. Lignes `[tache]` « ok » dans les journaux : il l'envoie ; aucune ligne (404) : il ne l'envoie pas, on attend le passage du lendemain.
 5. **Le lendemain** : une exécution entre 03:00 et 03:59 UTC, deux lignes `[tache]` à `resultat: ok`, aucune adresse, aucun en-tête, aucun message d'erreur dans les journaux.
@@ -271,7 +272,7 @@ Aucune. Le dossier `drizzle/` n'est pas touché.
 - [ ] Sans `Authorization`, avec un secret forgé, avec `bearer` en minuscules, avec un espace en trop, avec le secret seul ou dans la requête : même statut, mêmes en-têtes propres, même corps qu'une tâche inexistante ; aucune étape lancée ; aucune ligne au journal.
 - [ ] Secret non configuré : tout appel est refusé, `Bearer `, `Bearer null` et `Bearer undefined` compris.
 - [ ] Comparaison sur deux empreintes SHA-256 par `timingSafeEqual` ; aucune exception pour un en-tête de longueur quelconque.
-- [ ] En production, `CRON_SECRET` absente, vide, trop courte ou hors de l'alphabet `base64url` : configuration refusée, message sans la valeur ; hors production, absente : `null`.
+- [ ] En production, `CRON_SECRET` absente, vide, de moins de 43 caractères ou hors de l'alphabet `base64url` : configuration refusée, message sans la valeur ; hors production, absente : `null`, et tout appel est refusé.
 - [ ] Appel autorisé : les deux étapes, dans l'ordre, chacune lancée même si l'autre échoue ; 200 `{"ok":true}` ou 500 `{"ok":false}` ; `Cache-Control: no-store`.
 - [ ] Journal : une ligne par étape, champs de la section 3.3 seulement ; une erreur dont le message contient une adresse email et une requête SQL n'en laisse rien passer.
 - [ ] Deux appels successifs ou simultanés : aucune erreur, même état final.
@@ -288,7 +289,8 @@ Dans cet ordre, chacun vu en échec avant le code.
 
 1. [ ] **Comparaison du secret** — `src/server/taches/secret.test.ts` : `secretValide` vrai pour `Bearer <secret>` exact ; faux pour en-tête absent, vide, `Bearer`, `Bearer `, `bearer <secret>`, `Bearer  <secret>`, `Bearer <secret> `, `<secret>` seul, préfixe du secret, secret suivi d'un caractère, secret de même longueur différent au dernier caractère, en-tête de 64 Kio ; secret `null` : faux pour `Bearer `, `Bearer null`, `Bearer undefined` ; aucune exception. Espion sur `timingSafeEqual` : appelé une fois par comparaison, sur deux tampons de 32 octets, secret `null` compris.
 2. [ ] **Refus indiscernable** — `src/server/taches/quotidienne.attaque.test.ts` (étapes factices espionnées, console espionnée) : pour chaque refus du critère 2, plus secret correct sur une tâche inconnue, sur `QUOTIDIENNE`, `quotidienne.`, `__proto__`, `constructor` (liste fermée lue par `Object.hasOwn`) : réponse égale à celle de `/api/taches/<nom aléatoire>` sans secret (statut, en-têtes, corps lu en octets) ; étapes jamais appelées ; aucune écriture sur la console. Témoin : le secret correct sur `quotidienne` lance les étapes (sinon le test ne prouverait rien).
-3. [ ] **Configuration** — `src/server/env-schema.test.ts`, ajouts : `validerSecretTache` en production sans variable, vide, de 31 caractères, avec espace, retour à la ligne, guillemet : refus, message `CRON_SECRET : <raison>` sans la valeur ; 32 et 256 caractères valides acceptés, 257 refusé ; hors production, absente : `null` ; `VERCEL_ENV` absent (local) : `null`.
+3. [ ] **Configuration** — `src/server/env-schema.test.ts`, ajouts : `validerSecretTache` en production sans variable, vide, de 42 caractères (trop court, refusé aussi en prévisualisation), avec espace, retour à la ligne, guillemet : refus, message `CRON_SECRET : <raison>` sans la valeur ; 43 et 256 caractères valides acceptés, 257 refusé ; en prévisualisation, absente : `null` ; `VERCEL_ENV` absent (local) : `null`.
+3a. [ ] **Absente en prévisualisation, tout refusé** — `quotidienne.attaque.test.ts` : traitement construit avec le secret lu par `validerSecretTache({ VERCEL_ENV: "preview" })` ; aucun en-tête, `Bearer `, `Bearer null`, `Bearer undefined`, un secret quelconque de 43 caractères : réponse inexistante, aucune étape lancée.
 4. [ ] **Exécution** — `src/server/taches/quotidienne.test.ts` : ordre des étapes ; première étape qui lève, la seconde est lancée, 500 `{"ok":false}` ; les deux réussissent : 200 `{"ok":true}` ; `Cache-Control: no-store` sur toutes les réponses ; lignes de journal exactes (champs, types) ; erreur levée avec `message` contenant `awa.kone@exemple.invalid`, `delete from "user"`, `params:` et une pile : aucun de ces textes dans la sortie ; erreur hostile (accesseur `constructor` qui lève, `Proxy`) et console qui lève : la tâche ne lève pas, ligne de repli fixe.
 5. [ ] **Planification** — `src/server/taches/vercel-json.test.ts` : `vercel.json` lu et analysé ; seules les clés `$schema` et `crons` ; une entrée ; `path` égal à `/api/taches/quotidienne` ; `schedule` de la forme `<minute> <heure> * * *` avec minute 0 à 59 et heure 0 à 23 (une expression plus fréquente ferait échouer le déploiement Hobby) ; le nom de la tâche figure dans `TACHES`.
 6. [ ] **Inventaire** — `src/server/actions/inventaire.test.ts` : `api/taches/[tache]` remplace `api/taches/quotidienne` dans la liste admise, avec cette fiche ; `route.ts` de cette route a exactement la forme de la section 2.1 (seul export `GET`, égal à `traiterTache`).
@@ -343,19 +345,18 @@ Dans cet ordre, chacun vu en échec avant le code.
 - **Imprécision d'une heure** (offre Hobby) : passage entre 03:00 et 03:59 UTC.
 - **Le contrôle après déploiement ne prouve pas que la tâche tourne** : seulement qu'elle refuse ce qu'elle doit refuser (section 6).
 - **Le nom de la route est observable** : `/api/taches/<nom>` répond 404 au corps vide, une adresse sans page répond la page « introuvable ». Le nom est public (`vercel.json`, dépôt public), comme ceux des pages (`THREATS.md` RR-11).
-- **Secret en production obligatoire** (si la décision 1 est retenue) : une suppression accidentelle de la variable fait tomber la production au déploiement suivant. Le contrôle après déploiement le voit aussitôt (`/` en 500).
+- **Secret en production obligatoire** (décision 1) : une suppression accidentelle de la variable fait échouer la construction du déploiement suivant ; la production reste sur l'ancienne version, et rien ne se déploie avant que la variable soit reposée.
 - **Presse-papiers** : la valeur y passe pendant quelques secondes (section 4).
 
-## Décisions à prendre
+## Décisions
 
-Deux vrais choix, chacun avec la recommandation de l'assistant.
+Prises par le développeur le 2026-10-13.
 
-1. **`CRON_SECRET` absente en production.**
-   - a. **Configuration refusée : tout le site tombe** (comme `GMAIL_*`). Recommandé : un oubli se voit au premier déploiement (contrôle après déploiement en échec, « Instant Rollback ») au lieu de laisser, en silence, la purge ne jamais tourner pendant que les limites par adresse IP remplissent `compteur_debit`. Prix : poser la variable avant la fusion, comme pour Gmail.
-   - b. Route seule refusée, site intact. Plus doux, mais la panne ne se voit que dans les journaux de Vercel, que personne ne lit chaque jour.
-2. **Forme de la route.**
-   - a. **`api/taches/[tache]`, liste fermée des tâches** : un refus est identique, octet pour octet, à une tâche inexistante, en local comme sur Vercel (section 2.1). Recommandé. Change l'entrée de la liste admise (`api/taches/quotidienne` devient `api/taches/[tache]`).
-   - b. `api/taches/quotidienne` avec `notFound()` : chemin prévu par `STRUCTURE.md`, mais l'égalité avec une adresse sans page n'est pas garantie et pourrait différer entre `next start` et Vercel, comme en 0.8 ; à constater, sans parade si elle diffère.
+1. **`CRON_SECRET` obligatoire en production**, refusée par le schéma si elle est absente : la construction échoue, c'est voulu (constat de la section 2.3). Longueur minimale : 43 caractères `base64url` (32 octets aléatoires). Facultative en prévisualisation et en local : absente, tout appel est refusé, avec un test.
+2. **Route `api/taches/[tache]`** avec une liste fermée de tâches ; un refus reçoit la même réponse qu'une tâche inexistante, octet pour octet (section 2.1).
+3. **Contrôle après déploiement** : la page `tache` et ses trois requêtes (section 6).
+
+Section 4 : la valeur du secret est tirée et envoyée au presse-papiers par une seule commande, qui ne l'affiche jamais et ne la met dans aucune variable du terminal.
 
 ## Décisions par défaut
 
@@ -364,7 +365,7 @@ Appliquées par l'assistant le 2026-10-13, selon sa recommandation, sauf avis co
 1. **Vercel Cron**, une entrée, `0 3 * * *` UTC (section 1.2).
 2. **Comparaison** sur empreintes SHA-256 par `timingSafeEqual`, `node:crypto`, toujours calculée (section 2.2).
 3. **Refus** : 404, corps vide, `no-store`, aucune ligne au journal ; seul `GET` exporté ; rien d'autre que `Authorization` n'est lu (section 2.1).
-4. **Secret** : `validerSecretTache` à part de `validerEnvironnement` ; 32 à 256 caractères `base64url` (section 2.3).
+4. **Secret** : `validerSecretTache` à part de `validerEnvironnement` ; longueur fixée par la décision 1 (section 2.3).
 5. **Deux valeurs**, Production et Preview, type Secret, posées par le développeur depuis le presse-papiers, sans fichier (section 4).
 6. **Étapes** indépendantes, dans l'ordre compteurs puis comptes ; 500 si l'une échoue (section 3.1).
 7. **Aucun verrou, aucune limite de débit** sur la route (sections 3.2 et « Alternatives écartées »).
