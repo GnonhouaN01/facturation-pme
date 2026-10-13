@@ -284,7 +284,7 @@ Les deux mécanismes, complémentaires :
 Test d'inventaire, `src/server/actions/inventaire.test.ts` (sans base) :
 
 - parcourt `src/app/**/actions.ts`, importe chaque fichier, vérifie que chaque export porte la marque d'`exposer`, et que sa déclaration figure dans `registre.ts` ;
-- parcourt `src/app/**/route.ts` et exige que chacun figure dans une liste fermée (`api/auth/[...all]`, `api/taches/quotidienne`, vides aujourd'hui), chaque entrée de la liste citant sa fiche ;
+- parcourt `src/app/**/route.ts` et exige que chacun figure dans une liste fermée (`api/auth/[...all]` ; `api/taches/[tache]`, livrée par la 8.3, `docs/features/tache-quotidienne.md`), chaque entrée de la liste citant sa fiche ;
 - échoue si deux déclarations du registre portent le même `nom` ;
 - garde contre un parcours vide : il vérifie qu'il a bien parcouru `src/app/`.
 

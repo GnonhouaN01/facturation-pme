@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -21,6 +22,15 @@ const EMAILS_E2E = {
   EMAIL_TRANSPORT: "fichier",
   EMAIL_DOSSIER: join(tmpdir(), "facturation-pme-e2e-emails"),
 };
+
+// Secret de la tâche quotidienne pour le serveur du port 3000 : tiré au
+// hasard à chaque exécution, jamais écrit. Ce fichier est relu par chaque
+// processus de Playwright : la valeur tirée par le premier est posée dans
+// l'environnement, dont héritent les suivants, pour que tous partagent la
+// même. Le serveur en panne (port 3101) n'en reçoit pas : la tâche y refuse
+// tout appel. Fiche : docs/features/tache-quotidienne.md, test 9.
+process.env.CRON_SECRET_E2E ??= randomBytes(32).toString("base64url");
+const TACHE_E2E = { CRON_SECRET: process.env.CRON_SECRET_E2E };
 
 export default defineConfig({
   testDir: "./e2e",
@@ -54,7 +64,7 @@ export default defineConfig({
       url: ADRESSE,
       reuseExistingServer: false,
       timeout: 120_000,
-      env: { ...EMAILS_E2E },
+      env: { ...EMAILS_E2E, ...TACHE_E2E },
     },
     // Second serveur : configuration valide, base injoignable (section 4.3,
     // décision 17). Les variables passées ici l'emportent sur .env.local et

@@ -272,3 +272,43 @@ export function validerConfigurationEmail(source: Source): ConfigurationEmail {
     gmail,
   });
 }
+// Secret de la tâche quotidienne (CRON_SECRET), que Vercel envoie dans
+// Authorization: Bearer <secret>. Fonction pure, comme les précédentes ; le
+// message nomme la variable et la raison, jamais la valeur. Obligatoire en
+// production : absente, le chargement de env.ts échoue, donc la construction
+// (« Collecting page data » charge env.ts) ; voulu, l'ancien déploiement
+// reste en service. Ailleurs, absente : secret nul, la tâche refuse tout
+// appel. Présente, la même règle partout : 43 à 256 caractères base64url
+// (43 = 32 octets aléatoires). Fiche : docs/features/tache-quotidienne.md,
+// section 2.3, décision 1.
+
+export type SecretTache = Readonly<{ secret: string | null }>;
+
+const MESSAGES_TACHE = {
+  court: "doit faire au moins 43 caractères (32 octets aléatoires en base64url)",
+  long: "doit faire au plus 256 caractères",
+  alphabet: "doit être en base64url (A-Z, a-z, 0-9, - et _), sans espace ni remplissage",
+} as const;
+
+const LONGUEUR_MIN_SECRET_TACHE = 43;
+const LONGUEUR_MAX_SECRET_TACHE = 256;
+const BASE64URL = /^[A-Za-z0-9_-]+$/u;
+
+export function validerSecretTache(source: Source): SecretTache {
+  const valeur = source.CRON_SECRET;
+  let raison: string | null = null;
+  if (valeur === undefined) {
+    if (source.VERCEL_ENV === "production") raison = MESSAGES.absente;
+  } else if (valeur === "") {
+    raison = MESSAGES.absente;
+  } else if (!BASE64URL.test(valeur)) {
+    raison = MESSAGES_TACHE.alphabet;
+  } else if (valeur.length < LONGUEUR_MIN_SECRET_TACHE) {
+    raison = MESSAGES_TACHE.court;
+  } else if (valeur.length > LONGUEUR_MAX_SECRET_TACHE) {
+    raison = MESSAGES_TACHE.long;
+  }
+
+  if (raison !== null) throw new Error([ENTETE, `- CRON_SECRET : ${raison}`].join("\n"));
+  return Object.freeze({ secret: valeur ?? null });
+}

@@ -4,7 +4,10 @@ import { parseArgs } from "node:util";
 
 // Contrôle après déploiement (0.8) : quelques requêtes GET publiques sur le
 // site, sans secret, sans écriture. Aucun cookie, sauf un cookie de session
-// forgé, tiré au hasard, sur une requête de /tableau-de-bord. Lancé par
+// forgé, tiré au hasard, sur une requête de /tableau-de-bord. Aucun
+// Authorization, sauf un secret forgé, tiré au hasard, sur une requête de
+// /api/taches/quotidienne (page « tache », 8.3,
+// docs/features/tache-quotidienne.md, section 6). Lancé par
 // .github/workflows/controle-deploiement.yml après chaque déploiement de
 // production réussi, et par les tests (e2e/controle-deploiement.spec.ts)
 // contre un serveur factice et le site construit en local.
@@ -54,7 +57,7 @@ const FUITES = [
   ["chemin de fichier", /\b[A-Za-z]:\\{1,2}(?:Users|Windows|Program)/],
   [
     "nom de variable d'environnement",
-    /\b(?:DATABASE_URL\w*|BETTER_AUTH_\w+|EMAIL_\w+|GMAIL_\w+|VERCEL_\w+|NODE_ENV)\b|process\.env/,
+    /\b(?:DATABASE_URL\w*|BETTER_AUTH_\w+|EMAIL_\w+|GMAIL_\w+|VERCEL_\w+|NODE_ENV|CRON_SECRET)\b|process\.env/,
   ],
   ["adresse ou rôle de la base", /postgres(?:ql)?:\/\/|app_facturation|ECONNREFUSED/],
 ];
@@ -103,16 +106,20 @@ export function validerAdresse(adresse) {
   return url.origin;
 }
 
-// GET seul, sans authentification, redirection non suivie, sans cookie sauf
-// le cookie forgé passé en paramètre. Une requête échouée donne null : chaque
-// contrôle de la page échoue alors.
-async function lire(origine, chemin, cookie) {
+// GET seul, redirection non suivie, sans cookie ni Authorization sauf les
+// valeurs forgées passées en paramètre. Une requête échouée donne null :
+// chaque contrôle de la page échoue alors.
+async function lire(origine, chemin, cookie, autorisation) {
   try {
     const reponse = await fetch(origine + chemin, {
       method: "GET",
       redirect: "manual",
       credentials: "omit",
-      headers: { accept: "text/html", ...(cookie ? { cookie } : {}) },
+      headers: {
+        accept: "text/html",
+        ...(cookie ? { cookie } : {}),
+        ...(autorisation ? { authorization: autorisation } : {}),
+      },
       signal: AbortSignal.timeout(DELAI_REQUETE),
     });
     return { statut: reponse.status, entetes: reponse.headers, corps: await reponse.text() };
@@ -227,6 +234,12 @@ export function comparerDocuments(premiere, seconde, [nom1, nom2] = ["premier", 
   return lignes;
 }
 
+// Secret de la tâche quotidienne au format attendu (32 octets en base64url),
+// tiré au hasard : aucun serveur ne peut l'avoir. Jamais affiché.
+function autorisationForgee() {
+  return `Bearer ${randomBytes(32).toString("base64url")}`;
+}
+
 // Valeur de session au format de Better Auth (jeton, point, signature), tirée
 // au hasard : aucun serveur ne peut l'avoir émise.
 function cookieForge() {
@@ -238,6 +251,7 @@ export async function controlerSite(adresse, { detail = false } = {}) {
   const origine = validerAdresse(adresse);
   const inexistante = `/adresse-inexistante-${randomBytes(8).toString("hex")}`;
   const lien = () => `/lien/devis/${randomBytes(32).toString("base64url")}`;
+  const tacheInconnue = `/api/taches/${randomBytes(8).toString("hex")}`;
   const [accueil, accueilBis, tableau, tableauForge, absente, lien1, lien2] = [
     await lire(origine, "/"),
     await lire(origine, "/"),
@@ -246,6 +260,11 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     await lire(origine, inexistante),
     await lire(origine, lien()),
     await lire(origine, lien()),
+  ];
+  const [tacheSans, tacheForgee, tacheAbsente] = [
+    await lire(origine, "/api/taches/quotidienne"),
+    await lire(origine, "/api/taches/quotidienne", undefined, autorisationForgee()),
+    await lire(origine, tacheInconnue),
   ];
 
   const resultats = [];
@@ -318,6 +337,28 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     ["premier jeton", "second jeton"],
     "statut ou document différent entre deux jetons aléatoires",
   );
+
+  // Tâche quotidienne (8.3) : sans secret, avec un secret forgé et vers une
+  // tâche inconnue, la même réponse (statut, corps, Content-Type), 404 au
+  // corps vide. Aucune ligne de détail : rien de ces réponses n'est affiché.
+  const taches = [tacheSans, tacheForgee, tacheAbsente];
+  const premierProbleme =
+    (verifier) =>
+    (...r) =>
+      r.map(verifier).find((p) => p !== null) ?? null;
+  controler("tache:statut", taches, premierProbleme(statut(404)));
+  controler("tache:politique", taches, premierProbleme(verifierPolitique));
+  controler("tache:entetes", taches, premierProbleme(verifierEntetes));
+  controler("tache:fuite", taches, (...r) => verifierFuite(r));
+  controler("tache:anglais", taches, (...r) =>
+    r.some((x) => ANGLAIS.test(x.corps)) ? "texte anglais ou « 404 » dans le corps" : null,
+  );
+  controler("tache:identique", taches, (...r) => {
+    const forme = (x) => JSON.stringify([x.statut, x.entetes.get("content-type"), x.corps]);
+    return r.every((x) => forme(x) === forme(r[0]))
+      ? null
+      : "réponse différente sans secret, avec un secret forgé ou pour une tâche inconnue";
+  });
   return resultats;
 }
 

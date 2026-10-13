@@ -307,6 +307,7 @@ Le script attend que l'adresse du propriétaire soit copiée dans Neon, renouvel
 | `DATABASE_URL` | Secret | Production, et une autre valeur pour Preview |
 | `BETTER_AUTH_SECRET` | Secret | Production, et une autre valeur pour Preview |
 | `BETTER_AUTH_URL` | Config | Production |
+| `CRON_SECRET` | Secret | Production, et une autre valeur pour Preview. Obligatoire en production : sans elle, la construction échoue. À poser avant la fusion, par la procédure de `docs/features/tache-quotidienne.md`, section 4 (une commande qui écrit la valeur dans le presse-papiers, sans l'afficher) |
 
 `DATABASE_URL_MIGRATION` n'est jamais saisie dans Vercel.
 
