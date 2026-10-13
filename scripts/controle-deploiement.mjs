@@ -40,8 +40,6 @@ export const ENTETES_ATTENDUS = {
   "cross-origin-resource-policy": "same-origin",
 };
 
-export const TEXTE_INTROUVABLE = "Cette page est introuvable";
-
 // Détails techniques qu'aucune page ni aucun en-tête ne doit porter (S-85).
 const FUITES = [
   ["ligne de pile", /\bat [\w$.<>[\] ]+ \([^)\s]*:\d+:\d+\)/],
@@ -162,17 +160,15 @@ function verifierFuite(reponses) {
   return trouves.size ? `trouvé : ${[...trouves].join(", ")}` : null;
 }
 
-// Ce que le serveur envoie, sans JavaScript : titre et texte du corps.
-function contenuServi(html) {
-  const titre = /<title[^>]*>([^<]*)<\/title>/i.exec(html)?.[1] ?? "";
-  const texte = html
-    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
-    .replace(/<head\b[\s\S]*?<\/head>/i, " ")
-    .replace(/<[^>]*>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return `${titre.trim()}\n${texte}`;
+// Document HTML au nonce près : contenu des scripts en ligne vidé (charge
+// utile RSC, qui nomme l'adresse et le segment de route), attributs gardés,
+// chaque nonce remplacé. Toute page introuvable passe par notFound() : sans
+// session ou inexistante, le même document (fiche, section 5). Même
+// définition que documentServi d'e2e/outils.ts.
+export function documentServi(html) {
+  return html
+    .replace(/(<script\b[^>]*>)[\s\S]*?<\/script>/gi, "$1</script>")
+    .replace(/nonce(="|-)[A-Za-z0-9+/=]+/g, "nonce$1N");
 }
 
 export async function controlerSite(adresse) {
@@ -217,19 +213,14 @@ export async function controlerSite(adresse) {
     return n1 === n2 ? "même nonce sur deux requêtes" : null;
   });
   for (const [nom, reponse] of pages.slice(1)) {
-    controler(`${nom}:introuvable`, [reponse], (r) =>
-      contenuServi(r.corps).includes(TEXTE_INTROUVABLE)
-        ? null
-        : "page « introuvable » absente du HTML",
-    );
     controler(`${nom}:anglais`, [reponse], (r) =>
-      ANGLAIS.test(contenuServi(r.corps)) ? "texte anglais ou « 404 » affiché" : null,
+      ANGLAIS.test(documentServi(r.corps)) ? "texte anglais ou « 404 » dans le document" : null,
     );
   }
   controler("tableau-de-bord:identique", [tableau, absente], (t, a) =>
-    contenuServi(t.corps) === contenuServi(a.corps)
+    t.statut === a.statut && documentServi(t.corps) === documentServi(a.corps)
       ? null
-      : "contenu servi différent de celui d'une adresse inexistante",
+      : "statut ou document différent de ceux d'une adresse inexistante",
   );
   return resultats;
 }

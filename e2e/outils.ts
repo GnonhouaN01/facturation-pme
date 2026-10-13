@@ -46,6 +46,18 @@ export function nonceDe(politique: string | undefined): string {
   return trouves[0] ?? "";
 }
 
+// Document HTML d'une réponse, au nonce près : le contenu des scripts en
+// ligne est vidé (charge utile RSC, qui nomme l'adresse et le segment de
+// route), leurs attributs sont gardés, et chaque nonce devient « N ». Toute
+// page introuvable passe par notFound() : sans session, refusée ou
+// inexistante, elle reçoit le même document (S-02). Fiche :
+// docs/features/controle-deploiement.md, section 5.
+export function documentServi(html: string): string {
+  return html
+    .replace(/(<script\b[^>]*>)[\s\S]*?<\/script>/gi, "$1</script>")
+    .replace(/nonce(="|-)[A-Za-z0-9+/=]+/g, "nonce$1N");
+}
+
 // La politique, nonce remplacé par « * », pour la comparer à POLITIQUE_PRODUCTION.
 export function sansNonce(politique: string | undefined): Record<string, string[]> {
   return Object.fromEntries(

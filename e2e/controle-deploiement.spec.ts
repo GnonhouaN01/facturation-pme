@@ -8,13 +8,12 @@ import { expect, test } from "@playwright/test";
 
 import {
   controlerSite,
+  documentServi as documentDuScript,
   ENTETES_ATTENDUS,
   POLITIQUE_ATTENDUE,
-  TEXTE_INTROUVABLE,
 } from "../scripts/controle-deploiement.mjs";
-import { TEXTES_ERREURS } from "../src/textes/erreurs";
 
-import { ENTETES_SECTION_6, POLITIQUE_PRODUCTION } from "./outils";
+import { documentServi, ENTETES_SECTION_6, POLITIQUE_PRODUCTION } from "./outils";
 
 // Script de contrôle après déploiement (0.8), éprouvé contre un serveur
 // factice local, puis contre le site construit en local. Jamais contre la
@@ -209,17 +208,9 @@ test.describe("contrôle après déploiement, serveur factice", () => {
     ["nonce-fixe", ["accueil:nonce-neuf"]],
     ["script-sans-nonce", surToutes("nonce-scripts")],
     ["accueil-500", ["accueil:statut"]],
-    ["tableau-de-bord-200", ["tableau-de-bord:statut"]],
-    [
-      "introuvable-en-anglais",
-      [
-        "inexistante:anglais",
-        "inexistante:introuvable",
-        "tableau-de-bord:anglais",
-        "tableau-de-bord:introuvable",
-      ],
-    ],
-    ["tableau-de-bord-vide", ["tableau-de-bord:identique", "tableau-de-bord:introuvable"]],
+    ["tableau-de-bord-200", ["tableau-de-bord:identique", "tableau-de-bord:statut"]],
+    ["introuvable-en-anglais", ["inexistante:anglais", "tableau-de-bord:anglais"]],
+    ["tableau-de-bord-vide", ["tableau-de-bord:identique"]],
     ["pile", ["inexistante:fuite"]],
     ["chemin-de-fichier", ["tableau-de-bord:fuite"]],
     ["variable-dans-le-corps", ["accueil:fuite"]],
@@ -327,21 +318,22 @@ test.describe("contrôle après déploiement, ligne de commande", () => {
 });
 
 test.describe("contrôle après déploiement, cohérence et site construit", () => {
-  test("valeurs attendues égales à celles des tests de bout en bout et des textes", () => {
+  test("valeurs attendues et document égaux à ceux des tests de bout en bout", () => {
     expect(POLITIQUE_ATTENDUE).toEqual(POLITIQUE_PRODUCTION);
     expect(ENTETES_ATTENDUS).toEqual(ENTETES_SECTION_6);
-    expect(TEXTE_INTROUVABLE).toBe(TEXTES_ERREURS.introuvable);
+    for (const html of [
+      '<html><head><script src="/a.js" nonce="QUJD+/=="></script></head><body></body></html>',
+      '<body><script nonce="QUJD">self.__next_f.push([1,"/chemin"])</script><p>x</p></body>',
+      ["<script>", "</script><SCRIPT type=x>y</SCRIPT>"].join("\n"),
+    ]) {
+      expect(documentDuScript(html)).toBe(documentServi(html));
+    }
   });
 
-  // Écart S-02 constaté le 2026-10-13 (fiche, section 5, décision 5) :
-  // /tableau-de-bord sert le document d'erreur de Next.js, sans la page
-  // « introuvable » dans son HTML. Ce test échouera, et sera mis à jour, quand
-  // la correction sera livrée.
-  test("site construit en local : seuls les deux contrôles de l'écart S-02 échouent", async ({
-    baseURL,
-  }) => {
+  // Toute page introuvable passe par notFound() (fiche, section 5, décision 5).
+  test("site construit en local : tous les contrôles passent", async ({ baseURL }) => {
     const resultats = await controlerSite(baseURL ?? "");
 
-    expect(echecs(resultats)).toEqual(["tableau-de-bord:identique", "tableau-de-bord:introuvable"]);
+    expect(echecs(resultats)).toEqual([]);
   });
 });
