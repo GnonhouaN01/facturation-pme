@@ -19,7 +19,7 @@
     "verifier:auth": "tsx --conditions=react-server scripts/verifier-auth.mts",
     "verifier:creation-auth": "tsx --conditions=react-server scripts/verifier-creation-auth.mts",
     "essai:email": "tsx --conditions=react-server scripts/essai-envoi-gmail.mts",
-    "verifier": "npm run lint && npm run typecheck && npm test && npm run build && npm run test:e2e && node scripts/verifier-ports.mjs"
+    "verifier": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build && npm run test:e2e && node scripts/verifier-ports.mjs"
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",
