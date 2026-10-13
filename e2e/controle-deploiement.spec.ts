@@ -11,6 +11,7 @@ import {
   controlerSite,
   documentServi as documentDuScript,
   ENTETES_ATTENDUS,
+  optionsRequete,
   POLITIQUE_ATTENDUE,
   TEXTES_GABARIT,
 } from "../scripts/controle-deploiement.mjs";
@@ -30,7 +31,13 @@ import { documentServi, ENTETES_SECTION_6, POLITIQUE_PRODUCTION } from "./outils
 const SCRIPT = "scripts/controle-deploiement.mjs";
 const executer = promisify(execFile);
 
-type Requete = { methode: string | undefined; chemin: string; entetes: IncomingHttpHeaders };
+// corpsOctets : taille du corps reçu, lu en entier (requêtes de /api/auth).
+type Requete = {
+  methode: string | undefined;
+  chemin: string;
+  entetes: IncomingHttpHeaders;
+  corpsOctets?: number;
+};
 
 // Un défaut par serveur factice ; sans défaut, le serveur est conforme.
 type Defaut =
@@ -127,7 +134,8 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
   const requetes: Requete[] = [];
   const serveur = createServer((requete, reponse) => {
     const chemin = requete.url ?? "";
-    requetes.push({ methode: requete.method, chemin, entetes: requete.headers });
+    const recue: Requete = { methode: requete.method, chemin, entetes: requete.headers };
+    requetes.push(recue);
 
     const nonce =
       defaut === "nonce-fixe" ? "AAAAAAAAAAAAAAAAAAAAAA==" : randomBytes(16).toString("base64");
@@ -181,7 +189,11 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
     // (inscription fermée jusqu'à la 1.3) ; ouverts, ils refusent une
     // requête sans Origin par 403 et un corps JSON.
     if (chemin.startsWith("/api/auth/")) {
-      requete.resume();
+      // Le corps est lu en entier avant la réponse : sa taille est notée.
+      recue.corpsOctets = 0;
+      requete.on("data", (morceau: Buffer) => {
+        recue.corpsOctets = (recue.corpsOctets ?? 0) + morceau.length;
+      });
       const auth: Record<string, string> = { ...entetes };
       delete auth["Content-Type"];
       if (defaut === "auth-x-powered-by") auth["X-Powered-By"] = "Next.js";
@@ -211,8 +223,10 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
         corps = " ";
       }
       if (defaut === "auth-en-anglais") corps = "Not Found";
-      reponse.writeHead(statut, auth);
-      reponse.end(corps);
+      requete.on("end", () => {
+        reponse.writeHead(statut, auth);
+        reponse.end(corps);
+      });
       return;
     }
 
@@ -483,6 +497,56 @@ test.describe("contrôle après déploiement, serveur factice", () => {
     } finally {
       await factice.fermer();
     }
+  });
+});
+
+// Décision du développeur sur la PR 2 de la 1.1 : les quatre POST de la page
+// « inscription » sont acceptés s'ils partent sans corps, sans Origin, sans
+// cookie et sans Authorization. Prouvé deux fois : sur ce que le serveur
+// reçoit (corps lu en entier, en-têtes reçus), et sur la construction de la
+// requête, qui refuse un POST porteur d'un cookie, d'un Authorization ou d'un
+// corps (docs/features/inscription.md, section 2.3).
+test.describe("contrôle après déploiement, les quatre POST de l'inscription", () => {
+  test("reçus par le serveur : aucun octet de corps, ni Origin, ni Cookie, ni Authorization, ni Content-Type", async () => {
+    const factice = await demarrerFactice();
+    try {
+      await controlerSite(factice.adresse);
+      const posts = factice.requetes.filter((r) => r.methode === "POST");
+
+      expect(posts.map((r) => r.chemin.replace(/[0-9a-f]{16}$/, "<inexistant>"))).toEqual([
+        ...POINTS_INSCRIPTION,
+        "/api/auth/<inexistant>",
+      ]);
+      for (const requete of posts) {
+        expect(requete.corpsOctets, requete.chemin).toBe(0);
+        expect(requete.entetes["content-length"] ?? "0", requete.chemin).toBe("0");
+        expect(requete.entetes["transfer-encoding"], requete.chemin).toBeUndefined();
+        for (const interdit of ["origin", "cookie", "authorization", "content-type", "referer"]) {
+          expect(requete.entetes[interdit], `${requete.chemin} : ${interdit}`).toBeUndefined();
+        }
+      }
+    } finally {
+      await factice.fermer();
+    }
+  });
+
+  test("construction : un POST sans corps ni en-tête d'authentification, et refusé autrement", () => {
+    const post = optionsRequete({ methode: "POST" });
+
+    expect(post.method).toBe("POST");
+    expect(post.body).toBeUndefined();
+    expect(post.credentials).toBe("omit");
+    expect(post.redirect).toBe("manual");
+    expect(Object.keys(post.headers).map((nom) => nom.toLowerCase())).toEqual(["accept"]);
+
+    expect(() => optionsRequete({ methode: "POST", cookie: "a=b" })).toThrow();
+    expect(() => optionsRequete({ methode: "POST", autorisation: "Bearer x" })).toThrow();
+    expect(() => optionsRequete({ methode: "POST", corps: "{}" })).toThrow();
+    expect(() => optionsRequete({ methode: "PUT" })).toThrow();
+    // Témoin : le GET garde ses deux exceptions forgées.
+    expect(optionsRequete({ methode: "GET", cookie: "a=b" }).headers).toMatchObject({
+      cookie: "a=b",
+    });
   });
 });
 
