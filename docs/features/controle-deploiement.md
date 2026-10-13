@@ -61,7 +61,8 @@ Chaque contrôle porte un nom stable `<page>:<contrôle>` (pages `accueil`, `tab
 ### 3. Le workflow : `.github/workflows/controle-deploiement.yml`
 
 - **Déclencheurs** : `deployment_status` (publié par Vercel pour chaque déploiement) et `workflow_dispatch`.
-- **Filtre** : le job ne tourne que si l'état est `success` et que l'environnement GitHub du déploiement commence par `Production` (Vercel le nomme `Production` ou `Production – <projet>`), ou sur un lancement à la main depuis `main`. Un déploiement de prévisualisation donne une exécution « sautée », sans contrôle (décision 4).
+- **Premier job, `evenement`, toujours exécuté** (décision 11) : il affiche seulement `github.event_name`, `github.event.deployment.environment`, `github.event.deployment.production_environment` et `github.event.deployment_status.state`, passés par `env` et jamais interpolés dans la commande. Un job à condition sautée n'exécute aucun pas : ce job séparé dit pourquoi le contrôle a tourné ou non.
+- **Filtre** : le job `controler` (qui suit `evenement`) ne tourne que si l'état est `success` et que l'environnement GitHub du déploiement commence par `Production` (Vercel le nomme `Production` ou `Production – <projet>`) ou que le déploiement est marqué `production_environment`, ou sur un lancement à la main depuis `main`. Un déploiement de prévisualisation, ou un état autre que `success` (`pending`, `in_progress`), donne un job « sauté », sans contrôle (décision 4).
 - **Adresse** : le domaine de production, écrit dans le workflow (`https://facturation-pme.vercel.app`), et non `environment_url` de l'événement (décision 3).
 - **Permissions** : `contents: read` (récupération du code), rien d'autre. Aucun secret, aucun `environment:` GitHub, aucune donnée de l'événement interpolée dans une commande.
 - **Étapes** : récupérer le code, installer Node.js 24, lancer le script avec `--essais 3 --pause 20`. Pas de `npm ci` : le script n'a aucune dépendance.
@@ -207,6 +208,7 @@ Prises le 2026-10-13 par l'assistant, selon ses recommandations, sur instruction
 8. **Tests** : dans Playwright (`e2e/`), qui lance déjà le site construit ; pas d'extension de l'inclusion de Vitest à `scripts/`.
 9. **Valeurs attendues recopiées** dans le script, avec un test de cohérence (alternatives écartées).
 10. **Portée de S-02 précisée** (relecteur, 2026-10-13, après le premier passage en production) : l'indiscernabilité porte sur les ressources, sous une même route, pas sur les noms de pages. Route attrape-tout supprimée ; comparaisons `tableau-de-bord:identique` (sans cookie, cookie forgé) et `lien:identique` (deux jetons) ; contrôle `gabarit` ajouté ; option `--detail` (section 5). Remplace la décision 5 pour ce qui est comparé.
+11. **Diagnostic du déclenchement** (relecteur, 2026-10-13) : l'exécution n° 3, attendue pour le déploiement de production, a été sautée. Un job `evenement` toujours exécuté affiche les quatre champs qui décident du filtre ; le filtre accepte aussi `production_environment == true`. Hypothèse retenue en attendant la prochaine exécution : Vercel publie plusieurs états par déploiement (`pending` à la création, puis `success`), chacun déclenchant une exécution ; l'exécution n° 3 serait celle d'un état autre que `success`.
 
 ## Notes de l'implémentation
 
