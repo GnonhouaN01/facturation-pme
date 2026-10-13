@@ -7,6 +7,7 @@ import type { Resultat } from "@/server/actions/refus";
 import { ROLES } from "@/server/autorisation/matrice";
 
 import { TEXTES_COMMUNS } from "./commun";
+import { TEXTES_COMPTE } from "./compte";
 import { TEXTES_ERREURS } from "./erreurs";
 import { TEXTES_NAVIGATION } from "./navigation";
 import { TEXTES_RESULTATS } from "./resultats";
@@ -65,6 +66,12 @@ describe("messages de sécurité, mot pour mot", () => {
 
   test("action refusée dans un formulaire : « Cette action n'est pas disponible. » (décision 4)", () => {
     expect(TEXTES_RESULTATS.refuse).toBe(message("Action refusée dans un formulaire"));
+  });
+
+  test("lien expiré ou altéré (1.1) : « Ce lien n'est plus valable »", () => {
+    expect(TEXTES_COMPTE.verification.lienInvalide).toBe(
+      message("Page ouverte par un lien expiré"),
+    );
   });
 
   test("bandeau de simulation : le texte de DESIGN-SYSTEM.md", () => {
@@ -153,6 +160,7 @@ function aPlat(valeur: unknown, chemin: string): Array<[string, string]> {
 describe("voix de Signal (DESIGN-SYSTEM.md, « Voix »)", () => {
   const TOUS = (): Array<[string, string]> => [
     ...aPlat(TEXTES_COMMUNS, "commun"),
+    ...aPlat(TEXTES_COMPTE, "compte"),
     ...aPlat(TEXTES_ERREURS, "erreurs"),
     ...aPlat(TEXTES_NAVIGATION, "navigation"),
     ...aPlat(TEXTES_RESULTATS, "resultats"),

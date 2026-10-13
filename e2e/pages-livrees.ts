@@ -3,11 +3,12 @@ import { join } from "node:path";
 import { type Page, expect } from "@playwright/test";
 
 import { TEXTES_COMMUNS } from "../src/textes/commun";
+import { TEXTES_COMPTE } from "../src/textes/compte";
 import { TEXTES_ERREURS } from "../src/textes/erreurs";
 
 import { ADRESSE_PANNE, COOKIE_SESSION, cookieSessionSigne } from "./serveur-panne";
 
-// Pages livrées en 0.6 et joignables sans session, pour les tests
+// Pages livrées en 0.6, puis 1.1 (inscription), et joignables sans session, pour les tests
 // d'affichage (e2e/affichage.spec.ts, e2e/affichage-360.spec.ts). Les
 // captures vont dans test-results/captures/, dossier ignoré par git et vidé
 // par Playwright à chaque lancement. Fiche : docs/features/socle-interface.md,
@@ -51,6 +52,49 @@ export const PAGES: readonly PageLivree[] = [
       await attendreTitre(page, TEXTES_ERREURS.introuvable);
     },
     premiereAction: (page) => page.getByRole("link", { name: TEXTES_COMMUNS.revenirAccueil }),
+  },
+  // 1.1 : inscription et vérification (docs/features/inscription.md, 5.1).
+  {
+    nom: "inscription",
+    ouvrir: async (page) => {
+      await page.goto("/inscription");
+      await attendreTitre(page, TEXTES_COMPTE.inscription.titre);
+    },
+    premiereAction: (page) => page.getByRole("textbox", { name: TEXTES_COMPTE.inscription.nom }),
+  },
+  {
+    nom: "inscription-envoyee",
+    ouvrir: async (page) => {
+      await page.goto("/inscription/envoyee");
+      await attendreTitre(page, TEXTES_COMPTE.envoyee.titre);
+    },
+    premiereAction: (page) => page.getByRole("textbox", { name: TEXTES_COMPTE.renvoi.email }),
+  },
+  {
+    nom: "inscription-verifiee",
+    ouvrir: async (page) => {
+      await page.goto("/inscription/verifiee");
+      await attendreTitre(page, TEXTES_COMPTE.verifiee.titre);
+    },
+    premiereAction: (page) => page.getByRole("link", { name: TEXTES_COMMUNS.revenirAccueil }),
+  },
+  {
+    // Jeton de forme valable, jamais envoyé : le bouton seul est vérifié.
+    nom: "lien-verification",
+    ouvrir: async (page) => {
+      await page.goto("/lien/verification#a.b.c");
+      await attendreTitre(page, TEXTES_COMPTE.verification.titre);
+    },
+    premiereAction: (page) =>
+      page.getByRole("button", { name: TEXTES_COMPTE.verification.confirmer }),
+  },
+  {
+    nom: "lien-verification-invalide",
+    ouvrir: async (page) => {
+      await page.goto("/lien/verification");
+      await attendreTitre(page, TEXTES_COMPTE.verification.lienInvalide);
+    },
+    premiereAction: (page) => page.getByRole("textbox", { name: TEXTES_COMPTE.renvoi.email }),
   },
   {
     // Second serveur, base injoignable (e2e/serveur-panne.ts).

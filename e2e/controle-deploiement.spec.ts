@@ -23,7 +23,9 @@ import { documentServi, ENTETES_SECTION_6, POLITIQUE_PRODUCTION } from "./outils
 // factice local, puis contre le site construit en local. Jamais contre la
 // production ni une prévisualisation. Fiche :
 // docs/features/controle-deploiement.md, sections 1, 2 et 5. Page « tache »
-// (8.3) : docs/features/tache-quotidienne.md, section 6, test 10.
+// (8.3) : docs/features/tache-quotidienne.md, section 6, test 10. Pages
+// « auth » et « inscription » (1.1) : docs/features/inscription.md,
+// section 2.3, test 16.
 
 const SCRIPT = "scripts/controle-deploiement.mjs";
 const executer = promisify(execFile);
@@ -59,7 +61,21 @@ type Defaut =
   | "tache-inconnue-distingue"
   | "tache-x-powered-by"
   | "tache-fuite-entete"
-  | "tache-en-anglais";
+  | "tache-en-anglais"
+  // /api/auth (1.1).
+  | "auth-organisation-ouverte"
+  | "auth-organisation-distingue"
+  | "auth-x-powered-by"
+  | "auth-en-anglais"
+  | "inscription-ouverte"
+  | "renvoi-ouvert";
+
+// Les trois points d'entrée ouverts hors production, en POST.
+const POINTS_INSCRIPTION = [
+  "/api/auth/sign-up/email",
+  "/api/auth/send-verification-email",
+  "/api/auth/verify-email",
+];
 
 type Factice = { adresse: string; requetes: Requete[]; fermer: () => Promise<void> };
 
@@ -159,6 +175,47 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
       return;
     }
 
+    // /api/auth : comme src/server/auth/points-entree.ts, un chemin fermé,
+    // une méthode non admise et un chemin inexistant reçoivent 404, corps
+    // vide, sans Content-Type. En production, les trois POST ouverts aussi
+    // (inscription fermée jusqu'à la 1.3) ; ouverts, ils refusent une
+    // requête sans Origin par 403 et un corps JSON.
+    if (chemin.startsWith("/api/auth/")) {
+      requete.resume();
+      const auth: Record<string, string> = { ...entetes };
+      delete auth["Content-Type"];
+      if (defaut === "auth-x-powered-by") auth["X-Powered-By"] = "Next.js";
+      let statut = 404;
+      let corps = "";
+      const json = (valeur: string) => {
+        auth["Content-Type"] = "application/json; charset=utf-8";
+        corps = valeur;
+      };
+      if (
+        requete.method === "POST" &&
+        POINTS_INSCRIPTION.includes(chemin) &&
+        (defaut === "inscription-ouverte" ||
+          (defaut === "renvoi-ouvert" && chemin === "/api/auth/send-verification-email"))
+      ) {
+        statut = 403;
+        json('{"ok":false,"raison":"refuse"}');
+      }
+      if (defaut === "auth-organisation-ouverte" && chemin === "/api/auth/organization/list") {
+        statut = 200;
+        json("[]");
+      }
+      if (
+        defaut === "auth-organisation-distingue" &&
+        chemin === "/api/auth/organization/get-full-organization"
+      ) {
+        corps = " ";
+      }
+      if (defaut === "auth-en-anglais") corps = "Not Found";
+      reponse.writeHead(statut, auth);
+      reponse.end(corps);
+      return;
+    }
+
     const accueil = chemin === "/";
     const tableau = chemin === "/tableau-de-bord";
     const lien = chemin.startsWith("/lien/devis/");
@@ -218,15 +275,27 @@ function echecs(resultats: readonly Resultat[]): string[] {
 
 const PAGES = ["accueil", "tableau-de-bord", "inexistante", "lien"] as const;
 const surToutes = (controle: string) => PAGES.map((p) => `${p}:${controle}`);
-// Politique et en-têtes : vérifiés aussi sur la page « tache » (8.3).
-const avecTache = (controle: string) => [...surToutes(controle), `tache:${controle}`];
+// Politique et en-têtes : vérifiés aussi sur les pages « tache » (8.3) et
+// « auth » (1.1).
+const avecTache = (controle: string) => [
+  ...surToutes(controle),
+  `tache:${controle}`,
+  `auth:${controle}`,
+];
 
 test.describe("contrôle après déploiement, serveur factice", () => {
   // 8.3 (modifié, signalé) : 10 requêtes par passage au lieu de 7, et un
   // en-tête Authorization forgé, seconde exception après le cookie forgé, sur
   // /api/taches/quotidienne seulement (docs/features/tache-quotidienne.md,
   // section 6).
-  test("serveur conforme : tout passe, seulement des GET, sans cookie ni Authorization sauf les valeurs forgées", async () => {
+  // 1.1 (modifié, signalé) : 17 requêtes par passage. Trois GET de /api/auth
+  // (T-55), et quatre POST sans corps, sans Origin, sans cookie, vers les
+  // trois points d'entrée de l'inscription et un chemin inexistant : seule
+  // preuve, sur la production, que l'inscription y est fermée (décision 1).
+  // Ouverte, elle refuserait ces POST avant Better Auth (origine absente) :
+  // rien n'est écrit, rien n'est envoyé (docs/features/inscription.md,
+  // section 2.3).
+  test("serveur conforme : tout passe, des GET et quatre POST vides vers /api/auth, sans cookie ni Authorization sauf les valeurs forgées", async () => {
     const factice = await demarrerFactice();
     try {
       const premier = await controlerSite(factice.adresse);
@@ -236,9 +305,27 @@ test.describe("contrôle après déploiement, serveur factice", () => {
       expect(echecs(second)).toEqual([]);
       expect(premier.length).toBeGreaterThan(10);
 
-      expect(factice.requetes).toHaveLength(20);
-      for (const requete of factice.requetes) {
-        expect(requete.methode).toBe("GET");
+      expect(factice.requetes).toHaveLength(34);
+      const posts = factice.requetes.filter((r) => r.methode !== "GET");
+      expect(posts).toHaveLength(8);
+      for (const requete of posts) {
+        expect(requete.methode).toBe("POST");
+        expect(requete.chemin).toMatch(/^\/api\/auth\//);
+        expect(requete.entetes["content-length"] ?? "0").toBe("0");
+        expect(requete.entetes.origin).toBeUndefined();
+        expect(requete.entetes.cookie).toBeUndefined();
+        expect(requete.entetes.authorization).toBeUndefined();
+      }
+      for (const point of POINTS_INSCRIPTION) {
+        expect(
+          posts.filter((r) => r.chemin === point),
+          point,
+        ).toHaveLength(2);
+      }
+      const postsInexistants = posts.filter((r) => /^\/api\/auth\/[0-9a-f]{16}$/.test(r.chemin));
+      expect(postsInexistants).toHaveLength(2);
+      expect(postsInexistants[0]?.chemin).not.toBe(postsInexistants[1]?.chemin);
+      for (const requete of factice.requetes.filter((r) => r.methode === "GET")) {
         expect(requete.entetes["content-length"]).toBeUndefined();
       }
       // Un seul Authorization par passage : un secret forgé, tiré au hasard à
@@ -287,6 +374,26 @@ test.describe("contrôle après déploiement, serveur factice", () => {
         "tache:anglais",
         "tache:identique",
       ]);
+      // /api/auth en GET : deux points fermés de /organization/*, un chemin
+      // inexistant.
+      const auth = factice.requetes
+        .filter((r) => r.methode === "GET" && r.chemin.startsWith("/api/auth/"))
+        .map((r) => r.chemin);
+      expect(auth.filter((c) => c === "/api/auth/organization/list")).toHaveLength(2);
+      expect(auth.filter((c) => c === "/api/auth/organization/get-full-organization")).toHaveLength(
+        2,
+      );
+      expect(auth.filter((c) => /^\/api\/auth\/[0-9a-f]{16}$/.test(c))).toHaveLength(2);
+      expect(premier.map((r) => r.nom).filter((n) => /^(auth|inscription):/.test(n))).toEqual([
+        "auth:statut",
+        "auth:politique",
+        "auth:entetes",
+        "auth:fuite",
+        "auth:anglais",
+        "auth:identique",
+        "inscription:statut",
+        "inscription:identique",
+      ]);
     } finally {
       await factice.fermer();
     }
@@ -322,6 +429,12 @@ test.describe("contrôle après déploiement, serveur factice", () => {
     ["tache-x-powered-by", ["tache:entetes"]],
     ["tache-fuite-entete", ["tache:fuite"]],
     ["tache-en-anglais", ["tache:anglais"]],
+    ["auth-organisation-ouverte", ["auth:identique", "auth:statut"]],
+    ["auth-organisation-distingue", ["auth:identique"]],
+    ["auth-x-powered-by", ["auth:entetes"]],
+    ["auth-en-anglais", ["auth:anglais"]],
+    ["inscription-ouverte", ["inscription:identique", "inscription:statut"]],
+    ["renvoi-ouvert", ["inscription:identique", "inscription:statut"]],
   ];
 
   for (const [defaut, attendus] of CAS) {
@@ -357,7 +470,7 @@ test.describe("contrôle après déploiement, serveur factice", () => {
 
     expect(resultats.length).toBeGreaterThan(10);
     expect(resultats.every((r) => !r.ok)).toBe(true);
-    for (const page of [...PAGES, "tache"]) {
+    for (const page of [...PAGES, "tache", "auth", "inscription"]) {
       expect(echecs(resultats)).toContain(`${page}:statut`);
     }
   });
@@ -593,9 +706,16 @@ test.describe("contrôle après déploiement, cohérence et site construit", () 
 
   // next start répond comme Vercel : une adresse sans page reçoit la page
   // « introuvable » rendue sur le serveur (fiche, section 5, décision 10).
-  test("site construit en local : tous les contrôles passent", async ({ baseURL }) => {
+  // 1.1 (modifié, signalé) : en local, l'inscription est ouverte (elle n'est
+  // fermée qu'en production, décision 1 de docs/features/inscription.md) ;
+  // les deux contrôles « inscription » y échouent, et eux seuls. C'est le
+  // témoin qu'ils voient une inscription ouverte ; la preuve qu'elle est
+  // fermée en production vient du contrôle lancé après chaque déploiement.
+  test("site construit en local : tous les contrôles passent, sauf l'inscription, ouverte hors production", async ({
+    baseURL,
+  }) => {
     const resultats = await controlerSite(baseURL ?? "");
 
-    expect(echecs(resultats)).toEqual([]);
+    expect(echecs(resultats)).toEqual(["inscription:identique", "inscription:statut"]);
   });
 });

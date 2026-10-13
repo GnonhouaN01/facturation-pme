@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { connect } from "node:net";
 
 import { type APIRequestContext, type Page, expect, test } from "@playwright/test";
@@ -274,5 +275,71 @@ test.describe("page « erreur », serveur à la base injoignable", () => {
     await expect(identifiant(page)).toHaveText(UUID);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(TEXTES_ERREURS.erreur);
     expect(await violations(page)).toEqual([]);
+  });
+});
+
+// T-39 sur le site construit : la reproduction du constat du 2026-10-12. Le
+// serveur en panne écrit sa sortie dans JOURNAL_PANNE_E2E (lanceur
+// e2e/lancer-serveur-panne.mjs). Une lecture de session au cookie signé et
+// une inscription échouent sur la base injoignable ; ni le jeton, ni sa
+// signature, ni l'adresse, ni le mot de passe, ni la requête SQL n'arrivent
+// dans le journal, qui ne garde que des lignes fixes [auth]. Fiche :
+// docs/features/inscription.md, section 1.3, test 2 (test 15).
+test.describe("T-39 : journal du serveur à la base injoignable", () => {
+  function journal(): string {
+    const chemin = process.env.JOURNAL_PANNE_E2E;
+    if (!chemin) throw new Error("JOURNAL_PANNE_E2E absent : playwright.config.ts doit le poser.");
+    return chemin;
+  }
+
+  const lignesAuth = (texte: string) => texte.split("\n").filter((l) => l.startsWith("[auth] "));
+
+  test("cookie de session signé puis inscription : aucune donnée dans la sortie du serveur", async ({
+    request,
+  }) => {
+    const avant = lignesAuth(await readFile(journal(), "utf8")).length;
+    const cookie = cookieSessionSigne();
+    const [jeton, signature] = decodeURIComponent(cookie).split(".") as [string, string];
+    const email = `e2e-panne-${randomBytes(6).toString("hex")}@exemple.invalid`;
+    const motDePasse = `Panne-${randomBytes(9).toString("base64url")}`;
+
+    const page = await request.get(`${ADRESSE_PANNE}/tableau-de-bord`, {
+      headers: { cookie: `${COOKIE_SESSION}=${cookie}` },
+    });
+    const inscription = await request.post(`${ADRESSE_PANNE}/api/auth/sign-up/email`, {
+      headers: { origin: ADRESSE_PANNE, "content-type": "application/json" },
+      data: { nom: "Essai panne", email, motDePasse },
+    });
+
+    // La panne est réelle sur les deux chemins.
+    expect(page.status()).toBe(500);
+    expect(inscription.status()).toBe(500);
+    expect(await inscription.json()).toEqual({ ok: false, raison: "erreur" });
+
+    // Témoin : la sortie du serveur est bien lue, et ces deux échecs y ont
+    // ajouté leurs lignes fixes.
+    await expect
+      .poll(async () => lignesAuth(await readFile(journal(), "utf8")).length, { timeout: 10_000 })
+      .toBeGreaterThanOrEqual(avant + 2);
+    const sortie = await readFile(journal(), "utf8");
+
+    for (const interdit of [jeton, signature, cookie, email, motDePasse]) {
+      expect(sortie.includes(interdit), "valeur de la requête dans le journal").toBe(false);
+    }
+    for (const motif of [
+      /Failed query/i,
+      /\bselect\b/i,
+      /\bparams\b/i,
+      /SERVER_ERROR/,
+      /\[Better Auth\]/,
+      /session_token/,
+      /base_injoignable/,
+      /ECONNREFUSED/,
+    ]) {
+      expect(sortie, String(motif)).not.toMatch(motif);
+    }
+    for (const ligne of lignesAuth(sortie)) {
+      expect(ligne).toMatch(/^\[auth\] \{"niveau":"(warn|error)","incident":"[0-9a-f-]{36}"\}$/);
+    }
   });
 });
