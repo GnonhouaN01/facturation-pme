@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { expect, test } from "@playwright/test";
 
 import {
+  comparerDocuments,
   controlerSite,
   documentServi as documentDuScript,
   ENTETES_ATTENDUS,
@@ -296,6 +297,79 @@ test.describe("contrôle après déploiement, ligne de commande", () => {
     }
   });
 
+  test("sans --detail : aucune ligne de détail", async () => {
+    const factice = await demarrerFactice("tableau-de-bord-vide");
+    try {
+      const { code, sortie } = await lancer(factice.adresse);
+      const lignes = sortie.trimEnd().split("\n");
+
+      expect(code, sortie).toBe(1);
+      expect(lignes).toHaveLength(2 + (await controlerSite(factice.adresse)).length);
+      expect(lignes[0]).toMatch(/^Contrôle de /);
+      expect(lignes.at(-1)).toMatch(/^Bilan : /);
+      for (const ligne of lignes.slice(1, -1)) expect(ligne).toMatch(/^(ok {5}|ÉCHEC {2})\S+ : /);
+      expect(sortie).not.toContain("statuts :");
+    } finally {
+      await factice.fermer();
+    }
+  });
+
+  test("--detail : statuts, longueurs, position et extraits, pour la seule comparaison", async () => {
+    const vide = await demarrerFactice("tableau-de-bord-vide");
+    const statut = await demarrerFactice("tableau-de-bord-200");
+    const conforme = await demarrerFactice();
+    try {
+      const v = await lancer(vide.adresse, "--detail");
+      expect(v.code, v.sortie).toBe(1);
+      const lignes = v.sortie.split("\n");
+      const debut = lignes.findIndex((l) => l.startsWith("ÉCHEC  tableau-de-bord:identique"));
+      const detail = lignes.slice(debut + 1, debut + 6).map((l) => l.trim());
+      expect(detail[0]).toBe("statuts : tableau-de-bord 404, inexistante 404");
+      expect(detail[1]).toMatch(/^longueurs normalisées : tableau-de-bord \d+, inexistante \d+$/);
+      expect(detail[2]).toMatch(/^premier caractère différent : position \d+$/);
+      expect(detail[3]).toMatch(/^tableau-de-bord \[\d+, \d+\[ : "/);
+      expect(detail[3]).toContain("<body><script");
+      expect(detail[4]).toMatch(/^inexistante {5}\[\d+, \d+\[ : "/);
+      expect(detail[4]).toContain("<body><main><h1>Cette page");
+      // Une seule comparaison détaillée : 5 lignes en retrait, pas plus.
+      expect(lignes.filter((l) => /^ {9}\S/.test(l))).toHaveLength(5);
+
+      const s = await lancer(statut.adresse, "--detail");
+      expect(s.sortie).toContain("statuts : tableau-de-bord 200, inexistante 404");
+      expect(s.sortie).toContain("documents normalisés identiques");
+
+      const c = await lancer(conforme.adresse, "--detail");
+      expect(c.code, c.sortie).toBe(0);
+      expect(c.sortie).toContain("documents normalisés identiques");
+    } finally {
+      await vide.fermer();
+      await statut.fermer();
+      await conforme.fermer();
+    }
+  });
+
+  test("--detail : aucun en-tête, aucun nonce, aucun contenu de script", async () => {
+    const factice = await demarrerFactice("variable-dans-un-entete");
+    try {
+      const { sortie } = await lancer(factice.adresse, "--detail");
+
+      expect(sortie).toContain("statuts :");
+      for (const interdit of [
+        "better_auth_secret",
+        "x-indice",
+        "content-security-policy",
+        "nosniff",
+        "max-age",
+        "__next_f",
+      ]) {
+        expect(sortie.toLowerCase()).not.toContain(interdit);
+      }
+      expect(sortie).not.toMatch(/nonce="(?!N")/);
+    } finally {
+      await factice.fermer();
+    }
+  });
+
   test("adresse refusée : code 2, aucune requête", async () => {
     const factice = await demarrerFactice();
     const { host } = new URL(factice.adresse);
@@ -331,6 +405,30 @@ test.describe("contrôle après déploiement, cohérence et site construit", () 
     ]) {
       expect(documentDuScript(html)).toBe(documentServi(html));
     }
+  });
+
+  test("comparerDocuments : position et 120 caractères autour, documents normalisés", () => {
+    const commun = "x".repeat(200);
+    const lignes = comparerDocuments(
+      { statut: 404, corps: `${commun}A<script nonce="QUJD">charge</script>${"y".repeat(200)}` },
+      { statut: 404, corps: `${commun}B${"y".repeat(200)}` },
+    );
+
+    expect(lignes).toEqual([
+      "statuts : tableau-de-bord 404, inexistante 404",
+      "longueurs normalisées : tableau-de-bord 428, inexistante 401",
+      "premier caractère différent : position 200",
+      `tableau-de-bord [140, 260[ : ${JSON.stringify(`${"x".repeat(60)}A<script nonce="N"></script>${"y".repeat(32)}`)}`,
+      `inexistante     [140, 260[ : ${JSON.stringify(`${"x".repeat(60)}B${"y".repeat(59)}`)}`,
+    ]);
+    expect(comparerDocuments({ statut: 404, corps: "<p>" }, { statut: 404, corps: "<p>" })).toEqual(
+      [
+        "statuts : tableau-de-bord 404, inexistante 404",
+        "longueurs normalisées : tableau-de-bord 3, inexistante 3",
+        "documents normalisés identiques",
+      ],
+    );
+    expect(comparerDocuments(null, { statut: 404, corps: "" })).toEqual(["aucune réponse"]);
   });
 
   // Fin de balise reconnue sous toutes ses formes (alerte CodeQL « Bad HTML

@@ -9,7 +9,12 @@ import { parseArgs } from "node:util";
 // contre un serveur factice et le site construit en local.
 // Fiche : docs/features/controle-deploiement.md, sections 1 et 2.
 //
-//   node scripts/controle-deploiement.mjs <origine> [--essais 3] [--pause 20]
+//   node scripts/controle-deploiement.mjs <origine> [--essais 3] [--pause 20] [--detail]
+//
+// --detail : pour tableau-de-bord:identique seulement, les deux statuts, la
+// longueur des deux documents normalisés (documentServi), la position du
+// premier caractère différent et 120 caractères autour dans chacun. Aucun
+// en-tête, aucun cookie.
 //
 // Code de sortie : 0 tout passe, 1 un contrôle échoue, 2 adresse refusée.
 
@@ -171,7 +176,34 @@ export function documentServi(html) {
     .replace(/nonce(="|-)[A-Za-z0-9+/=]+/g, "nonce$1N");
 }
 
-export async function controlerSite(adresse) {
+const AUTOUR = 120;
+
+// Lignes de --detail pour tableau-de-bord:identique. Documents normalisés
+// seulement (scripts en ligne vidés, nonces remplacés) : ni en-tête ni cookie.
+export function comparerDocuments(tableau, absente) {
+  if (!tableau || !absente) return ["aucune réponse"];
+  const [t, a] = [documentServi(tableau.corps), documentServi(absente.corps)];
+  const lignes = [
+    `statuts : tableau-de-bord ${tableau.statut}, inexistante ${absente.statut}`,
+    `longueurs normalisées : tableau-de-bord ${t.length}, inexistante ${a.length}`,
+  ];
+  let position = 0;
+  while (position < t.length && position < a.length && t[position] === a[position]) position += 1;
+  if (position === t.length && position === a.length) {
+    lignes.push("documents normalisés identiques");
+    return lignes;
+  }
+  const debut = Math.max(0, position - AUTOUR / 2);
+  const extrait = (texte) => JSON.stringify(texte.slice(debut, debut + AUTOUR));
+  lignes.push(
+    `premier caractère différent : position ${position}`,
+    `tableau-de-bord [${debut}, ${debut + AUTOUR}[ : ${extrait(t)}`,
+    `inexistante     [${debut}, ${debut + AUTOUR}[ : ${extrait(a)}`,
+  );
+  return lignes;
+}
+
+export async function controlerSite(adresse, { detail = false } = {}) {
   const origine = validerAdresse(adresse);
   const inexistante = `/adresse-inexistante-${randomBytes(8).toString("hex")}`;
   const [accueil, accueilBis, tableau, absente] = [
@@ -222,6 +254,7 @@ export async function controlerSite(adresse) {
       ? null
       : "statut ou document différent de ceux d'une adresse inexistante",
   );
+  if (detail) resultats.at(-1).lignes = comparerDocuments(tableau, absente);
   return resultats;
 }
 
@@ -234,6 +267,7 @@ async function principal(argv) {
       options: {
         essais: { type: "string", default: "1" },
         pause: { type: "string", default: "20" },
+        detail: { type: "boolean", default: false },
       },
     });
   } catch {
@@ -261,10 +295,13 @@ async function principal(argv) {
   }
 
   for (let essai = 1; essai <= essais; essai += 1) {
-    const resultats = await controlerSite(origine);
+    const resultats = await controlerSite(origine, { detail: options.values.detail });
     const echecs = resultats.filter((r) => !r.ok);
     console.log(`Contrôle de ${origine}, essai ${essai} sur ${essais} :`);
-    for (const r of resultats) console.log(`${r.ok ? "ok    " : "ÉCHEC "} ${r.nom} : ${r.detail}`);
+    for (const r of resultats) {
+      console.log(`${r.ok ? "ok    " : "ÉCHEC "} ${r.nom} : ${r.detail}`);
+      for (const ligne of r.lignes ?? []) console.log(`         ${ligne}`);
+    }
     if (echecs.length === 0) {
       console.log(`Bilan : ${resultats.length} contrôles passés.`);
       return 0;
