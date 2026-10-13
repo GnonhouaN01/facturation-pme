@@ -26,7 +26,7 @@ export const REQUETE_NETTOYAGE = 'DELETE FROM "user" WHERE email = ANY($1::text[
 
 // Forme exacte d'une adresse de comptes-e2e.ts : aucun caractère de motif,
 // domaine .invalid, qui ne reçoit aucun email réel.
-const ADRESSE_E2E = /^e2e-[0-9a-f]{8}-\d{1,2}@exemple\.invalid$/;
+const ADRESSE_E2E = /^e2e-[0-9a-f]{8}-\d{1,3}@exemple\.invalid$/;
 
 export async function nettoyer(options: {
   source: Source;

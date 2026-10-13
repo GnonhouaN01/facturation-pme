@@ -3,7 +3,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { type Page, type Response, expect, test } from "@playwright/test";
+import { type Page, type Response, type TestInfo, expect, test } from "@playwright/test";
 
 import { TEXTES_COMPTE } from "../src/textes/compte";
 import { TEXTES_EMAILS } from "../src/textes/emails";
@@ -44,14 +44,30 @@ async function messagesPour(adresse: string): Promise<Message[]> {
   return messages.filter((message) => message.a === adresse);
 }
 
-// Attend le n-ième email (à partir de 1) reçu par l'adresse.
-async function attendreEmail(adresse: string, rang: number): Promise<Message> {
+// Attend que l'adresse ait reçu autant d'emails que de sujets attendus, puis
+// vérifie la liste exacte de ses emails, dans l'ordre de remise : ni un de
+// plus, ni un autre sujet. Renvoie le dernier. Corrigé après l'échec de la
+// CI : attendre exactement n emails échouait quand le suivant était déjà
+// arrivé (envoi plus rapide sur la base locale de la CI).
+async function attendreEmails(adresse: string, sujets: readonly string[]): Promise<Message> {
   await expect
     .poll(async () => (await messagesPour(adresse)).length, { timeout: 15_000 })
-    .toBe(rang);
-  const message = (await messagesPour(adresse))[rang - 1];
-  if (!message) throw new Error("email introuvable");
-  return message;
+    .toBeGreaterThanOrEqual(sujets.length);
+  const messages = await messagesPour(adresse);
+  expect(messages.map((message) => message.sujet)).toEqual(sujets);
+  const dernier = messages.at(-1);
+  if (!dernier) throw new Error("email introuvable");
+  return dernier;
+}
+
+const SUJET_VERIFICATION = TEXTES_EMAILS.modeles["compte.verification"].sujet;
+const SUJET_EXISTANT = TEXTES_EMAILS.modeles["compte.existant"].sujet;
+
+// L'adresse de ce test, propre à son projet, à son essai et à sa répétition
+// (e2e/comptes-e2e.ts) : un nouvel essai ne retrouve jamais le compte ni les
+// emails d'un essai échoué.
+function adresseDuTest(info: TestInfo, rang: number): string {
+  return adresseE2E(info.project.name, rang, info.retry, info.repeatEachIndex);
 }
 
 function lienDe(message: Message): string {
@@ -99,7 +115,7 @@ test.describe("inscription, parcours UC-01", () => {
     page,
     context,
   }, info) => {
-    const email = adresseE2E(info.project.name, 0);
+    const email = adresseDuTest(info, 0);
     await adresseIpPropre(page);
     await observerViolations(page);
     const requetes: { url: string; referer: string | undefined }[] = [];
@@ -116,8 +132,7 @@ test.describe("inscription, parcours UC-01", () => {
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(TEXTES_COMPTE.envoyee.titre);
 
     // L'email : sujet du modèle, lien <origine>/lien/verification#<jeton>.
-    const message = await attendreEmail(email, 1);
-    expect(message.sujet).toBe(TEXTES_EMAILS.modeles["compte.verification"].sujet);
+    const message = await attendreEmails(email, [SUJET_VERIFICATION]);
     const lien = lienDe(message);
     const jeton = lien.split("#")[1] ?? "";
     expect(jeton).toMatch(JETON);
@@ -163,7 +178,7 @@ test.describe("inscription, parcours UC-01", () => {
   test("T-07 : adresse nouvelle puis déjà prise, même écran, même réponse, 800 ms au moins", async ({
     page,
   }, info) => {
-    const email = adresseE2E(info.project.name, 1);
+    const email = adresseDuTest(info, 1);
     await adresseIpPropre(page);
 
     const nouvelle = await inscrire(page, email);
@@ -181,20 +196,16 @@ test.describe("inscription, parcours UC-01", () => {
     expect(nouvelle.duree).toBeGreaterThanOrEqual(DUREE_PLANCHER_MS);
     expect(prise.duree).toBeGreaterThanOrEqual(DUREE_PLANCHER_MS);
 
-    // UC-01, 3a : le premier email est la vérification, le second dit que le
-    // compte existe.
-    expect((await attendreEmail(email, 1)).sujet).toBe(
-      TEXTES_EMAILS.modeles["compte.verification"].sujet,
-    );
-    const existant = await attendreEmail(email, 2);
-    expect(existant.sujet).toBe(TEXTES_EMAILS.modeles["compte.existant"].sujet);
+    // UC-01, 3a : exactement deux emails, la vérification puis celui qui dit
+    // que le compte existe.
+    const existant = await attendreEmails(email, [SUJET_VERIFICATION, SUJET_EXISTANT]);
     expect(existant.corps).not.toContain("/lien/");
   });
 
   test("UC-01 2a : mot de passe de 11 caractères, refusé avec la raison, aucun compte", async ({
     page,
   }, info) => {
-    const email = adresseE2E(info.project.name, 2);
+    const email = adresseDuTest(info, 2);
     await adresseIpPropre(page);
     await page.goto("/inscription");
     await remplirInscription(page, "Awa Koné", email, "a".repeat(11));
@@ -214,7 +225,7 @@ test.describe("inscription, parcours UC-01", () => {
   test("S-10 : mot de passe compromis (service simulé), refusé avec la raison, aucun email", async ({
     page,
   }, info) => {
-    const email = adresseE2E(info.project.name, 3);
+    const email = adresseDuTest(info, 3);
     await adresseIpPropre(page);
 
     const { reponse, corps } = await inscrire(page, email, MOT_DE_PASSE_COMPROMIS_E2E);
@@ -236,10 +247,10 @@ test.describe("inscription, parcours UC-01", () => {
   test("UC-01 4a : lien altéré, « Ce lien n'est plus valable », puis renvoi d'un nouveau lien", async ({
     page,
   }, info) => {
-    const email = adresseE2E(info.project.name, 4);
+    const email = adresseDuTest(info, 4);
     await adresseIpPropre(page);
     await inscrire(page, email);
-    const premier = lienDe(await attendreEmail(email, 1));
+    const premier = lienDe(await attendreEmails(email, [SUJET_VERIFICATION]));
     // Signature altérée : le jeton garde sa forme, Better Auth le refuse.
     const [entete, charge] = (premier.split("#")[1] ?? "").split(".");
     await page.goto(`${ADRESSE}/lien/verification#${entete}.${charge}.c2lnbmF0dXJlLWFsdGVyZWU`);
@@ -264,8 +275,7 @@ test.describe("inscription, parcours UC-01", () => {
     ]);
     expect(await renvoi.json()).toEqual({ ok: true });
     await expect(page.getByText(TEXTES_COMPTE.renvoi.confirmation)).toBeVisible();
-    const second = await attendreEmail(email, 2);
-    expect(second.sujet).toBe(TEXTES_EMAILS.modeles["compte.verification"].sujet);
+    const second = await attendreEmails(email, [SUJET_VERIFICATION, SUJET_VERIFICATION]);
     expect(lienDe(second)).not.toBe(premier);
   });
 
@@ -292,7 +302,7 @@ test.describe("inscription, parcours UC-01", () => {
   }, info) => {
     await adresseIpPropre(page);
     const ecrans: string[] = [];
-    for (const email of [adresseE2E(info.project.name, 5), adresseE2E(info.project.name, 6)]) {
+    for (const email of [adresseDuTest(info, 5), adresseDuTest(info, 6)]) {
       await page.goto("/inscription/envoyee");
       await page.getByLabel(TEXTES_COMPTE.renvoi.email).fill(email);
       const [reponse] = await Promise.all([
@@ -367,12 +377,21 @@ test.describe("inscription, interface", () => {
   }
 
   test("au clavier seul : remplir et envoyer l'inscription", async ({ page }, info) => {
-    const email = adresseE2E(info.project.name, 7);
+    const email = adresseDuTest(info, 7);
     await adresseIpPropre(page);
     await page.goto("/inscription");
+    // Corrigé après l'échec de la CI : Tab était pressé avant l'hydratation,
+    // quand la page ne contenait encore que le <noscript>. Signal explicite
+    // que le formulaire est prêt : ses champs n'existent qu'une fois rendus
+    // par React dans le navigateur (useHydrate), gestionnaires branchés.
+    const nom = page.getByLabel(TEXTES_COMPTE.inscription.nom);
+    await expect(nom).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: TEXTES_COMPTE.inscription.envoyer }),
+    ).toBeEnabled();
 
     await page.keyboard.press("Tab");
-    await expect(page.getByLabel(TEXTES_COMPTE.inscription.nom)).toBeFocused();
+    await expect(nom).toBeFocused();
     await page.keyboard.type("Awa Koné");
     await page.keyboard.press("Tab");
     await page.keyboard.type(email);

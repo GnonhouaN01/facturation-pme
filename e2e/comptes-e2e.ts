@@ -15,20 +15,42 @@ export const EXECUTION = process.env.E2E_EXECUTION;
 
 export const DOMAINE_E2E = "exemple.invalid";
 const PROJETS = ["mobile-390", "ordinateur-1280"] as const;
-const PAR_PROJET = 30;
+// Rangs d'adresse par test, essais (1 + les 2 nouveaux essais de la CI) et
+// répétitions (--repeat-each) au plus. Une adresse n'est jamais reprise par
+// un autre projet, un autre essai ni une autre répétition : un compte, ses
+// emails et ses compteurs de débit laissés par un essai échoué ne faussent
+// pas le suivant.
+const RANGS = 10;
+export const ESSAIS_MAX = 3;
+export const REPETITIONS_MAX = 5;
 
-// Une adresse par projet et par rang : deux projets lancés en parallèle ne
-// partagent aucune adresse.
-export function adresseE2E(projet: string, rang: number): string {
+function borne(valeur: number, maximum: number): boolean {
+  return Number.isInteger(valeur) && valeur >= 0 && valeur < maximum;
+}
+
+export function adresseE2E(projet: string, rang: number, essai = 0, repetition = 0): string {
   const indice = PROJETS.indexOf(projet as (typeof PROJETS)[number]);
-  if (indice < 0 || !Number.isInteger(rang) || rang < 0 || rang >= PAR_PROJET) {
-    throw new Error(`Adresse de test hors liste : ${projet}, ${rang}`);
+  if (
+    indice < 0 ||
+    !borne(rang, RANGS) ||
+    !borne(essai, ESSAIS_MAX) ||
+    !borne(repetition, REPETITIONS_MAX)
+  ) {
+    throw new Error(
+      `Adresse de test hors liste : ${projet}, rang ${rang}, essai ${essai}, répétition ${repetition} ` +
+        `(au plus ${ESSAIS_MAX} essais et ${REPETITIONS_MAX} répétitions, e2e/comptes-e2e.ts)`,
+    );
   }
-  return `e2e-${EXECUTION}-${indice * PAR_PROJET + rang}@${DOMAINE_E2E}`;
+  const numero = ((indice * REPETITIONS_MAX + repetition) * ESSAIS_MAX + essai) * RANGS + rang;
+  return `e2e-${EXECUTION}-${numero}@${DOMAINE_E2E}`;
 }
 
 // La liste exacte des adresses que les tests de l'exécution peuvent créer :
 // la seule que le nettoyage supprime, par égalité.
 export const ADRESSES_E2E: readonly string[] = PROJETS.flatMap((projet) =>
-  Array.from({ length: PAR_PROJET }, (_, rang) => adresseE2E(projet, rang)),
+  Array.from({ length: REPETITIONS_MAX }, (_, repetition) =>
+    Array.from({ length: ESSAIS_MAX }, (_, essai) =>
+      Array.from({ length: RANGS }, (_, rang) => adresseE2E(projet, rang, essai, repetition)),
+    ),
+  ).flat(2),
 );
