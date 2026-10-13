@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 // Chargement réel de src/server/env.ts : une configuration d'envoi invalide
 // fait échouer le chargement, exactement comme une DATABASE_URL invalide
 // (src/instrumentation.ts l'importe au lancement : une configuration refusée
-// fait échouer chaque requête). Et la configuration de Vercel après la PR 1,
-// sans aucune variable d'envoi, se charge. Valeurs factices. Fiche :
+// fait échouer chaque requête). Et la configuration de Vercel après la PR 2
+// se charge : production avec les variables Gmail, prévisualisation sans
+// variable d'envoi. Valeurs factices. Fiche :
 // docs/features/envoi-emails.md, section 2.2 et « Découpage en PR » ;
 // décision 1 du relecteur sur la phase rouge.
 
@@ -71,6 +72,7 @@ describe("env.ts : chargement", () => {
       dossier: null,
       destinatairesAutorises: [],
       estProduction: false,
+      gmail: null,
     });
   });
 
@@ -107,35 +109,43 @@ describe("env.ts : chargement", () => {
     },
   );
 
-  test.each([
-    ["production", true],
-    ["preview", false],
-  ] as const)(
-    "après la PR 1 : Vercel %s sans aucune variable d'envoi, env.ts se charge (memoire)",
-    async (vercelEnv, estProduction) => {
-      poser({
-        ...BASE,
-        NODE_ENV: "production",
-        VERCEL: "1",
-        VERCEL_ENV: vercelEnv,
-        VERCEL_URL: "facturation-abc123.vercel.app",
-      });
+  test("après la PR 2 : Vercel production sans aucune variable d'envoi, le chargement échoue", async () => {
+    poser({
+      ...BASE,
+      NODE_ENV: "production",
+      VERCEL: "1",
+      VERCEL_ENV: "production",
+      VERCEL_URL: "facturation-abc123.vercel.app",
+    });
 
-      const charge = await charger();
+    const erreur = await erreurDeChargement();
 
-      expect(charge.configurationEmail).toStrictEqual({
-        transport: "memoire",
-        dossier: null,
-        destinatairesAutorises: [],
-        estProduction,
-      });
-    },
-  );
+    expect(erreur.message).toMatch(/^- GMAIL_UTILISATEUR : /mu);
+  });
+
+  test("après la PR 2 : Vercel preview sans aucune variable d'envoi, env.ts se charge (memoire)", async () => {
+    poser({
+      ...BASE,
+      NODE_ENV: "production",
+      VERCEL: "1",
+      VERCEL_ENV: "preview",
+      VERCEL_URL: "facturation-abc123.vercel.app",
+    });
+
+    const charge = await charger();
+
+    expect(charge.configurationEmail).toStrictEqual({
+      transport: "memoire",
+      dossier: null,
+      destinatairesAutorises: [],
+      estProduction: false,
+      gmail: null,
+    });
+  });
 
   // Configuration de Vercel au 2026-10-13 : variables Gmail posées en
-  // production seulement, EMAIL_TRANSPORT absente. Le prochain déploiement de
-  // production exécute le code de la PR 1 avec elles. Remplacé par la PR 2.
-  test("après la PR 1 : production avec les variables Gmail, sans EMAIL_TRANSPORT, env.ts se charge (memoire)", async () => {
+  // production seulement, EMAIL_TRANSPORT absente : smtp.
+  test("après la PR 2 : production avec les variables Gmail, sans EMAIL_TRANSPORT, env.ts se charge (smtp)", async () => {
     poser({
       ...BASE,
       NODE_ENV: "production",
@@ -149,10 +159,11 @@ describe("env.ts : chargement", () => {
     const charge = await charger();
 
     expect(charge.configurationEmail).toStrictEqual({
-      transport: "memoire",
+      transport: "smtp",
       dossier: null,
       destinatairesAutorises: [],
       estProduction: true,
+      gmail: { utilisateur: "facturation.factice@gmail.com", motDePasse: "abcdefghijklmnop" },
     });
   });
 });

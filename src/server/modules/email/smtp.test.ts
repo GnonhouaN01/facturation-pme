@@ -133,6 +133,7 @@ describe("options de production, figées", () => {
       debug: false,
       disableFileAccess: true,
       disableUrlAccess: true,
+      maxRecipients: 1,
     });
   });
 

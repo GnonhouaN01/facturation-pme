@@ -32,12 +32,18 @@ describe("EMAIL_TRANSPORT absente : valeur selon l'environnement", () => {
     },
   );
 
-  test.each(["preview", "production"])("sur Vercel (VERCEL_ENV=%s) : memoire", (vercelEnv) => {
+  // Variables Gmail factices : obligatoires en production depuis la PR 2.
+  test.each([
+    ["preview", "memoire"],
+    ["production", "smtp"],
+  ])("sur Vercel (VERCEL_ENV=%s) : %s", (vercelEnv, attendu) => {
     const configuration = validerConfigurationEmail({
       NODE_ENV: "production",
       VERCEL_ENV: vercelEnv,
+      GMAIL_UTILISATEUR: "facturation.factice@gmail.com",
+      GMAIL_MOT_DE_PASSE_APPLICATION: "abcdefghijklmnop",
     });
-    expect(configuration.transport).toBe("memoire");
+    expect(configuration.transport).toBe(attendu);
     expect(configuration.dossier).toBeNull();
   });
 });
@@ -114,32 +120,25 @@ describe("EMAIL_DESTINATAIRES_AUTORISES", () => {
   });
 });
 
-// Cohérence de main à la fusion de la PR 1 (« Découpage en PR ») : Vercel
-// n'a encore aucune variable d'envoi. Un refus ici ferait échouer chaque
-// requête du site. Variables telles que Vercel les pose, sans EMAIL_* ni
-// GMAIL_*. La PR 2 remplace le cas de la production (décision 4).
-describe("après la PR 1 : Vercel sans aucune variable d'envoi", () => {
-  test("production : memoire, estProduction vrai, aucun refus", () => {
-    expect(
-      validerConfigurationEmail({
-        NODE_ENV: "production",
-        VERCEL: "1",
-        VERCEL_ENV: "production",
-        VERCEL_URL: "facturation-abc123.vercel.app",
-      }),
-    ).toStrictEqual({
-      transport: "memoire",
-      dossier: null,
-      destinatairesAutorises: [],
-      estProduction: true,
+// Vercel tel que les variables y sont posées (section 9). Production : la
+// PR 2 refuse l'absence des variables Gmail (décision 4, corrigée).
+// Prévisualisation sans variable : memoire, comme en PR 1. Valeurs factices.
+describe("après la PR 2 : Vercel", () => {
+  test("production sans aucune variable d'envoi : refusée, variables Gmail nommées", () => {
+    const message = messageErreur({
+      NODE_ENV: "production",
+      VERCEL: "1",
+      VERCEL_ENV: "production",
+      VERCEL_URL: "facturation-abc123.vercel.app",
     });
+    expect(message).toMatch(/^- GMAIL_UTILISATEUR : /mu);
+    expect(message).toMatch(/^- GMAIL_MOT_DE_PASSE_APPLICATION : /mu);
   });
 
   // Configuration de Vercel au 2026-10-13 : GMAIL_UTILISATEUR et
   // GMAIL_MOT_DE_PASSE_APPLICATION posées en production, EMAIL_TRANSPORT
-  // absente. Le code de la PR 1 ne lit aucune variable GMAIL_* : ignorées,
-  // memoire, aucun refus. Valeurs factices. Remplacé par la PR 2 (section 9).
-  test("production avec les variables Gmail, sans EMAIL_TRANSPORT : ignorées, memoire, aucun refus", () => {
+  // absente : smtp.
+  test("production avec les variables Gmail, sans EMAIL_TRANSPORT : smtp, aucun refus", () => {
     expect(
       validerConfigurationEmail({
         NODE_ENV: "production",
@@ -150,10 +149,11 @@ describe("après la PR 1 : Vercel sans aucune variable d'envoi", () => {
         GMAIL_MOT_DE_PASSE_APPLICATION: "abcdefghijklmnop",
       }),
     ).toStrictEqual({
-      transport: "memoire",
+      transport: "smtp",
       dossier: null,
       destinatairesAutorises: [],
       estProduction: true,
+      gmail: { utilisateur: "facturation.factice@gmail.com", motDePasse: "abcdefghijklmnop" },
     });
   });
 
@@ -170,13 +170,22 @@ describe("après la PR 1 : Vercel sans aucune variable d'envoi", () => {
       dossier: null,
       destinatairesAutorises: [],
       estProduction: false,
+      gmail: null,
     });
   });
 });
 
 describe("estProduction", () => {
   test.each([
-    ["VERCEL_ENV=production", { VERCEL_ENV: "production" }, true],
+    [
+      "VERCEL_ENV=production",
+      {
+        VERCEL_ENV: "production",
+        GMAIL_UTILISATEUR: "facturation.factice@gmail.com",
+        GMAIL_MOT_DE_PASSE_APPLICATION: "abcdefghijklmnop",
+      },
+      true,
+    ],
     ["VERCEL_ENV=preview", { VERCEL_ENV: "preview" }, false],
     ["VERCEL_ENV=Production (casse différente)", { VERCEL_ENV: "Production" }, false],
     ["NODE_ENV=production hors Vercel (next start local, tests de bout en bout)", {}, false],
@@ -188,7 +197,7 @@ describe("estProduction", () => {
 });
 
 describe("forme du résultat", () => {
-  test("objet figé, quatre propriétés exactement", () => {
+  test("objet figé, cinq propriétés exactement", () => {
     const configuration = validerConfigurationEmail({
       NODE_ENV: "test",
       AUTRE_VARIABLE: "ignoree",
@@ -198,6 +207,7 @@ describe("forme du résultat", () => {
       dossier: null,
       destinatairesAutorises: [],
       estProduction: false,
+      gmail: null,
     });
     expect(Object.isFrozen(configuration)).toBe(true);
     expect(Object.isFrozen(configuration.destinatairesAutorises)).toBe(true);
@@ -335,6 +345,37 @@ describe("PR 2 : smtp et variables Gmail", () => {
           EMAIL_DESTINATAIRES_AUTORISES: LISTE,
         }).transport,
       ).toBe("smtp");
+    });
+  });
+
+  describe("mot de passe d'application (décision 2 du relecteur)", () => {
+    function production(motDePasse: string) {
+      return { ...PRODUCTION, ...GMAIL, GMAIL_MOT_DE_PASSE_APPLICATION: motDePasse };
+    }
+
+    test.each([
+      ["groupes de quatre, comme Google l'affiche", "abcd efgh ijkl mnop"],
+      ["espaces de bord et doubles", "  abcd  efgh ijklmnop "],
+    ])("avec espaces (%s) : accepté, espaces retirés", (_nom, valeur) => {
+      expect(validerConfigurationEmail(production(valeur)).gmail?.motDePasse).toBe(MOT_DE_PASSE);
+    });
+
+    test.each([
+      ["tabulation", "abcd\tefgh ijkl mnop"],
+      ["retour à la ligne", "abcd efgh\nijkl mnop"],
+      ["retour chariot", "abcd efgh\rijkl mnop"],
+      ["espace insécable", "abcd\u00a0efgh ijkl mnop"],
+      ["15 lettres avec espaces", "abcd efgh ijkl mno"],
+      ["17 lettres avec espaces", "abcd efgh ijkl mnopq"],
+      ["une majuscule", "abcd efgh ijkl mnoP"],
+      ["seulement des espaces", "                "],
+    ])("%s : refusé, sans la valeur", (_nom, valeur) => {
+      const message = messageErreur(production(valeur));
+      expect(message).toMatch(/^- GMAIL_MOT_DE_PASSE_APPLICATION : /mu);
+      for (const morceau of valeur.split(/\s+/u).filter((m) => m.length >= 3)) {
+        expect(message).not.toContain(morceau);
+      }
+      sansValeur(message);
     });
   });
 

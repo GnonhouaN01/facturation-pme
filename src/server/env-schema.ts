@@ -118,18 +118,23 @@ export function validerEnvironnement(source: Source): Environnement {
   throw new Error([ENTETE, ...lignes].join("\n"));
 }
 
-// Configuration de l'envoi d'emails, PR 1 : transport, liste autorisée,
-// dossier, production. Fonction pure, comme validerEnvironnement ; les
-// messages nomment la variable et la raison, jamais la valeur. Fiche :
-// docs/features/envoi-emails.md, sections 2.1 et 2.2.
+// Configuration de l'envoi d'emails : transport, compte Gmail, liste
+// autorisée, dossier, production. Fonction pure, comme validerEnvironnement ;
+// les messages nomment la variable et la raison, jamais la valeur. Fiche :
+// docs/features/envoi-emails.md, sections 2.1, 2.2 et 9.
 //
-// Cohérence de main à la fusion de la PR 1 (« Découpage en PR ») : sur
-// Vercel, aucune variable d'envoi n'existe encore. Absente, EMAIL_TRANSPORT y
-// vaut memoire, en production comme en prévisualisation : un refus ferait
-// échouer chaque requête du site. La règle « smtp obligatoire en
-// production » (décision 4) n'entre en vigueur qu'avec la PR 2.
+// Une variable de Vercel ne s'applique qu'au déploiement suivant (section 9) :
+// en production, EMAIL_TRANSPORT absente vaut smtp, pour que les variables
+// Gmail, posées avant la fusion, suffisent. En prévisualisation sans
+// variable : memoire, pour qu'aucun déploiement de branche ne tombe faute de
+// configuration d'envoi.
 
-export type TransportEmail = "memoire" | "fichier";
+export type TransportEmail = "memoire" | "fichier" | "smtp";
+
+export type CompteGmail = Readonly<{
+  utilisateur: string;
+  motDePasse: string;
+}>;
 
 export type ConfigurationEmail = Readonly<{
   transport: TransportEmail;
@@ -137,17 +142,29 @@ export type ConfigurationEmail = Readonly<{
   dossier: string | null;
   destinatairesAutorises: readonly string[];
   estProduction: boolean;
+  // Compte d'envoi du transport smtp, null sinon.
+  gmail: CompteGmail | null;
 }>;
 
 const MESSAGES_EMAIL = {
-  transportInconnu: "doit valoir memoire ou fichier",
+  transportInconnu: "doit valoir memoire, fichier ou smtp",
+  transportProduction: "doit valoir smtp en production",
+  smtpEnTest: "smtp est interdit sous NODE_ENV=test",
   fichierSurVercel: "fichier est impossible sur Vercel (système de fichiers en lecture seule)",
   adresses: "doit être une liste d'adresses valides séparées par des virgules",
+  listeObligatoire: "obligatoire avec smtp hors production",
   dossierVide: "ne doit pas être vide",
+  adresseGmail: "doit être une adresse gmail.com",
+  motDePasse: "doit faire 16 lettres minuscules, espaces retirés",
 } as const;
 
-const TRANSPORTS: readonly TransportEmail[] = ["memoire", "fichier"];
+const TRANSPORTS: readonly TransportEmail[] = ["memoire", "fichier", "smtp"];
 const DOSSIER_PAR_DEFAUT = ".emails";
+const DOMAINE_GMAIL = "@gmail.com";
+// Mot de passe d'application de Google : 16 lettres, affichées par groupes de
+// quatre séparés d'espaces. Seuls les espaces sont retirés : une tabulation
+// ou un retour à la ligne reste une faute.
+const MOT_DE_PASSE_APPLICATION = /^[a-z]{16}$/u;
 
 function surVercel(source: Source): boolean {
   return (source.VERCEL_ENV !== undefined && source.VERCEL_ENV !== "") || source.VERCEL === "1";
@@ -157,18 +174,59 @@ function estTransport(valeur: string): valeur is TransportEmail {
   return (TRANSPORTS as readonly string[]).includes(valeur);
 }
 
+function lireCompteGmail(source: Source, erreurs: string[]): CompteGmail | null {
+  let utilisateur: string | null = null;
+  const brut = source.GMAIL_UTILISATEUR;
+  if (brut === undefined || brut === "") {
+    erreurs.push(`- GMAIL_UTILISATEUR : ${MESSAGES.absente}`);
+  } else {
+    const lue = schemaAdresse.safeParse(brut);
+    if (lue.success && lue.data.endsWith(DOMAINE_GMAIL)) {
+      utilisateur = lue.data;
+    } else {
+      erreurs.push(`- GMAIL_UTILISATEUR : ${MESSAGES_EMAIL.adresseGmail}`);
+    }
+  }
+
+  let motDePasse: string | null = null;
+  const secret = source.GMAIL_MOT_DE_PASSE_APPLICATION;
+  if (secret === undefined || secret === "") {
+    erreurs.push(`- GMAIL_MOT_DE_PASSE_APPLICATION : ${MESSAGES.absente}`);
+  } else {
+    const sansEspaces = secret.replaceAll(" ", "");
+    if (MOT_DE_PASSE_APPLICATION.test(sansEspaces)) {
+      motDePasse = sansEspaces;
+    } else {
+      erreurs.push(`- GMAIL_MOT_DE_PASSE_APPLICATION : ${MESSAGES_EMAIL.motDePasse}`);
+    }
+  }
+
+  return utilisateur !== null && motDePasse !== null
+    ? Object.freeze({ utilisateur, motDePasse })
+    : null;
+}
+
 export function validerConfigurationEmail(source: Source): ConfigurationEmail {
   const erreurs: string[] = [];
   const vercel = surVercel(source);
+  const estProduction = source.VERCEL_ENV === "production";
 
   // Transport : absent, valeur selon l'environnement ; présent, exactement
-  // memoire ou fichier (ni vide, ni espace, ni autre casse).
+  // memoire, fichier ou smtp (ni vide, ni espace, ni autre casse), et smtp
+  // seulement en production.
   let transport: TransportEmail;
   const brut = source.EMAIL_TRANSPORT;
   if (brut === undefined) {
-    transport = source.NODE_ENV === "test" || vercel ? "memoire" : "fichier";
+    if (estProduction) transport = "smtp";
+    else transport = source.NODE_ENV === "test" || vercel ? "memoire" : "fichier";
   } else if (!estTransport(brut)) {
     erreurs.push(`- EMAIL_TRANSPORT : ${MESSAGES_EMAIL.transportInconnu}`);
+    transport = "memoire";
+  } else if (estProduction && brut !== "smtp") {
+    erreurs.push(`- EMAIL_TRANSPORT : ${MESSAGES_EMAIL.transportProduction}`);
+    transport = "memoire";
+  } else if (brut === "smtp" && source.NODE_ENV === "test") {
+    erreurs.push(`- EMAIL_TRANSPORT : ${MESSAGES_EMAIL.smtpEnTest}`);
     transport = "memoire";
   } else if (brut === "fichier" && vercel) {
     erreurs.push(`- EMAIL_TRANSPORT : ${MESSAGES_EMAIL.fichierSurVercel}`);
@@ -178,7 +236,8 @@ export function validerConfigurationEmail(source: Source): ConfigurationEmail {
   }
 
   // Liste autorisée : adresses séparées par des virgules, chacune validée et
-  // normalisée. Un élément vide est une faute.
+  // normalisée. Un élément vide est une faute. Lue partout, appliquée hors
+  // production seulement (la porte l'ignore en production).
   let destinatairesAutorises: string[] = [];
   const liste = source.EMAIL_DESTINATAIRES_AUTORISES;
   if (liste !== undefined) {
@@ -188,7 +247,13 @@ export function validerConfigurationEmail(source: Source): ConfigurationEmail {
     } else {
       erreurs.push(`- EMAIL_DESTINATAIRES_AUTORISES : ${MESSAGES_EMAIL.adresses}`);
     }
+  } else if (transport === "smtp" && !estProduction) {
+    // Hors production, smtp envoie réellement : sans liste, la porte
+    // refuserait tout, et l'oubli passerait inaperçu.
+    erreurs.push(`- EMAIL_DESTINATAIRES_AUTORISES : ${MESSAGES_EMAIL.listeObligatoire}`);
   }
+
+  const gmail = transport === "smtp" ? lireCompteGmail(source, erreurs) : null;
 
   let dossier: string | null = null;
   if (transport === "fichier") {
@@ -203,6 +268,7 @@ export function validerConfigurationEmail(source: Source): ConfigurationEmail {
     transport,
     dossier,
     destinatairesAutorises: Object.freeze(destinatairesAutorises),
-    estProduction: source.VERCEL_ENV === "production",
+    estProduction,
+    gmail,
   });
 }
