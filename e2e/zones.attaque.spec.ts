@@ -96,6 +96,38 @@ test.describe("zone application, sans session valide", () => {
     });
   }
 
+  // HTML brut, sans navigateur ni JavaScript : un client qui ne l'exécute pas
+  // ne doit pas distinguer une page de l'application d'une adresse
+  // inexistante (S-02). Le test précédent compare le rendu après hydratation.
+  // Fiche : docs/features/controle-deploiement.md, section 5.
+  test("HTML brut, sans JavaScript : même statut, même titre, même page « introuvable »", async ({
+    request,
+  }) => {
+    const servi = async (chemin: string) => {
+      const reponse = await request.get(chemin, { maxRedirects: 0 });
+      const html = await reponse.text();
+      const texte = html
+        .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
+        .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
+        .replace(/<head\b[\s\S]*?<\/head>/i, " ")
+        .replace(/<[^>]*>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      return {
+        statut: reponse.status(),
+        titre: /<title[^>]*>([^<]*)<\/title>/i.exec(html)?.[1] ?? null,
+        texte,
+      };
+    };
+
+    const attendu = await servi(`/adresse-inexistante-${randomBytes(4).toString("hex")}`);
+    const obtenu = await servi(TABLEAU_DE_BORD);
+
+    expect(attendu.statut).toBe(404);
+    expect(attendu.texte).toContain(TEXTES_ERREURS.introuvable);
+    expect(obtenu).toEqual(attendu);
+  });
+
   test("rien du gabarit dans le HTML ni dans la charge utile RSC", async ({ request }) => {
     const html = await (await request.get(TABLEAU_DE_BORD)).text();
     const rsc = await request.get(TABLEAU_DE_BORD, { headers: { rsc: "1" } });
