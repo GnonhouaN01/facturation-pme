@@ -202,7 +202,7 @@ Un test unitaire fige ce comportement sur la version installée (liste refusée,
 
 **Essai sur `preview`, par le développeur** (jamais par l'assistant), avant la fusion de la PR 2 : six requêtes `POST /api/auth/sign-up/email` vers l'adresse du déploiement, avec `Origin` égale à cette adresse et le corps `{"nom":"Essai","email":"essai-limite@exemple.invalid","motDePasse":"password1234"}`, chacune avec un `X-Forwarded-For` forgé différent (`203.0.113.1` à `203.0.113.6`, plage de documentation). Corrigé à la PR 2 : un corps vide est refusé par notre gestionnaire (`invalide`) avant Better Auth, donc avant le compteur, et ne prouverait rien. Le mot de passe `password1234`, connu de Have I Been Pwned, fait refuser l'inscription après le compteur (`mot_de_passe_compromis`) : aucun compte, aucun email. Le même essai, service simulé, tourne en local (`e2e/auth.attaque.spec.ts`, T-41).
 
-- Si la sixième reçoit `trop_de_requetes` (statut 429) : Vercel remplace l'en-tête par l'adresse réelle. `x-forwarded-for` est confirmé.
+- Si la sixième reçoit `trop_de_requetes` (statut 429), ou une requête plus tôt (les inscriptions de la preuve comptent dans la même fenêtre d'une heure, section 7, point 4) : Vercel remplace l'en-tête par l'adresse réelle. `x-forwarded-for` est confirmé.
 - Si les six reçoivent `mot_de_passe_compromis` : l'en-tête forgé est cru. On remplace par `x-real-ip`, on refait l'essai ; si les deux échouent, la PR 2 n'est pas fusionnée.
 
 Le résultat est noté dans « Notes de l'implémentation ». En local, l'en-tête est falsifiable et accepté (aucun vrai utilisateur) : les tests de bout en bout s'en servent pour ne pas épuiser une même limite (section « Tests à écrire »).
@@ -330,7 +330,7 @@ Par le développeur, jamais par l'assistant (`envoi-emails.md`, section 9). L'as
 1. **Essai depuis le poste** (étape 4 de la 0.7), au début de la PR 2 : `npm run essai:email` avec le second compte, mot de passe saisi sans écho. Vérifier la réception, `From`, un seul destinataire, `SPF` et `DKIM` en `pass`, la copie dans « Messages envoyés », et toute alerte de Google. **Échec : on s'arrête là.**
 2. **Variables de prévisualisation**, limitées à la branche `feat/1.1-inscription-pr2` (champ « Preview Branch » de Vercel ; la branche de la PR 2 porte ce nom), posées seulement quand elle porte la PR 2 : `GMAIL_UTILISATEUR` et `GMAIL_MOT_DE_PASSE_APPLICATION` (second compte, Sensitive), `EMAIL_TRANSPORT=smtp`, `EMAIL_DESTINATAIRES_AUTORISES` (adresse personnelle du développeur).
 3. **Preuve** (étape 8 de la 0.7) : sur la prévisualisation, ouverte par l'adresse du déploiement (section 2.4), s'inscrire avec l'adresse autorisée ; recevoir `compte.verification` ; ouvrir le lien, confirmer ; arriver sur « Adresse vérifiée » avec un cookie de session. Dans les journaux du déploiement, aucune requête ne porte le jeton. Mêmes vérifications qu'au point 1, et surtout les alertes de Google (connexion depuis Francfort, RR-10). Puis une seconde inscription avec la même adresse : `compte.existant` reçu, réponse identique à l'écran.
-4. **Essai de l'adresse IP** (section 3.4) sur le même déploiement.
+4. **Essai de l'adresse IP** (section 3.4) sur le même déploiement, **après la preuve du point 3** (décision du développeur, PR 2). La limite `auth.inscription` admet 5 inscriptions par adresse IP sur une **fenêtre fixe d'une heure** (3 600 s), ouverte par la première tentative de cette adresse (section 3.3) ; les deux inscriptions de la preuve y comptent déjà si Vercel remplace l'en-tête par l'adresse réelle. Une réponse `trop_de_requetes` (429) avant la sixième requête est donc tout aussi concluante : l'en-tête forgé n'est pas cru. Six réponses `mot_de_passe_compromis` : il est cru. Pour repartir d'un compteur vide, attendre une heure après la première inscription de la preuve.
 5. **Journal** : dans les journaux du déploiement (Vercel, « Logs »), aucune adresse email, aucun jeton, aucune ligne `[Better Auth]` ; seulement les lignes `[auth]` et `[email]` fixes.
 6. **Échec du point 3** : la 1.1 n'est pas fusionnée ; on passe à l'API web de Gmail en HTTPS (`envoi-emails.md`, section 8), par une fiche.
 7. Après la preuve : retirer les quatre variables de prévisualisation de la branche, ou les laisser jusqu'à la suppression de la branche (elles ne s'appliquent qu'à elle). Recommandé : les retirer après la fusion.
@@ -563,6 +563,13 @@ Appliquées par l'assistant le 2026-10-13, selon sa recommandation, sauf avis co
 4. Formulaires affichés seulement après hydratation : sans JavaScript, un formulaire HTML partirait en `GET`, mot de passe dans l'adresse.
 5. Longueurs des champs dans `src/schemas/regles-compte.ts`, sans Zod : Zod dans le navigateur déclenchait une violation `eval` de la politique.
 6. Adresses de bout en bout tirées par exécution (`e2e/comptes-e2e.ts`) et inscrites dans `EMAIL_DESTINATAIRES_AUTORISES` des serveurs : la porte n'envoie qu'à la liste hors production, transport `fichier` compris. Comptes supprimés en fin de suite (8 par exécution), `DATABASE_URL` lue comme `vitest.config.mts`.
+
+**Décisions du développeur sur la PR 2** (le 2026-10-13), chacune testée :
+
+- Les quatre `POST` du contrôle après déploiement sont acceptés, sans corps, sans `Origin`, sans cookie, sans `Authorization` : `optionsRequete` (`scripts/controle-deploiement.mjs`) refuse tout autre `POST` ; le serveur factice vérifie ce qu'il reçoit (`e2e/controle-deploiement.spec.ts`).
+- Le nettoyage des comptes de bout en bout est accepté : `DATABASE_URL` seule, jamais `DATABASE_URL_MIGRATION` ; la liste exacte des adresses de l'exécution, toutes en `.invalid`, par égalité (`email = ANY($1)`), sans `LIKE` ni motif ; refus si `VERCEL_ENV` est défini (`e2e/nettoyer-comptes.spec.ts`).
+- Section 7 : la preuve Gmail d'abord, l'essai de l'adresse IP ensuite.
+- Dettes inscrites dans `PLAN.md`, section 7 : identifiant d'incident absent de la réponse d'erreur de `/api/auth`, et `email.compte` partagée sur `dev`.
 7. `BETTER_AUTH_URL` imposée à `http://localhost:3000` pour le serveur de bout en bout : l'origine acceptée ne dépend plus de `.env.local`.
 8. L'erreur inattendue s'affiche « Une erreur est survenue. » sans identifiant d'incident : la réponse normalisée de la PR 1 n'en porte pas (l'identifiant est au journal technique).
 
@@ -570,4 +577,4 @@ Appliquées par l'assistant le 2026-10-13, selon sa recommandation, sauf avis co
 
 **Vérifications** : `npm run verifier` vert (format, lint, typecheck, 57 fichiers et 1 841 tests unitaires, construction, 279 tests de bout en bout, ports 3000 et 3101 libres) ; `npm run test:integration` : 21 fichiers, 185 réussis et 1 échec attendu (déjà présent).
 
-**À faire par le développeur avant la fusion** : section 7, points 1 à 5 (essai depuis le poste, variables de la branche `feat/1.1-inscription-pr2`, preuve Vercel → Gmail, essai de l'en-tête d'adresse IP selon la section 3.4 corrigée, journaux du déploiement). Résultats à noter ici.
+**À faire par le développeur avant la fusion** : section 7, points 1 à 5, dans cet ordre (essai depuis le poste, variables de la branche `feat/1.1-inscription-pr2`, preuve Vercel → Gmail, puis essai de l'en-tête d'adresse IP selon la section 3.4 corrigée, journaux du déploiement). Résultats à noter ici.
