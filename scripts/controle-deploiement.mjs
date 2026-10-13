@@ -112,21 +112,38 @@ export function validerAdresse(adresse) {
   return url.origin;
 }
 
-// GET, redirection non suivie, sans cookie ni Authorization sauf les
-// valeurs forgées passées en paramètre. methode « POST » : sans corps, pour
-// la page « inscription » seulement. Une requête échouée donne null : chaque
-// contrôle de la page échoue alors.
+// Options d'une requête du contrôle : redirection non suivie, sans cookie ni
+// Authorization sauf les valeurs forgées des GET. Un POST (page
+// « inscription » seulement) part sans corps, sans cookie, sans
+// Authorization ; fetch n'y ajoute ni Origin ni Content-Type. Toute autre
+// demande lève : la règle ne dépend pas de l'appelant.
+/**
+ * @param {{ methode: string, cookie?: string, autorisation?: string, corps?: string }} demande
+ * @returns {{ method: string, redirect: "manual", credentials: "omit", headers: Record<string, string>, body?: undefined }}
+ */
+export function optionsRequete({ methode, cookie, autorisation, corps }) {
+  if (methode !== "GET" && methode !== "POST") throw new Error("méthode refusée");
+  if (methode === "POST" && (cookie || autorisation || corps !== undefined)) {
+    throw new Error("POST refusé : ni corps, ni cookie, ni Authorization");
+  }
+  if (corps !== undefined) throw new Error("corps refusé");
+  return {
+    method: methode,
+    redirect: "manual",
+    credentials: "omit",
+    headers: {
+      accept: "text/html",
+      ...(cookie ? { cookie } : {}),
+      ...(autorisation ? { authorization: autorisation } : {}),
+    },
+  };
+}
+
+// Une requête échouée donne null : chaque contrôle de la page échoue alors.
 async function lire(origine, chemin, cookie, autorisation, methode = "GET") {
   try {
     const reponse = await fetch(origine + chemin, {
-      method: methode,
-      redirect: "manual",
-      credentials: "omit",
-      headers: {
-        accept: "text/html",
-        ...(cookie ? { cookie } : {}),
-        ...(autorisation ? { authorization: autorisation } : {}),
-      },
+      ...optionsRequete({ methode, cookie, autorisation }),
       signal: AbortSignal.timeout(DELAI_REQUETE),
     });
     return { statut: reponse.status, entetes: reponse.headers, corps: await reponse.text() };

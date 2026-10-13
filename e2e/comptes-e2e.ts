@@ -27,10 +27,8 @@ export function adresseE2E(projet: string, rang: number): string {
   return `e2e-${EXECUTION}-${indice * PAR_PROJET + rang}@${DOMAINE_E2E}`;
 }
 
+// La liste exacte des adresses que les tests de l'exécution peuvent créer :
+// la seule que le nettoyage supprime, par égalité.
 export const ADRESSES_E2E: readonly string[] = PROJETS.flatMap((projet) =>
   Array.from({ length: PAR_PROJET }, (_, rang) => adresseE2E(projet, rang)),
 );
-
-// Motif LIKE des comptes de cette exécution (EXECUTION est hexadécimal :
-// ni « % » ni « _ »).
-export const MOTIF_COMPTES_E2E = `e2e-${EXECUTION}-%@${DOMAINE_E2E}`;
