@@ -167,7 +167,7 @@ function verifierFuite(reponses) {
 // définition que documentServi d'e2e/outils.ts.
 export function documentServi(html) {
   return html
-    .replace(/(<script\b[^>]*>)[\s\S]*?<\/script>/gi, "$1</script>")
+    .replace(/(<script\b[^>]*>)[\s\S]*?<\/script\b[^>]*>/gi, "$1</script>")
     .replace(/nonce(="|-)[A-Za-z0-9+/=]+/g, "nonce$1N");
 }
 

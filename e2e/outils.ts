@@ -54,7 +54,7 @@ export function nonceDe(politique: string | undefined): string {
 // docs/features/controle-deploiement.md, section 5.
 export function documentServi(html: string): string {
   return html
-    .replace(/(<script\b[^>]*>)[\s\S]*?<\/script>/gi, "$1</script>")
+    .replace(/(<script\b[^>]*>)[\s\S]*?<\/script\b[^>]*>/gi, "$1</script>")
     .replace(/nonce(="|-)[A-Za-z0-9+/=]+/g, "nonce$1N");
 }
 

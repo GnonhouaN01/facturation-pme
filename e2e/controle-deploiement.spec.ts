@@ -120,7 +120,10 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
     const tableau = chemin === "/tableau-de-bord";
     if (defaut === "variable-dans-un-entete" && tableau) entetes["X-Indice"] = "BETTER_AUTH_SECRET";
 
-    let charge = `0:{"c":["",${JSON.stringify(chemin)}]}`;
+    // Aucune valeur de la requête n'est recopiée dans la réponse (pas de
+    // contenu réfléchi) : la charge utile, qui varie d'une requête à l'autre
+    // comme celle de Next.js, est tirée au hasard.
+    let charge = `0:{"c":["","${randomBytes(8).toString("hex")}"]}`;
     if (defaut === "pile" && !accueil && !tableau) {
       charge += "\nError: refus\n    at lire (src/server/x.ts:12:7)";
     }
@@ -329,6 +332,24 @@ test.describe("contrôle après déploiement, cohérence et site construit", () 
       expect(documentDuScript(html)).toBe(documentServi(html));
     }
   });
+
+  // Fin de balise reconnue sous toutes ses formes (alerte CodeQL « Bad HTML
+  // filtering regexp ») : espace avant « > », majuscules, attribut. Sinon le
+  // contenu du script, et ce qui le suit, échapperait au découpage.
+  for (const [nom, decouper] of [
+    ["script", documentDuScript],
+    ["e2e/outils.ts", documentServi],
+  ] as const) {
+    test(`découpage (${nom}) : </script >, </SCRIPT> et </script foo="x"> reconnus`, () => {
+      for (const fin of ["</script >", "</SCRIPT>", '</script foo="x">', "</script\n>"]) {
+        const html = `<p>a</p><script nonce="QUJD">secret ${fin}<p>b</p><SCRIPT>autre</script>`;
+
+        expect(decouper(html), fin).toBe(
+          '<p>a</p><script nonce="N"></script><p>b</p><SCRIPT></script>',
+        );
+      }
+    });
+  }
 
   // Toute page introuvable passe par notFound() (fiche, section 5, décision 5).
   test("site construit en local : tous les contrôles passent", async ({ baseURL }) => {

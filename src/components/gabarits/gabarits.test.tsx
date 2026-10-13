@@ -108,15 +108,17 @@ function noeudsDeTexte(html: string): string[] {
 type Lien = { attributs: string; texte: string };
 
 function liens(html: string): Lien[] {
-  return [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)].map(([, attributs, contenu]) => ({
-    attributs: attributs ?? "",
-    texte: texte(contenu ?? ""),
-  }));
+  return [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a\b[^>]*>/gi)].map(
+    ([, attributs, contenu]) => ({
+      attributs: attributs ?? "",
+      texte: texte(contenu ?? ""),
+    }),
+  );
 }
 
 // Les éléments nav dont le nom accessible est celui de la navigation.
 function navigations(html: string): string[] {
-  return [...html.matchAll(/<nav\b([^>]*)>([\s\S]*?)<\/nav>/g)]
+  return [...html.matchAll(/<nav\b([^>]*)>([\s\S]*?)<\/nav\b[^>]*>/gi)]
     .filter(([, attributs]) =>
       decoder(attributs ?? "").includes(`aria-label="${TEXTES_NAVIGATION.nom}"`),
     )
