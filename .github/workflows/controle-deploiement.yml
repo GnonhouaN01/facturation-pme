@@ -17,15 +17,40 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Toujours exécuté, sans condition : un job sauté n'exécute aucun pas, et
+  # l'on ne saurait pas pourquoi le contrôle n'a pas tourné. Affiche quatre
+  # champs de l'événement, et rien d'autre. Valeurs passées par env, jamais
+  # interpolées dans la commande.
+  evenement:
+    name: Afficher l'événement
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Afficher l'événement
+        env:
+          NOM: ${{ github.event_name }}
+          ENVIRONNEMENT: ${{ github.event.deployment.environment }}
+          PRODUCTION: ${{ github.event.deployment.production_environment }}
+          ETAT: ${{ github.event.deployment_status.state }}
+        run: |
+          echo "github.event_name : $NOM"
+          echo "github.event.deployment.environment : $ENVIRONNEMENT"
+          echo "github.event.deployment.production_environment : $PRODUCTION"
+          echo "github.event.deployment_status.state : $ETAT"
+
   controler:
     name: Contrôler la production
-    # Vercel nomme l'environnement « Production » ou « Production – <projet> ».
-    # Un déploiement de prévisualisation donne une exécution sautée.
+    needs: evenement
+    # Vercel nomme l'environnement « Production » ou « Production – <projet> »,
+    # et marque le déploiement production_environment. Un déploiement de
+    # prévisualisation, ou un état autre que success (pending, in_progress),
+    # donne un job sauté.
     if: >-
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'deployment_status' &&
        github.event.deployment_status.state == 'success' &&
-       startsWith(github.event.deployment.environment, 'Production'))
+       (startsWith(github.event.deployment.environment, 'Production') ||
+        github.event.deployment.production_environment == true))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Adresse écrite ici, jamais lue dans l'événement (décision 3).

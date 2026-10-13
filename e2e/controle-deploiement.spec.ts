@@ -7,11 +7,15 @@ import { promisify } from "node:util";
 import { expect, test } from "@playwright/test";
 
 import {
+  comparerDocuments,
   controlerSite,
   documentServi as documentDuScript,
   ENTETES_ATTENDUS,
   POLITIQUE_ATTENDUE,
+  TEXTES_GABARIT,
 } from "../scripts/controle-deploiement.mjs";
+import { TEXTES_NAVIGATION } from "../src/textes/navigation";
+import { TEXTES_SIMULATION } from "../src/textes/simulation";
 
 import { documentServi, ENTETES_SECTION_6, POLITIQUE_PRODUCTION } from "./outils";
 
@@ -40,7 +44,9 @@ type Defaut =
   | "accueil-redirige"
   | "tableau-de-bord-200"
   | "introuvable-en-anglais"
-  | "tableau-de-bord-vide"
+  | "cookie-distingue"
+  | "lien-distingue"
+  | "gabarit-dans-la-charge"
   | "pile"
   | "chemin-de-fichier"
   | "variable-dans-le-corps"
@@ -118,17 +124,20 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
 
     const accueil = chemin === "/";
     const tableau = chemin === "/tableau-de-bord";
+    const lien = chemin.startsWith("/lien/devis/");
+    const inexistante = chemin.startsWith("/adresse-inexistante-");
     if (defaut === "variable-dans-un-entete" && tableau) entetes["X-Indice"] = "BETTER_AUTH_SECRET";
 
     // Aucune valeur de la requête n'est recopiée dans la réponse (pas de
     // contenu réfléchi) : la charge utile, qui varie d'une requête à l'autre
     // comme celle de Next.js, est tirée au hasard.
     let charge = `0:{"c":["","${randomBytes(8).toString("hex")}"]}`;
-    if (defaut === "pile" && !accueil && !tableau) {
+    if (defaut === "pile" && inexistante) {
       charge += "\nError: refus\n    at lire (src/server/x.ts:12:7)";
     }
     if (defaut === "chemin-de-fichier" && tableau) charge += " /var/task/node_modules/next/x.js";
     if (defaut === "variable-dans-le-corps" && accueil) charge += " DATABASE_URL absente";
+    if (defaut === "gabarit-dans-la-charge" && tableau) charge += " Organisation active";
 
     if (accueil) {
       if (defaut === "accueil-redirige" && redirection) {
@@ -144,7 +153,12 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
     const anglais = defaut === "introuvable-en-anglais";
     let corps = anglais ? INTROUVABLE_EN : INTROUVABLE_FR;
     const titre = anglais ? "404: This page could not be found." : "Facturation PME";
-    if (tableau && defaut === "tableau-de-bord-vide") corps = "";
+    // Comme Next.js : le notFound() d'une page donne un corps vide, une
+    // adresse sans page la page « introuvable » rendue sur le serveur.
+    if (tableau) {
+      corps = defaut === "cookie-distingue" && requete.headers.cookie ? INTROUVABLE_FR : "";
+    }
+    if (lien && defaut === "lien-distingue") corps += `<p>${randomBytes(4).toString("hex")}</p>`;
     reponse.writeHead(tableau && defaut === "tableau-de-bord-200" ? 200 : 404, entetes);
     reponse.end(page(nonce, titre, corps, charge, defaut));
   });
@@ -165,11 +179,11 @@ function echecs(resultats: readonly Resultat[]): string[] {
     .sort();
 }
 
-const PAGES = ["accueil", "tableau-de-bord", "inexistante"] as const;
+const PAGES = ["accueil", "tableau-de-bord", "inexistante", "lien"] as const;
 const surToutes = (controle: string) => PAGES.map((p) => `${p}:${controle}`);
 
 test.describe("contrôle après déploiement, serveur factice", () => {
-  test("serveur conforme : tout passe, et seulement des GET sans cookie ni authentification", async () => {
+  test("serveur conforme : tout passe, seulement des GET, sans cookie sauf le cookie forgé", async () => {
     const factice = await demarrerFactice();
     try {
       const premier = await controlerSite(factice.adresse);
@@ -179,19 +193,34 @@ test.describe("contrôle après déploiement, serveur factice", () => {
       expect(echecs(second)).toEqual([]);
       expect(premier.length).toBeGreaterThan(10);
 
-      expect(factice.requetes).toHaveLength(8);
+      expect(factice.requetes).toHaveLength(14);
       for (const requete of factice.requetes) {
         expect(requete.methode).toBe("GET");
-        expect(requete.entetes.cookie).toBeUndefined();
         expect(requete.entetes.authorization).toBeUndefined();
         expect(requete.entetes["content-length"]).toBeUndefined();
       }
+      // Un seul cookie par passage : la session forgée, sur /tableau-de-bord,
+      // sous ses deux noms, tirée au hasard à chaque passage.
+      const avecCookie = factice.requetes.filter((r) => r.entetes.cookie !== undefined);
+      expect(avecCookie.map((r) => r.chemin)).toEqual(["/tableau-de-bord", "/tableau-de-bord"]);
+      const valeurs = avecCookie.map((r) => {
+        const trouve =
+          /^better-auth\.session_token=([^;]+); __Secure-better-auth\.session_token=\1$/.exec(
+            r.entetes.cookie ?? "",
+          );
+        expect(trouve, r.entetes.cookie).not.toBeNull();
+        return trouve?.[1];
+      });
+      expect(valeurs[0]).not.toBe(valeurs[1]);
+
       const chemins = factice.requetes.map((r) => r.chemin);
       const inexistantes = chemins.filter((c) => /^\/adresse-inexistante-[0-9a-f]{16}$/.test(c));
+      const liens = chemins.filter((c) => /^\/lien\/devis\/[A-Za-z0-9_-]{43}$/.test(c));
       expect(chemins.filter((c) => c === "/")).toHaveLength(4);
-      expect(chemins.filter((c) => c === "/tableau-de-bord")).toHaveLength(2);
+      expect(chemins.filter((c) => c === "/tableau-de-bord")).toHaveLength(4);
       expect(inexistantes).toHaveLength(2);
       expect(inexistantes[0]).not.toBe(inexistantes[1]);
+      expect(new Set(liens).size).toBe(4);
     } finally {
       await factice.fermer();
     }
@@ -211,9 +240,11 @@ test.describe("contrôle après déploiement, serveur factice", () => {
     ["nonce-fixe", ["accueil:nonce-neuf"]],
     ["script-sans-nonce", surToutes("nonce-scripts")],
     ["accueil-500", ["accueil:statut"]],
-    ["tableau-de-bord-200", ["tableau-de-bord:identique", "tableau-de-bord:statut"]],
-    ["introuvable-en-anglais", ["inexistante:anglais", "tableau-de-bord:anglais"]],
-    ["tableau-de-bord-vide", ["tableau-de-bord:identique"]],
+    ["tableau-de-bord-200", ["tableau-de-bord:statut"]],
+    ["introuvable-en-anglais", ["inexistante:anglais", "lien:anglais", "tableau-de-bord:anglais"]],
+    ["cookie-distingue", ["tableau-de-bord:identique"]],
+    ["lien-distingue", ["lien:identique"]],
+    ["gabarit-dans-la-charge", ["tableau-de-bord:gabarit"]],
     ["pile", ["inexistante:fuite"]],
     ["chemin-de-fichier", ["tableau-de-bord:fuite"]],
     ["variable-dans-le-corps", ["accueil:fuite"]],
@@ -296,6 +327,82 @@ test.describe("contrôle après déploiement, ligne de commande", () => {
     }
   });
 
+  test("sans --detail : aucune ligne de détail", async () => {
+    const factice = await demarrerFactice("cookie-distingue");
+    try {
+      const { code, sortie } = await lancer(factice.adresse);
+      const lignes = sortie.trimEnd().split("\n");
+
+      expect(code, sortie).toBe(1);
+      expect(lignes).toHaveLength(2 + (await controlerSite(factice.adresse)).length);
+      expect(lignes[0]).toMatch(/^Contrôle de /);
+      expect(lignes.at(-1)).toMatch(/^Bilan : /);
+      for (const ligne of lignes.slice(1, -1)) expect(ligne).toMatch(/^(ok {5}|ÉCHEC {2})\S+ : /);
+      expect(sortie).not.toContain("statuts :");
+    } finally {
+      await factice.fermer();
+    }
+  });
+
+  test("--detail : statuts, longueurs, position et extraits, pour les seules comparaisons", async () => {
+    const cookie = await demarrerFactice("cookie-distingue");
+    const lien = await demarrerFactice("lien-distingue");
+    const conforme = await demarrerFactice();
+    try {
+      const v = await lancer(cookie.adresse, "--detail");
+      expect(v.code, v.sortie).toBe(1);
+      const lignes = v.sortie.split("\n");
+      const debut = lignes.findIndex((l) => l.startsWith("ÉCHEC  tableau-de-bord:identique"));
+      const detail = lignes.slice(debut + 1, debut + 6).map((l) => l.trim());
+      expect(detail[0]).toBe("statuts : sans cookie 404, cookie forgé 404");
+      expect(detail[1]).toMatch(/^longueurs normalisées : sans cookie \d+, cookie forgé \d+$/);
+      expect(detail[2]).toMatch(/^premier caractère différent : position \d+$/);
+      expect(detail[3]).toMatch(/^sans cookie {2}\[\d+, \d+\[ : "/);
+      expect(detail[3]).toContain("<body><script");
+      expect(detail[4]).toMatch(/^cookie forgé \[\d+, \d+\[ : "/);
+      expect(detail[4]).toContain("<body><main><h1>Cette page");
+      // Deux comparaisons détaillées : 5 lignes, puis 3 pour les liens
+      // identiques ; aucune autre ligne en retrait.
+      expect(lignes.filter((l) => /^ {9}\S/.test(l))).toHaveLength(8);
+
+      const l = await lancer(lien.adresse, "--detail");
+      expect(l.code, l.sortie).toBe(1);
+      expect(l.sortie).toContain("statuts : premier jeton 404, second jeton 404");
+      expect(l.sortie).toMatch(/^ {9}second jeton {2}\[\d+, \d+\[ : "/m);
+
+      const c = await lancer(conforme.adresse, "--detail");
+      expect(c.code, c.sortie).toBe(0);
+      expect(c.sortie.match(/documents normalisés identiques/g)).toHaveLength(2);
+    } finally {
+      await cookie.fermer();
+      await lien.fermer();
+      await conforme.fermer();
+    }
+  });
+
+  test("--detail : aucun en-tête, aucun nonce, aucun contenu de script", async () => {
+    const factice = await demarrerFactice("variable-dans-un-entete");
+    try {
+      const { sortie } = await lancer(factice.adresse, "--detail");
+
+      expect(sortie).toContain("statuts :");
+      for (const interdit of [
+        "better_auth_secret",
+        "x-indice",
+        "content-security-policy",
+        "nosniff",
+        "max-age",
+        "__next_f",
+        "session_token",
+      ]) {
+        expect(sortie.toLowerCase()).not.toContain(interdit);
+      }
+      expect(sortie).not.toMatch(/nonce="(?!N")/);
+    } finally {
+      await factice.fermer();
+    }
+  });
+
   test("adresse refusée : code 2, aucune requête", async () => {
     const factice = await demarrerFactice();
     const { host } = new URL(factice.adresse);
@@ -331,6 +438,41 @@ test.describe("contrôle après déploiement, cohérence et site construit", () 
     ]) {
       expect(documentDuScript(html)).toBe(documentServi(html));
     }
+    expect(TEXTES_GABARIT).toEqual([
+      TEXTES_SIMULATION.bandeauApplication,
+      TEXTES_NAVIGATION.nom,
+      TEXTES_NAVIGATION.organisationActive,
+      TEXTES_NAVIGATION.entrees.tableauDeBord,
+      ...Object.values(TEXTES_NAVIGATION.roles),
+    ]);
+  });
+
+  test("comparerDocuments : position et 120 caractères autour, documents normalisés", () => {
+    const commun = "x".repeat(200);
+    const lignes = comparerDocuments(
+      { statut: 404, corps: `${commun}A<script nonce="QUJD">charge</script>${"y".repeat(200)}` },
+      { statut: 404, corps: `${commun}B${"y".repeat(200)}` },
+      ["tableau-de-bord", "inexistante"],
+    );
+
+    expect(lignes).toEqual([
+      "statuts : tableau-de-bord 404, inexistante 404",
+      "longueurs normalisées : tableau-de-bord 428, inexistante 401",
+      "premier caractère différent : position 200",
+      `tableau-de-bord [140, 260[ : ${JSON.stringify(`${"x".repeat(60)}A<script nonce="N"></script>${"y".repeat(32)}`)}`,
+      `inexistante     [140, 260[ : ${JSON.stringify(`${"x".repeat(60)}B${"y".repeat(59)}`)}`,
+    ]);
+    expect(
+      comparerDocuments({ statut: 404, corps: "<p>" }, { statut: 404, corps: "<p>" }, [
+        "tableau-de-bord",
+        "inexistante",
+      ]),
+    ).toEqual([
+      "statuts : tableau-de-bord 404, inexistante 404",
+      "longueurs normalisées : tableau-de-bord 3, inexistante 3",
+      "documents normalisés identiques",
+    ]);
+    expect(comparerDocuments(null, { statut: 404, corps: "" })).toEqual(["aucune réponse"]);
   });
 
   // Fin de balise reconnue sous toutes ses formes (alerte CodeQL « Bad HTML
@@ -351,7 +493,8 @@ test.describe("contrôle après déploiement, cohérence et site construit", () 
     });
   }
 
-  // Toute page introuvable passe par notFound() (fiche, section 5, décision 5).
+  // next start répond comme Vercel : une adresse sans page reçoit la page
+  // « introuvable » rendue sur le serveur (fiche, section 5, décision 10).
   test("site construit en local : tous les contrôles passent", async ({ baseURL }) => {
     const resultats = await controlerSite(baseURL ?? "");
 

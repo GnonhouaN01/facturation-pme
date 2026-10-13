@@ -1,6 +1,6 @@
 # Fonctionnalité : contrôle après déploiement
 
-Statut : en cours. Fiche rédigée et décisions prises le 2026-10-13, selon les recommandations de l'assistant, au rythme fixé par le développeur (décision 1). Tests et implémentation commités en local, non poussés. Écart S-02 de la 0.6 corrigé dans la même branche (section 5, décision 5).
+Statut : en cours. Fiche rédigée et décisions prises le 2026-10-13, selon les recommandations de l'assistant, au rythme fixé par le développeur (décision 1). Tests et implémentation commités en local, non poussés. Écart S-02 de la 0.6 corrigé dans la même branche (section 5, décision 5), puis portée de S-02 précisée par le relecteur après le premier passage en production (décision 10).
 
 Jalon 0, fonctionnalité 0.8 de `docs/PLAN.md`. Taille S. Menaces : T-53, T-74 ; S-02, S-80, S-85 vérifiés en production.
 
@@ -31,36 +31,38 @@ Exigences couvertes : S-02, S-80, S-85 (vérification en production), NF-06 (con
 Un module Node.js sans dépendance (`fetch` de Node 24), qui exporte `controlerSite(adresse)` et s'exécute en ligne de commande :
 
 ```
-node scripts/controle-deploiement.mjs https://facturation-pme.vercel.app [--essais 3] [--pause 20]
+node scripts/controle-deploiement.mjs https://facturation-pme.vercel.app [--essais 3] [--pause 20] [--detail]
 ```
 
-- **Uniquement des requêtes `GET`**, sans cookie, sans en-tête d'authentification, sans corps, `redirect: "manual"` (une redirection n'est jamais suivie : elle échoue au contrôle du statut), délai de 15 s par requête.
+- **Uniquement des requêtes `GET`**, sans cookie (sauf un cookie de session forgé, tiré au hasard, sur une requête de `/tableau-de-bord`, sous les noms `better-auth.session_token` et `__Secure-better-auth.session_token`), sans en-tête d'authentification, sans corps, `redirect: "manual"` (une redirection n'est jamais suivie : elle échoue au contrôle du statut), délai de 15 s par requête.
 - **Adresse acceptée** : une origine seule (`https://hôte`, sans chemin, paramètre, fragment ni identifiants). `http:` n'est accepté que pour `localhost` et `127.0.0.1` (tests). Toute autre adresse est refusée avant la première requête (code de sortie 2).
-- **Quatre requêtes** : `/` deux fois, `/tableau-de-bord`, et une adresse inexistante tirée au hasard à chaque passage (`/adresse-inexistante-<8 octets en hexadécimal>`).
-- **Sortie** : une ligne par contrôle (`ok` ou `ÉCHEC`, nom, détail sans valeur reçue sauf le statut), puis le bilan. Code 0 si tout passe, 1 sinon. `--essais` relance l'ensemble après `--pause` secondes tant qu'un contrôle échoue (décision 6).
+- **Sept requêtes** : `/` deux fois, `/tableau-de-bord` sans cookie puis avec le cookie forgé, une adresse inexistante (`/adresse-inexistante-<8 octets en hexadécimal>`) et deux `/lien/devis/<32 octets en base64url>`, tirées au hasard à chaque passage.
+- **Sortie** : une ligne par contrôle (`ok` ou `ÉCHEC`, nom, détail sans valeur reçue sauf le statut), puis le bilan. Code 0 si tout passe, 1 sinon. `--detail` ajoute, sous chaque contrôle `identique` seulement, les deux statuts, la longueur des deux documents servis, la position du premier caractère différent et 120 caractères autour dans chacun : ni en-tête ni cookie. `--essais` relance l'ensemble après `--pause` secondes tant qu'un contrôle échoue (décision 6).
 - Aucun secret, aucune variable d'environnement lue, aucune écriture.
 
 ### 2. Ce qui est vérifié
 
-Chaque contrôle porte un nom stable `<page>:<contrôle>` (pages `accueil`, `tableau-de-bord`, `inexistante`), que les tests citent.
+Chaque contrôle porte un nom stable `<page>:<contrôle>` (pages `accueil`, `tableau-de-bord`, `inexistante`, `lien`), que les tests citent.
 
 | Contrôle | Pages | Attendu |
 |---|---|---|
-| `statut` | toutes | `accueil` : 200. `tableau-de-bord` et `inexistante` : 404. Une redirection, un 401 (protection de Vercel) ou un 500 échouent |
+| `statut` | toutes | `accueil` : 200. `tableau-de-bord`, `inexistante` et `lien` : 404. Une redirection, un 401 (protection de Vercel) ou un 500 échouent |
 | `politique` | toutes | `Content-Security-Policy` égale, directive par directive, à la politique de production (`socle-interface.md`, section 5.3) ; un seul nonce, le même dans `script-src` et `style-src`, de 16 octets en base64 ; aucun mot-clé `unsafe-` |
 | `nonce-scripts` | toutes | Au moins une balise `<script>`, et chacune porte `nonce="<nonce de l'en-tête>"` : la page est rendue à la requête (« Pièges connus », rendu dynamique) |
 | `nonce-neuf` | accueil | Deux requêtes successives reçoivent deux nonces différents |
 | `entetes` | toutes | Les sept en-têtes de la section 6 de `socle-interface.md`, valeur exacte (HSTS `max-age=63072000; includeSubDomains` compris) ; aucun `X-Powered-By` |
-| `fuite` | toutes, les deux `/` comprises | Ni le corps ni les en-têtes ne contiennent : une ligne de pile (`at … (…:l:c)`), un chemin de fichier (`node_modules`, `.next/`, `webpack-internal`, `file://`, `/home/`, `/var/task/`, `/vercel/path`, `/tmp/`, `/Users/`, `C:\Users`…), un nom de variable d'environnement (`DATABASE_URL`, `BETTER_AUTH_*`, `EMAIL_*`, `GMAIL_*`, `VERCEL_*`, `NODE_ENV`, `process.env`), une adresse PostgreSQL, `app_facturation`, `ECONNREFUSED` |
-| `anglais` | tableau-de-bord, inexistante | Le document servi ne contient ni « 404 », ni « not found », ni « could not be found » |
-| `identique` | tableau-de-bord | Même statut et même document servi que l'adresse inexistante |
+| `fuite` | toutes, les sept réponses comprises | Ni le corps ni les en-têtes ne contiennent : une ligne de pile (`at … (…:l:c)`), un chemin de fichier (`node_modules`, `.next/`, `webpack-internal`, `file://`, `/home/`, `/var/task/`, `/vercel/path`, `/tmp/`, `/Users/`, `C:\Users`…), un nom de variable d'environnement (`DATABASE_URL`, `BETTER_AUTH_*`, `EMAIL_*`, `GMAIL_*`, `VERCEL_*`, `NODE_ENV`, `process.env`), une adresse PostgreSQL, `app_facturation`, `ECONNREFUSED` |
+| `anglais` | tableau-de-bord, inexistante, lien | Le document servi ne contient ni « 404 », ni « not found », ni « could not be found » |
+| `gabarit` | tableau-de-bord (les deux réponses), inexistante | Le corps entier, charge utile RSC comprise, ne contient aucun texte du gabarit de l'application (bandeau de simulation, nom de la navigation, « Organisation active », entrées, rôles), recopiés et comparés à `src/textes/` par un test |
+| `identique` | tableau-de-bord, lien | `/tableau-de-bord` : même statut et même document servi sans cookie et avec le cookie forgé. `/lien/devis/<jeton>` : même statut et même document servi pour deux jetons aléatoires. Aucune comparaison entre `/tableau-de-bord` et une adresse inexistante (section 5) |
 
 **Document servi** : le HTML de la réponse, contenu des scripts en ligne vidé (leurs attributs gardés) et chaque nonce remplacé par une valeur fixe (`documentServi`, même définition dans le script et dans `e2e/outils.ts`, vérifiée par un test). Les octets bruts ne peuvent pas être comparés : le nonce change à chaque requête, et la charge utile RSC des scripts en ligne contient l'adresse demandée et le segment de route, si bien que deux adresses inexistantes diffèrent déjà entre elles. La recherche de « 404 » porte sur le document servi : le `digest` interne `NEXT_HTTP_ERROR_FALLBACK;404` de Next.js figure dans la charge utile et n'est pas affiché.
 
 ### 3. Le workflow : `.github/workflows/controle-deploiement.yml`
 
 - **Déclencheurs** : `deployment_status` (publié par Vercel pour chaque déploiement) et `workflow_dispatch`.
-- **Filtre** : le job ne tourne que si l'état est `success` et que l'environnement GitHub du déploiement commence par `Production` (Vercel le nomme `Production` ou `Production – <projet>`), ou sur un lancement à la main depuis `main`. Un déploiement de prévisualisation donne une exécution « sautée », sans contrôle (décision 4).
+- **Premier job, `evenement`, toujours exécuté** (décision 11) : il affiche seulement `github.event_name`, `github.event.deployment.environment`, `github.event.deployment.production_environment` et `github.event.deployment_status.state`, passés par `env` et jamais interpolés dans la commande. Un job à condition sautée n'exécute aucun pas : ce job séparé dit pourquoi le contrôle a tourné ou non.
+- **Filtre** : le job `controler` (qui suit `evenement`) ne tourne que si l'état est `success` et que l'environnement GitHub du déploiement commence par `Production` (Vercel le nomme `Production` ou `Production – <projet>`) ou que le déploiement est marqué `production_environment`, ou sur un lancement à la main depuis `main`. Un déploiement de prévisualisation, ou un état autre que `success` (`pending`, `in_progress`), donne un job « sauté », sans contrôle (décision 4).
 - **Adresse** : le domaine de production, écrit dans le workflow (`https://facturation-pme.vercel.app`), et non `environment_url` de l'événement (décision 3).
 - **Permissions** : `contents: read` (récupération du code), rien d'autre. Aucun secret, aucun `environment:` GitHub, aucune donnée de l'événement interpolée dans une commande.
 - **Étapes** : récupérer le code, installer Node.js 24, lancer le script avec `--essais 3 --pause 20`. Pas de `npm ci` : le script n'a aucune dépendance.
@@ -82,6 +84,13 @@ Chaque contrôle porte un nom stable `<page>:<contrôle>` (pages `accueil`, `tab
 **Correction (option A, retenue par le développeur le 2026-10-13)** : toute page introuvable passe par `notFound()`. Une route attrape-tout, `src/app/[...introuvable]/page.tsx`, appelle `notFound()` pour toute adresse sans page. Une adresse inexistante, `/tableau-de-bord` sans session ou avec un cookie forgé, et une adresse sous `/lien/` reçoivent alors le même statut et le même document au nonce près (constaté, et vérifié par les tests). `lirePourPage` et la protection des pages ne changent pas. Les routes plus précises passent avant la route attrape-tout : l'accueil, les pages, les fichiers de `/_next/` et `favicon.ico`, et une future `route.ts` sous `/api/auth` (ordre de `getSortedRoutes`, vérifié par un test). Les en-têtes de `/lien/` (`X-Robots-Tag`) et la politique restent posés.
 
 Options écartées : réécriture dans le proxy des adresses de `(app)/` sans cookie (un cookie forgé resterait distinguable, valider la session dans le proxy est interdit par la règle S) ; gabarit qui afficherait lui-même la page « introuvable » sans lever (aucun moyen de poser le 404, protection des pages changée) ; accepter l'écart (non surveillé).
+
+**Portée de S-02 précisée (décision 10, relecteur, 2026-10-13).** Premier passage en production : 18 contrôles sur 19, seul `tableau-de-bord:identique` échoue. Diagnostic par `--detail` : `/tableau-de-bord` sans session reçoit le document d'erreur (404, 1 144 caractères servis), une adresse inexistante la page « introuvable » rendue par le serveur (404, 2 966 caractères). Sur Vercel, la route attrape-tout ne sert donc pas les adresses sans page ; la cause exacte (règles de routage de `@vercel/next`, phase `error` qui réécrit vers `/_not-found`) n'a pas pu être tranchée sans accès à la production. Le relecteur précise S-02 : l'indiscernabilité porte sur les **ressources** (identifiants, jetons), qui passent toujours par une même route, et non sur les noms de pages, déjà publics dans les fichiers JavaScript envoyés au navigateur. En conséquence :
+
+- la route attrape-tout `src/app/[...introuvable]/` est supprimée, avec la règle de `CLAUDE.md` qui l'imposait et les tests de non-capture : `next start` répond désormais comme Vercel (adresse sans page : page rendue par le serveur ; page refusée : document d'erreur) ;
+- le contrôle et les tests comparent `/tableau-de-bord` sans cookie et avec un cookie forgé, et deux `/lien/devis/<jeton>` aléatoires (même statut, même document au nonce près). Ils vérifient toujours, pour `/tableau-de-bord` et une adresse inexistante : 404, aucun texte du gabarit, aucune fuite, aucun anglais ;
+- limite connue datée : le nom d'une page de l'application est observable, jamais son contenu (« Limites connues », `THREATS.md` RR-11) ;
+- les fonctionnalités qui ajoutent des ressources (3.x et suivantes) écrivent le test : identifiant inexistant et identifiant d'une autre organisation donnent la même réponse (`PLAN.md`, jalon 3 et section 4.3).
 
 ### Alternatives écartées
 
@@ -116,11 +125,10 @@ Aucune.
 
 ## Critères d'acceptation
 
-- [x] `scripts/controle-deploiement.mjs` n'émet que des `GET`, sans cookie ni en-tête d'authentification, ne suit aucune redirection, et refuse une adresse autre qu'une origine HTTPS (ou `http://localhost`, `http://127.0.0.1`) sans émettre de requête.
+- [x] `scripts/controle-deploiement.mjs` n'émet que des `GET`, sans cookie (sauf le cookie de session forgé de `/tableau-de-bord`) ni en-tête d'authentification, ne suit aucune redirection, et refuse une adresse autre qu'une origine HTTPS (ou `http://localhost`, `http://127.0.0.1`) sans émettre de requête.
 - [x] Chaque contrôle de la section 2 échoue seul quand le défaut correspondant est présent sur un serveur factice, et tout passe sur un serveur factice conforme.
 - [x] Sur le site construit en local, tous les contrôles passent.
-- [x] Adresse inexistante, `/tableau-de-bord` sans cookie et avec un cookie forgé, adresse sous `/lien/` : même statut 404, même document au nonce près, sans texte anglais (section 5).
-- [x] La route attrape-tout ne capture ni l'accueil, ni `/_next/`, ni `favicon.ico`, et passe après toute route plus précise (`/api/auth`).
+- [x] `/tableau-de-bord` sans cookie et avec un cookie forgé : même statut 404, même document au nonce près. Deux `/lien/devis/<jeton>` aléatoires : idem. `/tableau-de-bord` et une adresse inexistante : 404, aucun texte du gabarit, aucune fuite, aucun anglais (section 5, décision 10).
 - [x] Les valeurs attendues du script égalent celles des tests de bout en bout et le texte de `src/textes/erreurs.ts`.
 - [x] Code de sortie 0 si tout passe, 1 si un contrôle échoue, 2 pour une adresse refusée.
 - [x] `.github/workflows/controle-deploiement.yml` : déclenché par `deployment_status` réussi de production et par `workflow_dispatch` sur `main`, `contents: read` seul, aucun secret.
@@ -132,8 +140,8 @@ Dans `e2e/controle-deploiement.spec.ts`, projet `ordinateur-1280` : le serveur f
 
 ### Tests unitaires (serveur factice `node:http` sur `127.0.0.1`)
 
-- [x] Serveur conforme : tous les contrôles passent ; le serveur n'a reçu que des `GET`, sans `Cookie` ni `Authorization`, sur `/`, `/tableau-de-bord` et une adresse inexistante différente à chaque passage.
-- [x] Défauts, un par cas, chacun faisant échouer exactement le contrôle attendu : `X-Powered-By` présent ; HSTS absent ; HSTS sans `includeSubDomains` ; politique avec `'unsafe-inline'` ; politique sans nonce ; nonces différents entre `script-src` et `style-src` ; directive manquante ; même nonce à chaque requête ; balise `<script>` sans nonce ; `/` en 500 ; `/` redirigée ; `/tableau-de-bord` en 200 ; page introuvable en anglais ; document de `/tableau-de-bord` différent ; pile dans le corps ; chemin de fichier dans le corps ; `DATABASE_URL` dans le corps ; nom de variable dans un en-tête.
+- [x] Serveur conforme : tous les contrôles passent ; le serveur n'a reçu que des `GET`, sans `Authorization`, sur `/`, `/tableau-de-bord`, une adresse inexistante et deux `/lien/devis/<jeton>` différents à chaque passage ; un seul `Cookie` par passage, la session forgée sur `/tableau-de-bord`, différente d'un passage à l'autre.
+- [x] Défauts, un par cas, chacun faisant échouer exactement le contrôle attendu : `X-Powered-By` présent ; HSTS absent ; HSTS sans `includeSubDomains` ; politique avec `'unsafe-inline'` ; politique sans nonce ; nonces différents entre `script-src` et `style-src` ; directive manquante ; même nonce à chaque requête ; balise `<script>` sans nonce ; `/` en 500 ; `/` redirigée ; `/tableau-de-bord` en 200 ; page introuvable en anglais ; document de `/tableau-de-bord` différent avec le cookie forgé ; document de `/lien/devis/<jeton>` différent d'un jeton à l'autre ; texte du gabarit dans la charge utile de `/tableau-de-bord` ; pile dans le corps ; chemin de fichier dans le corps ; `DATABASE_URL` dans le corps ; nom de variable dans un en-tête.
 - [x] Serveur injoignable : échec par page, sans exception.
 - [x] Ligne de commande : code 0 (conforme), 1 (défaut), 2 et aucune requête pour `http://exemple.test`, une adresse avec chemin, avec identifiants, ou absente.
 - [x] Cohérence : politique et en-têtes attendus égaux à `POLITIQUE_PRODUCTION` et `ENTETES_SECTION_6` d'`e2e/outils.ts` ; `documentServi` du script égal à celui d'`e2e/outils.ts`.
@@ -141,14 +149,15 @@ Dans `e2e/controle-deploiement.spec.ts`, projet `ordinateur-1280` : le serveur f
 ### Tests d'attaque
 
 - [x] Redirection vers un autre hôte : non suivie (le serveur factice de destination ne reçoit rien).
-- [x] Une fuite dans n'importe laquelle des quatre réponses, en-têtes compris, est signalée.
+- [x] Une fuite dans n'importe laquelle des sept réponses, en-têtes compris, est signalée.
+- [x] `--detail` : statuts, longueurs, position et extraits sous les seuls contrôles `identique` ; aucun en-tête, aucun cookie, aucun nonce, aucun contenu de script dans la sortie. Sans `--detail`, la sortie ne change pas.
 
 ### Tests de bout en bout
 
 - [x] Site construit en local (`http://localhost:3000`) : tous les contrôles passent.
-- [x] `e2e/zones.attaque.spec.ts` : HTML brut, même statut et même document pour une adresse inexistante, `/tableau-de-bord` sans cookie, avec un cookie forgé ou aléatoire, et une autre adresse inexistante ; aucun texte anglais dans le document (`/tableau-de-bord`, inexistante, `/lien/`) ; route attrape-tout : accueil, fichiers de `/_next/static` et `favicon.ico` non capturés, ordre des routes (`/api/auth`), `/api/auth` non exposé.
-- [x] `e2e/entetes.attaque.spec.ts` : `/lien/devis/<jeton>` garde `X-Robots-Tag`, la politique et les en-têtes, avec le document d'une adresse inexistante.
-- [x] Rendu après hydratation (navigateur) inchangé : « Cette page est introuvable », identique pour les trois cas.
+- [x] `e2e/zones.attaque.spec.ts` : HTML brut, même statut et même document pour `/tableau-de-bord` sans cookie, avec un cookie forgé, aléatoire ou vide ; aucun texte anglais dans le document (`/tableau-de-bord`, inexistante, `/lien/`) ; aucun texte du gabarit dans le HTML ni la charge utile RSC (`/tableau-de-bord`, inexistante) ; `/api/auth` non exposé.
+- [x] `e2e/entetes.attaque.spec.ts` : `/lien/devis/<jeton>` garde `X-Robots-Tag`, la politique et les en-têtes ; deux jetons aléatoires reçoivent le même document.
+- [x] Rendu après hydratation (navigateur) : « Cette page est introuvable » pour `/tableau-de-bord`, identique avec ou sans cookie forgé, et pour une adresse inexistante.
 
 ## Fichiers concernés
 
@@ -156,9 +165,10 @@ Dans `e2e/controle-deploiement.spec.ts`, projet `ordinateur-1280` : le serveur f
 - `scripts/controle-deploiement.mjs`
 - `e2e/controle-deploiement.spec.ts`
 - `.github/workflows/controle-deploiement.yml`
-- `src/app/[...introuvable]/page.tsx` : route attrape-tout (section 5)
-- `e2e/outils.ts` (`documentServi`), `e2e/zones.attaque.spec.ts`, `e2e/entetes.attaque.spec.ts` : tests de la correction
-- `CLAUDE.md` : règle 5 (toute 404 passe par `notFound()`), commande du contrôle
+- `src/app/[...introuvable]/page.tsx` : route attrape-tout (section 5), supprimée (décision 10)
+- `e2e/outils.ts` (`documentServi`), `e2e/zones.attaque.spec.ts`, `e2e/erreurs.attaque.spec.ts`, `e2e/entetes.attaque.spec.ts` : tests de la correction, puis de la décision 10
+- `CLAUDE.md` : règle 5 (portée de S-02, aucune route attrape-tout), commande du contrôle
+- `docs/THREATS.md` (portée de S-02, T-30, RR-11), `docs/PLAN.md` (test dû par les fonctionnalités à ressources), `docs/features/socle-interface.md` (décision 37), `docs/STRUCTURE.md` (phrase sur la page « introuvable »)
 - `src/server/env.test.ts` : délai du test « témoin : configuration valide » (hors fonctionnalité, demandé par le développeur, décision 7)
 
 ## Reporté
@@ -180,8 +190,9 @@ Dans `e2e/controle-deploiement.spec.ts`, projet `ordinateur-1280` : le serveur f
 - Le contrôle de fuite est une liste de motifs : un détail technique sous une autre forme passerait.
 - Une exécution « sautée » apparaît dans l'onglet « Actions » pour chaque déploiement de prévisualisation.
 - L'email d'échec de GitHub part vers l'auteur de l'exécution, selon ses réglages de notification ; il n'est pas configurable depuis le dépôt.
-- **Sans JavaScript, toute page introuvable est blanche** (section 5, décision 5) : adresse inexistante, page refusée ou sans session reçoivent le document d'erreur de Next.js, au corps vide ; « Cette page est introuvable » et « Revenir à l'accueil » ne s'affichent qu'après hydratation. Comme la page « erreur » (`socle-interface.md`, « Limites connues »).
-- **La charge utile RSC distingue encore les cas** : elle nomme l'adresse et le segment de route (`(app)` et `tableau-de-bord`, ou `[...introuvable]`), et sa taille diffère (constaté le 2026-10-13 : 8 126 octets pour `/tableau-de-bord`, 7 754 pour une adresse inexistante). Elle révèle qu'une page existe à cette adresse, rien de son contenu ni du gabarit (test « rien du gabarit »). Inhérent au rendu de Next.js ; le document servi, lui, est identique.
+- **Sans JavaScript, une page refusée est blanche** (section 5) : `/tableau-de-bord` sans session ou avec un cookie forgé reçoit le document d'erreur de Next.js, au corps vide ; « Cette page est introuvable » et « Revenir à l'accueil » ne s'affichent qu'après hydratation. Une adresse sans page reçoit la page rendue par le serveur.
+- **Le nom d'une page de l'application est observable, jamais son contenu** (2026-10-13, décision 10, `THREATS.md` RR-11) : sans session, `/tableau-de-bord` (document d'erreur, 1 144 caractères servis en production) se distingue d'une adresse inexistante (page rendue, 2 966 caractères). Les noms de pages sont déjà publics dans les fichiers JavaScript. Aucun texte du gabarit ni de la page n'est envoyé (contrôle `gabarit`).
+- **La charge utile RSC nomme l'adresse et le segment de route** : sous une même route, deux réponses ne diffèrent que par elle ; le document servi, lui, est identique (contrôles `identique`).
 
 ## Décisions
 
@@ -196,6 +207,8 @@ Prises le 2026-10-13 par l'assistant, selon ses recommandations, sur instruction
 7. **`src/server/env.test.ts`** : délai de 30 s sur le test « témoin : configuration valide », demandé par le développeur avec la 0.8 ; le premier chargement réel des modules, juste après `lint` et `typecheck` dans `npm run verifier`, dépasse parfois les 5 s par défaut.
 8. **Tests** : dans Playwright (`e2e/`), qui lance déjà le site construit ; pas d'extension de l'inclusion de Vitest à `scripts/`.
 9. **Valeurs attendues recopiées** dans le script, avec un test de cohérence (alternatives écartées).
+10. **Portée de S-02 précisée** (relecteur, 2026-10-13, après le premier passage en production) : l'indiscernabilité porte sur les ressources, sous une même route, pas sur les noms de pages. Route attrape-tout supprimée ; comparaisons `tableau-de-bord:identique` (sans cookie, cookie forgé) et `lien:identique` (deux jetons) ; contrôle `gabarit` ajouté ; option `--detail` (section 5). Remplace la décision 5 pour ce qui est comparé.
+11. **Diagnostic du déclenchement** (relecteur, 2026-10-13) : l'exécution n° 3, attendue pour le déploiement de production, a été sautée. Un job `evenement` toujours exécuté affiche les quatre champs qui décident du filtre ; le filtre accepte aussi `production_environment == true`. Hypothèse retenue en attendant la prochaine exécution : Vercel publie plusieurs états par déploiement (`pending` à la création, puis `success`), chacun déclenchant une exécution ; l'exécution n° 3 serait celle d'un état autre que `success`.
 
 ## Notes de l'implémentation
 
@@ -210,3 +223,9 @@ Prises le 2026-10-13 par l'assistant, selon ses recommandations, sur instruction
 - Phase rouge (`53a92ae`) : le test du HTML brut échouait, corps vide pour `/tableau-de-bord`, page « introuvable » pour une adresse inexistante. Réécrit avec l'option A pour comparer statut et document au lieu du texte (accord du développeur).
 - Après la route attrape-tout : documents identiques au nonce près pour une adresse inexistante, une seconde adresse inexistante, `/tableau-de-bord` sans cookie et avec cookie, `/lien/xyz` et `/api/auth/session` (constaté sur le site construit, port 3200, avant les tests).
 - Tests de la 0.6 modifiés : dans `e2e/zones.attaque.spec.ts`, « rien du gabarit dans le HTML ni dans la charge utile RSC » attendait le texte de la page « introuvable » dans le HTML brut (il ne l'y trouvait que dans la charge utile) ; il attend désormais le document d'erreur. Dans `e2e/entetes.attaque.spec.ts`, « /lien/devis/<jeton aléatoire> : introuvable, non indexé, sans cookie » lisait le texte dans le HTML brut ; il compare désormais le document à celui d'une adresse inexistante. Les tests dans le navigateur ne changent pas.
+
+### Portée de S-02 précisée, le 2026-10-13
+
+- Premier passage à la main en production : 18 contrôles sur 19, seul `tableau-de-bord:identique` en échec ; diagnostic par `--detail` (section 5). Le même contrôle passait sur `next start` : un test local qui ne reproduit pas la plateforme ne prouve rien.
+- Après la suppression de la route attrape-tout, sur le site construit en local : une adresse inexistante reçoit `<html lang="fr" …>` avec « Cette page est introuvable » dans le HTML, `/tableau-de-bord` le document `__next_error__`, comme en production. Le script passe entièrement (28 contrôles ; `--detail` : 1 084 caractères servis avec et sans cookie forgé, 2 885 pour les deux jetons).
+- Tests modifiés : `e2e/zones.attaque.spec.ts` (comparaisons avec et sans cookie, gabarit vérifié aussi pour une adresse inexistante, tests de non-capture supprimés), `e2e/erreurs.attaque.spec.ts` (navigateur : sans session et cookie forgé), `e2e/entetes.attaque.spec.ts` (deux jetons de `/lien/devis/`), `e2e/controle-deploiement.spec.ts` (serveur factice : cookie, `/lien/`, défauts `cookie-distingue`, `lien-distingue`, `gabarit-dans-la-charge`).
