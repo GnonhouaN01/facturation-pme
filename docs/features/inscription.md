@@ -1,6 +1,6 @@
 # Fonctionnalité : inscription et vérification de l'email
 
-Statut : validée, PR 1 en cours. Fiche rédigée le 2026-10-13 ; les trois vrais choix tranchés par le développeur le même jour (section « Décisions »), les autres points selon la recommandation de l'assistant (section « Décisions par défaut »). Ordre retenu : PR 1 de cette fiche, puis fiche et PR de la tâche quotidienne (8.3 avancée), puis PR 2.
+Statut : validée ; PR 1 et tâche quotidienne fusionnées ; PR 2 implémentée en local le 2026-10-13, preuves sur la prévisualisation à faire par le développeur (section 7). Fiche rédigée le 2026-10-13 ; les trois vrais choix tranchés par le développeur le même jour (section « Décisions »), les autres points selon la recommandation de l'assistant (section « Décisions par défaut »). Ordre retenu : PR 1 de cette fiche, puis fiche et PR de la tâche quotidienne (8.3 avancée), puis PR 2.
 
 Jalon 1, fonctionnalité 1.1 de `docs/PLAN.md`. Taille M. Cas d'utilisation : UC-01. Exigences : F-001, S-10, S-11, S-15, S-54, S-55, S-81, S-82, S-85. Menaces : T-07, T-39, T-40, T-41, T-55 ; T-01 et T-43 préparées (limites de Better Auth, connexion en 1.2).
 
@@ -200,10 +200,10 @@ Better Auth applique lui-même la règle de `limitation-debit.md` section 9 (lu 
 
 Un test unitaire fige ce comportement sur la version installée (liste refusée, valeur invalide refusée, IPv6 normalisée) : une mise à jour qui le change fait échouer la suite.
 
-**Essai sur `preview`, par le développeur** (jamais par l'assistant), avant la fusion de la PR 2 : six requêtes `POST /api/auth/sign-up/email` à corps vide vers l'adresse du déploiement, chacune avec un `X-Forwarded-For` forgé différent (`203.0.113.1` à `203.0.113.6`, plage de documentation). La limite s'applique avant la lecture du corps : aucun compte n'est créé.
+**Essai sur `preview`, par le développeur** (jamais par l'assistant), avant la fusion de la PR 2 : six requêtes `POST /api/auth/sign-up/email` vers l'adresse du déploiement, avec `Origin` égale à cette adresse et le corps `{"nom":"Essai","email":"essai-limite@exemple.invalid","motDePasse":"password1234"}`, chacune avec un `X-Forwarded-For` forgé différent (`203.0.113.1` à `203.0.113.6`, plage de documentation). Corrigé à la PR 2 : un corps vide est refusé par notre gestionnaire (`invalide`) avant Better Auth, donc avant le compteur, et ne prouverait rien. Le mot de passe `password1234`, connu de Have I Been Pwned, fait refuser l'inscription après le compteur (`mot_de_passe_compromis`) : aucun compte, aucun email. Le même essai, service simulé, tourne en local (`e2e/auth.attaque.spec.ts`, T-41).
 
-- Si la sixième reçoit `trop_de_requetes` : Vercel remplace l'en-tête par l'adresse réelle. `x-forwarded-for` est confirmé.
-- Si les six passent : l'en-tête forgé est cru. On remplace par `x-real-ip`, on refait l'essai ; si les deux échouent, la PR 2 n'est pas fusionnée.
+- Si la sixième reçoit `trop_de_requetes` (statut 429) : Vercel remplace l'en-tête par l'adresse réelle. `x-forwarded-for` est confirmé.
+- Si les six reçoivent `mot_de_passe_compromis` : l'en-tête forgé est cru. On remplace par `x-real-ip`, on refait l'essai ; si les deux échouent, la PR 2 n'est pas fusionnée.
 
 Le résultat est noté dans « Notes de l'implémentation ». En local, l'en-tête est falsifiable et accepté (aucun vrai utilisateur) : les tests de bout en bout s'en servent pour ne pas épuiser une même limite (section « Tests à écrire »).
 
@@ -328,7 +328,7 @@ Réglages par défaut de Better Auth gardés : `HttpOnly`, `SameSite=Lax`, `Secu
 Par le développeur, jamais par l'assistant (`envoi-emails.md`, section 9). L'assistant ne lance aucune commande contre `preview` ni `production`.
 
 1. **Essai depuis le poste** (étape 4 de la 0.7), au début de la PR 2 : `npm run essai:email` avec le second compte, mot de passe saisi sans écho. Vérifier la réception, `From`, un seul destinataire, `SPF` et `DKIM` en `pass`, la copie dans « Messages envoyés », et toute alerte de Google. **Échec : on s'arrête là.**
-2. **Variables de prévisualisation**, limitées à la branche `feat/1.1-inscription` (champ « Preview Branch » de Vercel), posées seulement quand elle porte la PR 2 : `GMAIL_UTILISATEUR` et `GMAIL_MOT_DE_PASSE_APPLICATION` (second compte, Sensitive), `EMAIL_TRANSPORT=smtp`, `EMAIL_DESTINATAIRES_AUTORISES` (adresse personnelle du développeur).
+2. **Variables de prévisualisation**, limitées à la branche `feat/1.1-inscription-pr2` (champ « Preview Branch » de Vercel ; la branche de la PR 2 porte ce nom), posées seulement quand elle porte la PR 2 : `GMAIL_UTILISATEUR` et `GMAIL_MOT_DE_PASSE_APPLICATION` (second compte, Sensitive), `EMAIL_TRANSPORT=smtp`, `EMAIL_DESTINATAIRES_AUTORISES` (adresse personnelle du développeur).
 3. **Preuve** (étape 8 de la 0.7) : sur la prévisualisation, ouverte par l'adresse du déploiement (section 2.4), s'inscrire avec l'adresse autorisée ; recevoir `compte.verification` ; ouvrir le lien, confirmer ; arriver sur « Adresse vérifiée » avec un cookie de session. Dans les journaux du déploiement, aucune requête ne porte le jeton. Mêmes vérifications qu'au point 1, et surtout les alertes de Google (connexion depuis Francfort, RR-10). Puis une seconde inscription avec la même adresse : `compte.existant` reçu, réponse identique à l'écran.
 4. **Essai de l'adresse IP** (section 3.4) sur le même déploiement.
 5. **Journal** : dans les journaux du déploiement (Vercel, « Logs »), aucune adresse email, aucun jeton, aucune ligne `[Better Auth]` ; seulement les lignes `[auth]` et `[email]` fixes.
@@ -431,11 +431,11 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 11 relèven
 
 ### Tests de bout en bout (PR 2)
 
-12. [ ] **Parcours UC-01** — `e2e/inscription.spec.ts` (ordinateur-1280 et mobile-390) : formulaire, `/inscription/envoyee`, lecture de l'email dans le dossier du transport `fichier`, ouverture du lien, fragment effacé de la barre d'adresse, bouton, « Adresse vérifiée », aucune requête du navigateur ne porte le jeton dans son adresse, cookie `HttpOnly` et `SameSite=Lax` ; la requête porte `Origin` (section 5.3). Chaque test pose un `X-Forwarded-For` propre (en local, accepté), pour ne pas épuiser `auth.inscription`. Adresses `e2e-<uuid>@exemple.invalid`, supprimées en fin de suite.
-13. [ ] **T-07 en bout en bout** — même fichier : adresse prise et adresse nouvelle, même écran, même corps de réponse.
-14. [ ] **T-55 sur le site construit** — `e2e/auth.attaque.spec.ts` : `GET` et `POST` sur des chemins fermés, dont `/organization/update-member-role`, `/sign-in/email`, `/get-session` : réponse identique à `/api/auth/n-existe-pas`.
-15. [ ] **T-39 sur le site construit** — `e2e/erreurs.attaque.spec.ts` : section 1.3, test 2.
-16. [ ] **Contrôle après déploiement** — `scripts/controle-deploiement.test.mjs` (serveur factice) : le nouveau contrôle échoue si `/api/auth/organization/list` diffère de `/api/auth/n-existe-pas`, passe sinon.
+12. [x] **Parcours UC-01** — `e2e/inscription.spec.ts` (ordinateur-1280 et mobile-390) : formulaire, `/inscription/envoyee`, lecture de l'email dans le dossier du transport `fichier`, ouverture du lien, fragment effacé de la barre d'adresse, bouton, « Adresse vérifiée », aucune requête du navigateur ne porte le jeton dans son adresse, cookie `HttpOnly` et `SameSite=Lax` ; la requête porte `Origin` (section 5.3). Chaque test pose un `X-Forwarded-For` propre (en local, accepté), pour ne pas épuiser `auth.inscription`. Adresses `e2e-<uuid>@exemple.invalid`, supprimées en fin de suite.
+13. [x] **T-07 en bout en bout** — même fichier : adresse prise et adresse nouvelle, même écran, même corps de réponse.
+14. [x] **T-55 sur le site construit** — `e2e/auth.attaque.spec.ts` : `GET` et `POST` sur des chemins fermés, dont `/organization/update-member-role`, `/sign-in/email`, `/get-session` : réponse identique à `/api/auth/n-existe-pas`.
+15. [x] **T-39 sur le site construit** — `e2e/erreurs.attaque.spec.ts` : section 1.3, test 2.
+16. [x] **Contrôle après déploiement** — `e2e/controle-deploiement.spec.ts` (serveur factice, comme les contrôles existants) : le nouveau contrôle échoue si `/api/auth/organization/list` diffère de `/api/auth/n-existe-pas`, passe sinon ; page `inscription` : échoue si l'un des trois `POST` de l'inscription répond autrement qu'un chemin inexistant (décision 1).
 
 ### Vérifications manuelles (PR 2, développeur)
 
@@ -539,3 +539,35 @@ Appliquées par l'assistant le 2026-10-13, selon sa recommandation, sauf avis co
 **Écart avec la fiche** : la liaison du gestionnaire à l'instance réelle (`traiterRequeteAuth`, avec `auth.handler`, `BETTER_AUTH_URL` et `estProduction`) vient avec `route.ts`, en PR 2 ; la PR 1 livre la fabrique `creerTraitementAuth`. Raisons refusées : `refuse` (403, origine) s'ajoute à la liste de la section 2.2.
 
 **Vérifications** : `npm run verifier` vert (lint, typecheck, 51 fichiers et 1 706 tests unitaires, construction, 140 tests de bout en bout, ports 3000 et 3101 libres) ; `npm run test:integration` : 21 fichiers, 182 réussis et 1 échec attendu (déjà présent avant cette PR).
+
+### PR 2, le 2026-10-13
+
+**Numérotation.** La demande de la PR 2 citait « les tests 13 à 17 » ; la fiche numérote 12 à 16 ceux de la PR 2. Tous sont écrits, plus le contrôle « inscription fermée en production » et les tests de l'interface.
+
+**Phase rouge** (commit `test(1.1)`). Sur le site construit avant le code : 126 tests de bout en bout en échec, chacun pour l'absence de la route ou des pages (page « introuvable » au lieu du titre attendu ; HTML de Next.js au lieu d'une réponse JSON ou d'un 404 vide ; 404 au lieu de 403 ou 400 ; serveur en panne qui répond 404 à l'inscription ; contrôles `auth:*` et `inscription:*` absents du script). Unitaires : 6 en échec (module `gestionnaire.ts` et `route.ts` absents). Passaient avant le code, et pourquoi : le texte « Ce lien n'est plus valable » mot pour mot (textes écrits avec les tests, contrat des pages) ; la redirection 308 de la barre finale (comportement de Next.js, figé pour qu'il reste le même pour un chemin ouvert et un chemin inexistant une fois la route en place) ; les défauts préexistants du serveur factice.
+
+**Tests modifiés pendant l'implémentation, sans changer ce qu'ils prouvent** :
+
+- `e2e/inscription.spec.ts`, en-tête `Origin` : lu par `request().allHeaders()` ; `headers()` de Playwright omet les en-têtes posés par le navigateur.
+- `e2e/inscription.spec.ts`, sans JavaScript : le message est lu par `textContent` du `<noscript>` ; `getByText` et `toContainText` de Playwright ignorent le texte d'un `<noscript>` (le HTML servi le contient, vérifié).
+- `e2e/auth.attaque.spec.ts`, barre finale : sortie de la liste des chemins fermés pendant la phase rouge, dans un test à part (Next.js redirige toute adresse à barre finale avant la route).
+- `e2e/zones.attaque.spec.ts` (0.6) : « `/api/auth` n'est pas exposé, même document qu'une adresse inexistante » devient « `/api/auth/get-session` est fermé : même réponse qu'un chemin inexistant de `/api/auth` » ; sa prémisse disparaît avec l'exposition voulue par cette fiche.
+- `e2e/controle-deploiement.spec.ts` : 17 requêtes par passage au lieu de 10, dont quatre `POST` sans corps ; sur le site construit en local, les deux contrôles `inscription:*` échouent, et eux seuls (inscription ouverte hors production : témoin).
+- `src/server/actions/inventaire.test.ts` : le faux `env` déclare `configurationEmail`, lu par le gestionnaire que charge la route.
+
+**Décisions par défaut appliquées** (aucune ne change une règle écrite) :
+
+1. Contrôle « inscription fermée » par quatre `POST` sans corps ni `Origin` (seule façon de le prouver sur la production) ; sans effet par construction (`controle-deploiement.md`, section 1).
+2. Production lue de `configurationEmail.estProduction` (même source `VERCEL_ENV`, déjà validée) plutôt qu'une nouvelle valeur exportée par `env.ts`.
+3. Champs écrits à la main (`src/components/compte/champ.tsx`), aux jetons de Signal, au lieu d'ajouter le composant `input` de shadcn (qui demanderait un accord).
+4. Formulaires affichés seulement après hydratation : sans JavaScript, un formulaire HTML partirait en `GET`, mot de passe dans l'adresse.
+5. Longueurs des champs dans `src/schemas/regles-compte.ts`, sans Zod : Zod dans le navigateur déclenchait une violation `eval` de la politique.
+6. Adresses de bout en bout tirées par exécution (`e2e/comptes-e2e.ts`) et inscrites dans `EMAIL_DESTINATAIRES_AUTORISES` des serveurs : la porte n'envoie qu'à la liste hors production, transport `fichier` compris. Comptes supprimés en fin de suite (8 par exécution), `DATABASE_URL` lue comme `vitest.config.mts`.
+7. `BETTER_AUTH_URL` imposée à `http://localhost:3000` pour le serveur de bout en bout : l'origine acceptée ne dépend plus de `.env.local`.
+8. L'erreur inattendue s'affiche « Une erreur est survenue. » sans identifiant d'incident : la réponse normalisée de la PR 1 n'en porte pas (l'identifiant est au journal technique).
+
+**Limites constatées** : `email.compte` (100 par 24 h) est partagée par tous les tests de bout en bout lancés sur `dev` (environ 6 emails par exécution) : au-delà d'une quinzaine d'exécutions par jour, les emails ne partent plus et les tests du parcours échouent, jusqu'à la purge des compteurs. En CI, la base est neuve.
+
+**Vérifications** : `npm run verifier` vert (format, lint, typecheck, 57 fichiers et 1 841 tests unitaires, construction, 279 tests de bout en bout, ports 3000 et 3101 libres) ; `npm run test:integration` : 21 fichiers, 185 réussis et 1 échec attendu (déjà présent).
+
+**À faire par le développeur avant la fusion** : section 7, points 1 à 5 (essai depuis le poste, variables de la branche `feat/1.1-inscription-pr2`, preuve Vercel → Gmail, essai de l'en-tête d'adresse IP selon la section 3.4 corrigée, journaux du déploiement). Résultats à noter ici.

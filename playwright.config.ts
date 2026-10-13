@@ -66,7 +66,7 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   // Deux largeurs (NF-03, NF-04), décision 31. L'affichage (accueil,
-  // affichage) tourne dans les deux ; les en-têtes et les attaques, qui ne
+  // affichage) et le parcours d'inscription (1.1) tournent dans les deux ; les en-têtes et les attaques, qui ne
   // dépendent pas de la largeur, dans ordinateur-1280 seul ; 360 px
   // (affichage-360) dans mobile-390 seul. Aucun test sauté. Fiche : section 12.
   projects: [

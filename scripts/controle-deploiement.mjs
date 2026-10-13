@@ -7,7 +7,13 @@ import { parseArgs } from "node:util";
 // forgé, tiré au hasard, sur une requête de /tableau-de-bord. Aucun
 // Authorization, sauf un secret forgé, tiré au hasard, sur une requête de
 // /api/taches/quotidienne (page « tache », 8.3,
-// docs/features/tache-quotidienne.md, section 6). Lancé par
+// docs/features/tache-quotidienne.md, section 6). Seule exception au GET :
+// quatre POST sans corps, sans Origin, sans cookie, vers les trois points
+// d'entrée de l'inscription et un chemin inexistant de /api/auth (page
+// « inscription », 1.1, docs/features/inscription.md, section 2.3). En
+// production, l'inscription est fermée : les quatre reçoivent la réponse d'un
+// chemin fermé. Ouverte, elle les refuserait avant Better Auth (origine
+// absente) : rien n'est écrit, rien n'est envoyé. Lancé par
 // .github/workflows/controle-deploiement.yml après chaque déploiement de
 // production réussi, et par les tests (e2e/controle-deploiement.spec.ts)
 // contre un serveur factice et le site construit en local.
@@ -106,13 +112,14 @@ export function validerAdresse(adresse) {
   return url.origin;
 }
 
-// GET seul, redirection non suivie, sans cookie ni Authorization sauf les
-// valeurs forgées passées en paramètre. Une requête échouée donne null :
-// chaque contrôle de la page échoue alors.
-async function lire(origine, chemin, cookie, autorisation) {
+// GET, redirection non suivie, sans cookie ni Authorization sauf les
+// valeurs forgées passées en paramètre. methode « POST » : sans corps, pour
+// la page « inscription » seulement. Une requête échouée donne null : chaque
+// contrôle de la page échoue alors.
+async function lire(origine, chemin, cookie, autorisation, methode = "GET") {
   try {
     const reponse = await fetch(origine + chemin, {
-      method: "GET",
+      method: methode,
       redirect: "manual",
       credentials: "omit",
       headers: {
@@ -252,6 +259,7 @@ export async function controlerSite(adresse, { detail = false } = {}) {
   const inexistante = `/adresse-inexistante-${randomBytes(8).toString("hex")}`;
   const lien = () => `/lien/devis/${randomBytes(32).toString("base64url")}`;
   const tacheInconnue = `/api/taches/${randomBytes(8).toString("hex")}`;
+  const authInconnu = () => `/api/auth/${randomBytes(8).toString("hex")}`;
   const [accueil, accueilBis, tableau, tableauForge, absente, lien1, lien2] = [
     await lire(origine, "/"),
     await lire(origine, "/"),
@@ -266,6 +274,24 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     await lire(origine, "/api/taches/quotidienne", undefined, autorisationForgee()),
     await lire(origine, tacheInconnue),
   ];
+  // T-55 : deux points d'entrée de /organization/*, toujours fermés, et un
+  // chemin inexistant, en GET.
+  const auths = [
+    await lire(origine, "/api/auth/organization/list"),
+    await lire(origine, "/api/auth/organization/get-full-organization"),
+    await lire(origine, authInconnu()),
+  ];
+  // Décision 1 de la 1.1 : en production, les trois POST de l'inscription
+  // répondent comme un chemin inexistant de /api/auth.
+  const inscriptions = [];
+  for (const chemin of [
+    "/api/auth/sign-up/email",
+    "/api/auth/send-verification-email",
+    "/api/auth/verify-email",
+    authInconnu(),
+  ]) {
+    inscriptions.push(await lire(origine, chemin, undefined, undefined, "POST"));
+  }
 
   const resultats = [];
   const controler = (nom, reponses, verifier) => {
@@ -353,12 +379,35 @@ export async function controlerSite(adresse, { detail = false } = {}) {
   controler("tache:anglais", taches, (...r) =>
     r.some((x) => ANGLAIS.test(x.corps)) ? "texte anglais ou « 404 » dans le corps" : null,
   );
-  controler("tache:identique", taches, (...r) => {
-    const forme = (x) => JSON.stringify([x.statut, x.entetes.get("content-type"), x.corps]);
-    return r.every((x) => forme(x) === forme(r[0]))
+  const forme = (x) => JSON.stringify([x.statut, x.entetes.get("content-type"), x.corps]);
+  controler("tache:identique", taches, (...r) =>
+    r.every((x) => forme(x) === forme(r[0]))
       ? null
-      : "réponse différente sans secret, avec un secret forgé ou pour une tâche inconnue";
-  });
+      : "réponse différente sans secret, avec un secret forgé ou pour une tâche inconnue",
+  );
+
+  // /api/auth (1.1) : les points fermés de /organization/* et un chemin
+  // inexistant, la même réponse (statut, corps, Content-Type), 404 au corps
+  // vide. Puis l'inscription, fermée en production : les trois POST comme le
+  // POST d'un chemin inexistant. Rien de ces réponses n'est affiché.
+  controler("auth:statut", auths, premierProbleme(statut(404)));
+  controler("auth:politique", auths, premierProbleme(verifierPolitique));
+  controler("auth:entetes", auths, premierProbleme(verifierEntetes));
+  controler("auth:fuite", auths, (...r) => verifierFuite(r));
+  controler("auth:anglais", auths, (...r) =>
+    r.some((x) => ANGLAIS.test(x.corps)) ? "texte anglais ou « 404 » dans le corps" : null,
+  );
+  controler("auth:identique", auths, (...r) =>
+    r.every((x) => forme(x) === forme(r[0]))
+      ? null
+      : "réponse différente pour un point d'entrée de /organization/* et un chemin inexistant",
+  );
+  controler("inscription:statut", inscriptions, premierProbleme(statut(404)));
+  controler("inscription:identique", inscriptions, (...r) =>
+    r.every((x) => forme(x) === forme(r.at(-1)))
+      ? null
+      : "un point d'entrée de l'inscription répond autrement qu'un chemin inexistant : inscription ouverte",
+  );
   return resultats;
 }
 

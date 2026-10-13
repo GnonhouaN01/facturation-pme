@@ -26,6 +26,15 @@ vi.mock("../env", () => ({
   // 8.3 : la route de la tâche quotidienne charge server/taches/, qui lit
   // le secret de la tâche ; aucun appel n'est fait.
   secretTache: { secret: null },
+  // 1.1 : la route de /api/auth charge server/auth/gestionnaire.ts, qui lit
+  // la production dans la configuration d'envoi ; aucun appel n'est fait.
+  configurationEmail: {
+    transport: "memoire",
+    dossier: null,
+    destinatairesAutorises: [],
+    estProduction: false,
+    gmail: null,
+  },
 }));
 
 const APP = fileURLToPath(new URL("../../app/", import.meta.url));

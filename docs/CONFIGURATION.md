@@ -313,6 +313,8 @@ Le script attend que l'adresse du propriétaire soit copiée dans Neon, renouvel
 
 En prévisualisation, `BETTER_AUTH_URL` n'est pas saisie : quand elle est absente et que `VERCEL_ENV` vaut `preview`, l'application la déduit de `VERCEL_URL`, fournie par Vercel à chaque déploiement, préfixée par `https://`. En production, son absence empêche l'application de fonctionner.
 
+**Une seule origine acceptée par `/api/auth`** (1.1, `docs/features/inscription.md`, section 2.4) : celle de `BETTER_AUTH_URL`. Sur une prévisualisation, c'est l'adresse propre au déploiement (`facturation-pme-<identifiant>-<compte>.vercel.app`), et non l'adresse de branche (`facturation-pme-git-<branche>-<compte>.vercel.app`) : ouverte par l'adresse de branche, la prévisualisation affiche les pages, mais l'inscription répond « Cette action n'est pas disponible. » (403). Les essais se font par l'adresse du déploiement, indiquée par Vercel dans la PR. En production, l'inscription est fermée jusqu'à la 1.3 (décision 1 de la fiche) : ses points d'entrée répondent comme une adresse inexistante.
+
 **Résultat.** Le site répond. Chaque PR obtient une prévisualisation protégée par connexion.
 
 **Erreurs rencontrées.**

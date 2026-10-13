@@ -46,7 +46,7 @@ src/app/
 │   ├── layout.tsx           En-tête au nom du produit, contenu, pied de page
 │   ├── page.tsx             Accueil
 │   ├── connexion/
-│   ├── inscription/
+│   ├── inscription/         Formulaire ; envoyee/ (vérifiez votre boîte, renvoi) ; verifiee/ (1.1)
 │   └── mot-de-passe-oublie/
 ├── (app)/                   Pages avec session obligatoire
 │   ├── layout.tsx           Lit le rôle par lirePourPage, affiche barre latérale et bandeau ; ne protège pas
@@ -64,10 +64,11 @@ src/app/
 │   └── compte/              Mot de passe, double authentification, sessions
 ├── lien/                    Pages publiques par lien
 │   ├── layout.tsx           Contenu seul, sans navigation ; ne lit jamais la session
+│   ├── verification/        Vérification de l'adresse : jeton dans le fragment (#), bouton (1.1)
 │   ├── devis/[jeton]/
 │   └── facture/[jeton]/
 ├── api/
-│   ├── auth/[...all]/       Route de Better Auth
+│   ├── auth/[...all]/       Route de Better Auth : deux lignes, tout le contrôle dans server/auth/ (1.1)
 │   └── taches/[tache]/      Tâche planifiée (liste fermée de tâches, 8.3)
 ├── layout.tsx               Structure commune : polices, lang="fr", rendu dynamique
 ├── not-found.tsx            « Cette page est introuvable » (absent, refusé, non connecté)
@@ -116,7 +117,11 @@ src/server/
 │       └── journal.ts       Insertion au journal d'audit (importée par journal/audit.ts seul)
 ├── auth/
 │   ├── config.ts            Configuration de Better Auth
-│   └── session.ts           Lecture de la session
+│   ├── session.ts           Lecture de la session
+│   ├── points-entree.ts     Liste fermée des points d'entrée de /api/auth, origine, validation, réponses (1.1)
+│   ├── gestionnaire.ts      traiterRequeteAuth : points-entree.ts lié à Better Auth, seul import de la route
+│   ├── emails.ts            Rappels d'envoi de Better Auth : limites, puis envoyerEmail après la réponse
+│   └── journal.ts           Journal de Better Auth réduit à une ligne fixe (T-39)
 ├── autorisation/
 │   ├── matrice.ts           Les rôles, la matrice rôles x droits, unique, et peut()
 │   └── navigation.ts        Entrées de navigation filtrées par la matrice, lecture du gabarit
@@ -219,6 +224,7 @@ src/components/
 ├── ui/                      Composants shadcn/ui, copiés dans le projet
 ├── gabarits/                Gabarit de l'application : barre latérale, navigation, bandeau, en-tête de page
 ├── erreurs/                 Contenu des pages « erreur »
+├── compte/                  Formulaires d'inscription et de renvoi, confirmation par lien, champ (1.1)
 └── clients/, devis/, ...    Composants propres à un domaine
 ```
 
@@ -226,7 +232,7 @@ Un composant affiche et recueille des saisies. Il ne décide d'aucun droit et n'
 
 ### `schemas/`
 
-Les schémas Zod, un fichier par domaine. Ils sont importés à la fois par les formulaires, pour afficher les erreurs, et par les actions serveur, pour refuser une requête invalide. Une règle de validation n'est écrite qu'une fois (S-50).
+Les schémas Zod, un fichier par domaine. Ils sont importés à la fois par les formulaires, pour afficher les erreurs, et par les actions serveur, pour refuser une requête invalide. Une règle de validation n'est écrite qu'une fois (S-50). Un formulaire du navigateur n'importe pas Zod lui-même : chargé dans le navigateur, Zod essaie `new Function`, que la politique de sécurité du contenu bloque et signale. Les valeurs dont il a besoin vivent dans un module sans Zod, repris par le schéma (`regles-compte.ts`, 1.1).
 
 ### `lib/`
 
@@ -285,6 +291,8 @@ Ces règles seront vérifiées automatiquement par l'analyse du code, en phase 9
 | `server/db/` | `drizzle-orm`, `pg`, `server/env.ts` | Tout le reste de `server/` |
 | `server/erreurs/` | Rien du projet, sauf entre eux (fonctionnalité 0.6 : `onRequestError` ne charge pas `env.ts`) | Tout le reste du projet |
 | `server/taches/` | `server/debit/debit.ts` (`purgerCompteurs`), `server/db/comptes.ts`, `server/env.ts`, `server/erreurs/` (`code-postgres.ts`, `consigner.ts`), `node:crypto` | Tout le reste du projet |
+| `server/auth/` | `server/db/client.ts` et `server/db/schema/auth.ts` (`config.ts` seulement), `server/debit/`, `server/email/` (`envoyerEmail` dans `emails.ts` seulement, règle T), `server/actions/origine.ts`, `server/env.ts`, `schemas/` (1.1) | `server/db/requetes/`, `server/services/` |
+| `app/api/auth/[...all]/route.ts` | `server/auth/gestionnaire.ts` seulement (forme exacte, test d'inventaire) | Tout le reste |
 | `schemas/`, `lib/`, `textes/` | Rien du projet, sauf entre eux | `server/`, `app/`, `components/` |
 
 Règles de la chaîne de contrôles (fonctionnalité 0.4, vérifiées par ESLint, règles G à M de `docs/features/chaine-controles.md`, section 7) :

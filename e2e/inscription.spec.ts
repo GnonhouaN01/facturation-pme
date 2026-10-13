@@ -109,7 +109,7 @@ test.describe("inscription, parcours UC-01", () => {
 
     // Étapes 1 à 3 : le formulaire, la requête avec Origin (section 5.3).
     const { reponse, corps } = await inscrire(page, email);
-    expect(reponse.request().headers().origin).toBe(ADRESSE);
+    expect((await reponse.request().allHeaders()).origin).toBe(ADRESSE);
     expect(reponse.status()).toBe(200);
     expect(JSON.parse(corps)).toEqual({ ok: true });
     await expect(page).toHaveURL(`${ADRESSE}/inscription/envoyee`);
@@ -135,7 +135,7 @@ test.describe("inscription, parcours UC-01", () => {
       confirmer.click(),
     ]);
     expect(verification.request().method()).toBe("POST");
-    expect(verification.request().headers().origin).toBe(ADRESSE);
+    expect((await verification.request().allHeaders()).origin).toBe(ADRESSE);
     expect(JSON.parse(verification.request().postData() ?? "{}")).toEqual({ jeton });
     expect(await verification.json()).toEqual({ ok: true });
     await expect(page).toHaveURL(`${ADRESSE}/inscription/verifiee`);
@@ -312,16 +312,23 @@ test.describe("inscription, parcours UC-01", () => {
 test.describe("inscription, sans JavaScript", () => {
   test.use({ javaScriptEnabled: false });
 
+  // Modifié en phase verte, sans changer ce qu'il prouve : getByText et
+  // toContainText de Playwright ignorent le texte d'un <noscript>, même
+  // quand JavaScript est coupé et que le navigateur l'affiche. Le message est
+  // donc lu par textContent du <noscript> du document.
+  const texteNoscript = (page: Page) =>
+    page.locator("noscript").evaluate((element) => (element.textContent ?? "").trim());
+
   test("formulaire et confirmation : message fixe, aucun champ, rien ne peut partir", async ({
     page,
   }) => {
     await page.goto("/inscription");
-    await expect(page.getByText(TEXTES_COMPTE.inscription.sansJavaScript)).toBeVisible();
+    expect(await texteNoscript(page)).toBe(TEXTES_COMPTE.inscription.sansJavaScript);
     await expect(page.getByRole("textbox")).toHaveCount(0);
     await expect(page.locator("input, form")).toHaveCount(0);
 
     await page.goto("/lien/verification#a.b.c");
-    await expect(page.getByText(TEXTES_COMPTE.verification.sansJavaScript)).toBeVisible();
+    expect(await texteNoscript(page)).toBe(TEXTES_COMPTE.verification.sansJavaScript);
     await expect(page.getByRole("button")).toHaveCount(0);
   });
 });
