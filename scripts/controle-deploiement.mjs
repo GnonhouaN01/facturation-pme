@@ -3,7 +3,8 @@ import { basename } from "node:path";
 import { parseArgs } from "node:util";
 
 // Contrôle après déploiement (0.8) : quelques requêtes GET publiques sur le
-// site, sans cookie, sans secret, sans écriture. Lancé par
+// site, sans secret, sans écriture. Aucun cookie, sauf un cookie de session
+// forgé, tiré au hasard, sur une requête de /tableau-de-bord. Lancé par
 // .github/workflows/controle-deploiement.yml après chaque déploiement de
 // production réussi, et par les tests (e2e/controle-deploiement.spec.ts)
 // contre un serveur factice et le site construit en local.
@@ -11,7 +12,7 @@ import { parseArgs } from "node:util";
 //
 //   node scripts/controle-deploiement.mjs <origine> [--essais 3] [--pause 20] [--detail]
 //
-// --detail : pour tableau-de-bord:identique seulement, les deux statuts, la
+// --detail : pour les contrôles « identique » seulement, les deux statuts, la
 // longueur des deux documents normalisés (documentServi), la position du
 // premier caractère différent et 120 caractères autour dans chacun. Aucun
 // en-tête, aucun cookie.
@@ -58,6 +59,24 @@ const FUITES = [
   ["adresse ou rôle de la base", /postgres(?:ql)?:\/\/|app_facturation|ECONNREFUSED/],
 ];
 
+// Textes du gabarit de l'application (src/textes/navigation.ts et
+// simulation.ts) : aucun ne doit atteindre un visiteur sans session, ni dans
+// le HTML ni dans la charge utile RSC. Recopiés, comme les références
+// ci-dessus ; un test vérifie qu'ils égalent ceux de src/textes/.
+export const TEXTES_GABARIT = [
+  "Simulation : les documents ne sont pas certifiés par la DGI et n'ont pas de valeur fiscale.",
+  "Navigation principale",
+  "Organisation active",
+  "Tableau de bord",
+  "Propriétaire",
+  "Comptable",
+  "Commercial",
+  "Lecteur",
+];
+
+// Noms du cookie de session de Better Auth, sur http et sur https.
+const COOKIES_SESSION = ["better-auth.session_token", "__Secure-better-auth.session_token"];
+
 const ANGLAIS = /\b404\b|not found|could not be found/i;
 const DELAI_REQUETE = 15_000;
 const HOTES_LOCAUX = new Set(["localhost", "127.0.0.1"]);
@@ -84,15 +103,16 @@ export function validerAdresse(adresse) {
   return url.origin;
 }
 
-// GET seul, sans cookie ni authentification, redirection non suivie. Une
-// requête échouée donne null : chaque contrôle de la page échoue alors.
-async function lire(origine, chemin) {
+// GET seul, sans authentification, redirection non suivie, sans cookie sauf
+// le cookie forgé passé en paramètre. Une requête échouée donne null : chaque
+// contrôle de la page échoue alors.
+async function lire(origine, chemin, cookie) {
   try {
     const reponse = await fetch(origine + chemin, {
       method: "GET",
       redirect: "manual",
       credentials: "omit",
-      headers: { accept: "text/html" },
+      headers: { accept: "text/html", ...(cookie ? { cookie } : {}) },
       signal: AbortSignal.timeout(DELAI_REQUETE),
     });
     return { statut: reponse.status, entetes: reponse.headers, corps: await reponse.text() };
@@ -167,8 +187,8 @@ function verifierFuite(reponses) {
 
 // Document HTML au nonce près : contenu des scripts en ligne vidé (charge
 // utile RSC, qui nomme l'adresse et le segment de route), attributs gardés,
-// chaque nonce remplacé. Toute page introuvable passe par notFound() : sans
-// session ou inexistante, le même document (fiche, section 5). Même
+// chaque nonce remplacé. Deux réponses à la même route, l'une refusée et
+// l'autre absente, reçoivent le même document (S-02, fiche, section 5). Même
 // définition que documentServi d'e2e/outils.ts.
 export function documentServi(html) {
   return html
@@ -178,66 +198,79 @@ export function documentServi(html) {
 
 const AUTOUR = 120;
 
-// Lignes de --detail pour tableau-de-bord:identique. Documents normalisés
+// Lignes de --detail pour un contrôle « identique ». Documents normalisés
 // seulement (scripts en ligne vidés, nonces remplacés) : ni en-tête ni cookie.
-export function comparerDocuments(tableau, absente) {
-  if (!tableau || !absente) return ["aucune réponse"];
-  const [t, a] = [documentServi(tableau.corps), documentServi(absente.corps)];
+export function comparerDocuments(premiere, seconde, [nom1, nom2] = ["premier", "second"]) {
+  if (!premiere || !seconde) return ["aucune réponse"];
+  const [d1, d2] = [documentServi(premiere.corps), documentServi(seconde.corps)];
+  const largeur = Math.max(nom1.length, nom2.length);
   const lignes = [
-    `statuts : tableau-de-bord ${tableau.statut}, inexistante ${absente.statut}`,
-    `longueurs normalisées : tableau-de-bord ${t.length}, inexistante ${a.length}`,
+    `statuts : ${nom1} ${premiere.statut}, ${nom2} ${seconde.statut}`,
+    `longueurs normalisées : ${nom1} ${d1.length}, ${nom2} ${d2.length}`,
   ];
   let position = 0;
-  while (position < t.length && position < a.length && t[position] === a[position]) position += 1;
-  if (position === t.length && position === a.length) {
+  while (position < d1.length && position < d2.length && d1[position] === d2[position]) {
+    position += 1;
+  }
+  if (position === d1.length && position === d2.length) {
     lignes.push("documents normalisés identiques");
     return lignes;
   }
   const debut = Math.max(0, position - AUTOUR / 2);
-  const extrait = (texte) => JSON.stringify(texte.slice(debut, debut + AUTOUR));
+  const extrait = (nom, texte) =>
+    `${nom.padEnd(largeur)} [${debut}, ${debut + AUTOUR}[ : ${JSON.stringify(texte.slice(debut, debut + AUTOUR))}`;
   lignes.push(
     `premier caractère différent : position ${position}`,
-    `tableau-de-bord [${debut}, ${debut + AUTOUR}[ : ${extrait(t)}`,
-    `inexistante     [${debut}, ${debut + AUTOUR}[ : ${extrait(a)}`,
+    extrait(nom1, d1),
+    extrait(nom2, d2),
   );
   return lignes;
+}
+
+// Valeur de session au format de Better Auth (jeton, point, signature), tirée
+// au hasard : aucun serveur ne peut l'avoir émise.
+function cookieForge() {
+  const valeur = `${randomBytes(24).toString("base64url")}.${randomBytes(32).toString("base64")}`;
+  return COOKIES_SESSION.map((nom) => `${nom}=${encodeURIComponent(valeur)}`).join("; ");
 }
 
 export async function controlerSite(adresse, { detail = false } = {}) {
   const origine = validerAdresse(adresse);
   const inexistante = `/adresse-inexistante-${randomBytes(8).toString("hex")}`;
-  const [accueil, accueilBis, tableau, absente] = [
+  const lien = () => `/lien/devis/${randomBytes(32).toString("base64url")}`;
+  const [accueil, accueilBis, tableau, tableauForge, absente, lien1, lien2] = [
     await lire(origine, "/"),
     await lire(origine, "/"),
     await lire(origine, "/tableau-de-bord"),
+    await lire(origine, "/tableau-de-bord", cookieForge()),
     await lire(origine, inexistante),
+    await lire(origine, lien()),
+    await lire(origine, lien()),
   ];
 
   const resultats = [];
   const controler = (nom, reponses, verifier) => {
-    if (reponses.some((r) => r === null)) {
-      resultats.push({ nom, ok: false, detail: "aucune réponse" });
-      return;
-    }
-    const probleme = verifier(...reponses);
-    resultats.push({ nom, ok: probleme === null, detail: probleme ?? "conforme" });
+    const probleme = reponses.some((r) => r === null) ? "aucune réponse" : verifier(...reponses);
+    const resultat = { nom, ok: probleme === null, detail: probleme ?? "conforme" };
+    resultats.push(resultat);
+    return resultat;
   };
   const statut = (attendu) => (r) =>
     r.statut === attendu ? null : `statut ${r.statut}, ${attendu} attendu`;
 
+  // [nom, réponse contrôlée, statut attendu, réponses lues pour la fuite]
   const pages = [
-    ["accueil", accueil, 200],
-    ["tableau-de-bord", tableau, 404],
-    ["inexistante", absente, 404],
+    ["accueil", accueil, 200, [accueil, accueilBis]],
+    ["tableau-de-bord", tableau, 404, [tableau, tableauForge]],
+    ["inexistante", absente, 404, [absente]],
+    ["lien", lien1, 404, [lien1, lien2]],
   ];
-  for (const [nom, reponse, attendu] of pages) {
+  for (const [nom, reponse, attendu, lues] of pages) {
     controler(`${nom}:statut`, [reponse], statut(attendu));
     controler(`${nom}:politique`, [reponse], verifierPolitique);
     controler(`${nom}:nonce-scripts`, [reponse], verifierNonceScripts);
     controler(`${nom}:entetes`, [reponse], verifierEntetes);
-    controler(`${nom}:fuite`, nom === "accueil" ? [accueil, accueilBis] : [reponse], (...r) =>
-      verifierFuite(r),
-    );
+    controler(`${nom}:fuite`, lues, (...r) => verifierFuite(r));
   }
   controler("accueil:nonce-neuf", [accueil, accueilBis], (a, b) => {
     const [n1, n2] = [nonceDe(a), nonceDe(b)];
@@ -249,12 +282,42 @@ export async function controlerSite(adresse, { detail = false } = {}) {
       ANGLAIS.test(documentServi(r.corps)) ? "texte anglais ou « 404 » dans le document" : null,
     );
   }
-  controler("tableau-de-bord:identique", [tableau, absente], (t, a) =>
-    t.statut === a.statut && documentServi(t.corps) === documentServi(a.corps)
-      ? null
-      : "statut ou document différent de ceux d'une adresse inexistante",
+  // Le corps entier, charge utile RSC comprise. Nomme le texte attendu
+  // (public), jamais le corps reçu.
+  for (const [nom, lues] of [
+    ["tableau-de-bord", [tableau, tableauForge]],
+    ["inexistante", [absente]],
+  ]) {
+    controler(`${nom}:gabarit`, lues, (...r) => {
+      const trouves = TEXTES_GABARIT.filter((texte) => r.some((x) => x.corps.includes(texte)));
+      return trouves.length ? `texte du gabarit : ${trouves.join(", ")}` : null;
+    });
+  }
+
+  // S-02 porte sur les ressources : une même route, refusée ou absente, donne
+  // la même réponse. Le nom d'une page est public (fiche, section 5).
+  const identique = (nom, a, b, noms, difference) => {
+    const resultat = controler(nom, [a, b], (x, y) =>
+      x.statut === y.statut && documentServi(x.corps) === documentServi(y.corps)
+        ? null
+        : difference,
+    );
+    if (detail) resultat.lignes = comparerDocuments(a, b, noms);
+  };
+  identique(
+    "tableau-de-bord:identique",
+    tableau,
+    tableauForge,
+    ["sans cookie", "cookie forgé"],
+    "statut ou document différent avec un cookie de session forgé",
   );
-  if (detail) resultats.at(-1).lignes = comparerDocuments(tableau, absente);
+  identique(
+    "lien:identique",
+    lien1,
+    lien2,
+    ["premier jeton", "second jeton"],
+    "statut ou document différent entre deux jetons aléatoires",
+  );
   return resultats;
 }
 

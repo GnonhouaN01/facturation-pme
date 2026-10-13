@@ -48,9 +48,9 @@ export function nonceDe(politique: string | undefined): string {
 
 // Document HTML d'une réponse, au nonce près : le contenu des scripts en
 // ligne est vidé (charge utile RSC, qui nomme l'adresse et le segment de
-// route), leurs attributs sont gardés, et chaque nonce devient « N ». Toute
-// page introuvable passe par notFound() : sans session, refusée ou
-// inexistante, elle reçoit le même document (S-02). Fiche :
+// route), leurs attributs sont gardés, et chaque nonce devient « N ». Une
+// même route, refusée ou absente (sans session, cookie forgé, jeton
+// inexistant), reçoit le même document (S-02). Fiche :
 // docs/features/controle-deploiement.md, section 5.
 export function documentServi(html: string): string {
   return html

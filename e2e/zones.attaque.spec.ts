@@ -1,9 +1,7 @@
 import { createHmac, randomBytes } from "node:crypto";
 
 import { type BrowserContext, type Page, expect, test } from "@playwright/test";
-import { getSortedRoutes } from "next/dist/shared/lib/router/utils/sorted-routes";
 
-import { TEXTES_COMMUNS } from "../src/textes/commun";
 import { TEXTES_ERREURS } from "../src/textes/erreurs";
 import { TEXTES_NAVIGATION } from "../src/textes/navigation";
 import { TEXTES_SIMULATION } from "../src/textes/simulation";
@@ -19,10 +17,13 @@ import {
 } from "./outils";
 
 // La zone application ouverte sans session valide (S-02, T-30) : la page du
-// tableau de bord répond comme une adresse inexistante, et rien du gabarit
-// (navigation, rôle, bandeau) ne part vers le navigateur. Tests d'attaque
-// « accès sans session » et « entrée falsifiée » de PLAN.md, section 4.3.
-// Fiche : docs/features/socle-interface.md, sections 2.2, 2.3 et 3.
+// tableau de bord répond « introuvable », la même réponse avec ou sans cookie
+// forgé, et rien du gabarit (navigation, rôle, bandeau) ne part vers le
+// navigateur. S-02 porte sur les ressources, qui passent par une même route :
+// le nom d'une page est public, il n'est pas comparé à une adresse
+// inexistante (docs/features/controle-deploiement.md, section 5). Tests
+// d'attaque « accès sans session » et « entrée falsifiée » de PLAN.md,
+// section 4.3. Fiche : docs/features/socle-interface.md, sections 2.2, 2.3 et 3.
 
 const TABLEAU_DE_BORD = "/tableau-de-bord";
 const COOKIE_SESSION = "better-auth.session_token";
@@ -37,10 +38,6 @@ async function rendu(page: Page, chemin: string): Promise<Rendu> {
     texte: await page.locator("body").innerText(),
     h1: await page.getByRole("heading", { level: 1 }).allInnerTexts(),
   };
-}
-
-async function inexistante(page: Page): Promise<Rendu> {
-  return rendu(page, `/adresse-inexistante-${randomBytes(4).toString("hex")}`);
 }
 
 async function forger(context: BrowserContext, baseURL: string | undefined, valeur: string) {
@@ -66,15 +63,11 @@ const TEXTES_GABARIT = [
 ];
 
 test.describe("zone application, sans session valide", () => {
-  test("sans cookie : « introuvable », 404, identique à une adresse inexistante", async ({
-    page,
-  }) => {
-    const attendu = await inexistante(page);
+  test("sans cookie : « introuvable », 404", async ({ page }) => {
     const obtenu = await rendu(page, TABLEAU_DE_BORD);
 
-    expect(attendu.statut).toBe(404);
-    expect(attendu.h1).toEqual([TEXTES_ERREURS.introuvable]);
-    expect(obtenu).toEqual(attendu);
+    expect(obtenu.statut).toBe(404);
+    expect(obtenu.h1).toEqual([TEXTES_ERREURS.introuvable]);
   });
 
   for (const [nom, valeur] of [
@@ -87,24 +80,22 @@ test.describe("zone application, sans session valide", () => {
     ["valeur vide", () => ""],
     ["injection SQL dans la valeur", () => encodeURIComponent("'; DROP TABLE session;--")],
   ] as const) {
-    test(`cookie de session forgé (${nom}) : identique à une adresse inexistante`, async ({
+    test(`cookie de session forgé (${nom}) : identique à l'absence de cookie`, async ({
       page,
       context,
       baseURL,
     }) => {
-      const attendu = await inexistante(page);
+      const attendu = await rendu(page, TABLEAU_DE_BORD);
       await forger(context, baseURL, valeur());
 
       expect(await rendu(page, TABLEAU_DE_BORD)).toEqual(attendu);
     });
   }
 
-  // HTML brut, sans navigateur ni JavaScript : un client qui ne l'exécute pas
-  // ne doit pas distinguer une page de l'application d'une adresse
-  // inexistante (S-02). Next.js 16.4 ne rend pas not-found.tsx sur le serveur
-  // après un notFound() : toute page introuvable passe donc par notFound()
-  // (route attrape-tout), et toutes reçoivent son document d'erreur, au corps
-  // vide ; la page « introuvable » s'affiche après hydratation (tests
+  // HTML brut, sans navigateur ni JavaScript : un cookie forgé ne change rien
+  // à la réponse (S-02). Next.js 16.4 ne rend pas not-found.tsx sur le
+  // serveur après un notFound() : la page reçoit son document d'erreur, au
+  // corps vide, et la page « introuvable » s'affiche après hydratation (tests
   // précédents). Fiche : docs/features/controle-deploiement.md, section 5.
   test("HTML brut, sans JavaScript : même statut, même document au nonce près", async ({
     request,
@@ -117,15 +108,14 @@ test.describe("zone application, sans session valide", () => {
       return { statut: reponse.status(), document: documentServi(await reponse.text()) };
     };
 
-    const attendu = await servi(`/adresse-inexistante-${randomBytes(4).toString("hex")}`);
+    const attendu = await servi(TABLEAU_DE_BORD);
 
     expect(attendu.statut).toBe(404);
     expect(attendu.document).toContain("<title>");
     for (const [nom, obtenu] of [
-      ["sans cookie", await servi(TABLEAU_DE_BORD)],
       ["cookie forgé", await servi(TABLEAU_DE_BORD, signeAvecUnAutreSecret())],
       ["cookie aléatoire", await servi(TABLEAU_DE_BORD, randomBytes(32).toString("base64url"))],
-      ["autre adresse inexistante", await servi("/a/b/c")],
+      ["cookie vide", await servi(TABLEAU_DE_BORD, "")],
     ] as const) {
       expect(obtenu, nom).toEqual(attendu);
     }
@@ -143,16 +133,24 @@ test.describe("zone application, sans session valide", () => {
 
   test("rien du gabarit dans le HTML ni dans la charge utile RSC", async ({ request }) => {
     const html = await (await request.get(TABLEAU_DE_BORD)).text();
-    const rsc = await request.get(TABLEAU_DE_BORD, { headers: { rsc: "1" } });
-    const charge = await rsc.text();
 
     // Document d'erreur de Next.js : la page « introuvable » n'est rendue
     // qu'après hydratation (section 5 de la fiche du contrôle).
     expect(html).toContain('<html id="__next_error__">');
-    expect(rsc.headers()["content-type"]).toContain("text/x-component");
-    for (const texte of TEXTES_GABARIT) {
-      expect(html, texte).not.toContain(texte);
-      expect(charge, texte).not.toContain(texte);
+    for (const chemin of [
+      TABLEAU_DE_BORD,
+      `/adresse-inexistante-${randomBytes(4).toString("hex")}`,
+    ]) {
+      const page = await request.get(chemin);
+      const rsc = await request.get(chemin, { headers: { rsc: "1" } });
+      const [corps, charge] = [await page.text(), await rsc.text()];
+
+      expect(page.status(), chemin).toBe(404);
+      expect(rsc.headers()["content-type"], chemin).toContain("text/x-component");
+      for (const texte of TEXTES_GABARIT) {
+        expect(corps, `${chemin} : ${texte}`).not.toContain(texte);
+        expect(charge, `${chemin} : ${texte}`).not.toContain(texte);
+      }
     }
   });
 
@@ -184,52 +182,9 @@ test.describe("zone application, sans session valide", () => {
   });
 });
 
-// La route attrape-tout (src/app/[...introuvable]/page.tsx) ne vise que les
-// adresses sans page : l'accueil, les fichiers servis par Next.js et les
-// routes plus précises passent avant elle. Fiche :
-// docs/features/controle-deploiement.md, section 5.
-test.describe("route attrape-tout des pages introuvables", () => {
-  test("l'accueil n'est pas capturé : 200, sa page dans le HTML", async ({ request }) => {
-    const reponse = await request.get("/");
-    const html = await reponse.text();
-
-    expect(reponse.status()).toBe(200);
-    expect(html).not.toContain('<html id="__next_error__">');
-    expect(html).toMatch(new RegExp(`<h1[^>]*>${TEXTES_COMMUNS.produit}</h1>`));
-  });
-
-  test("les fichiers servis par Next.js ne sont pas capturés", async ({ request }) => {
-    const accueil = await (await request.get("/")).text();
-    const script = /<script[^>]+src="(\/_next\/static\/[^"]+\.js)"/i.exec(accueil)?.[1];
-    const feuille = /<link[^>]+href="(\/_next\/static\/[^"]+\.css)"/i.exec(accueil)?.[1];
-    if (!script || !feuille) throw new Error("aucun fichier de /_next/static dans l'accueil");
-
-    // Pas de dossier public/ : favicon.ico, servi depuis src/app/, est le seul
-    // fichier à la racine.
-    for (const [chemin, type] of [
-      [script, "javascript"],
-      [feuille, "text/css"],
-      ["/favicon.ico", "image/x-icon"],
-    ] as const) {
-      const reponse = await request.get(chemin);
-      expect(reponse.status(), chemin).toBe(200);
-      expect(reponse.headers()["content-type"], chemin).toContain(type);
-    }
-  });
-
-  test("une route.ts sous /api/auth passera avant la route attrape-tout", () => {
-    // Ordre dans lequel Next.js essaie les routes dynamiques (routes-manifest,
-    // trié par getSortedRoutes) ; une route statique passe toujours avant.
-    // /api/auth n'est pas exposé avant la 1.1 (CLAUDE.md, règle 11).
-    const tries = getSortedRoutes([
-      "/[...introuvable]",
-      "/api/auth/[...all]",
-      "/lien/devis/[jeton]",
-    ]);
-
-    expect(tries.at(-1)).toBe("/[...introuvable]");
-  });
-
+// /api/auth n'est pas exposé avant la 1.1 (CLAUDE.md, règle 11) : une
+// adresse sans route, comme une autre.
+test.describe("points d'entrée non exposés", () => {
   test("/api/auth n'est pas exposé : même document qu'une adresse inexistante", async ({
     request,
   }) => {

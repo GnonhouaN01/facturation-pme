@@ -353,19 +353,19 @@ test.describe("autres en-têtes (section 6)", () => {
     expect((await request.get("/")).headers()["x-robots-tag"]).toBeUndefined();
   });
 
-  test("/lien/devis/<jeton aléatoire> : introuvable, non indexé, sans cookie", async ({
+  test("/lien/devis/<jeton aléatoire> : introuvable, identique pour deux jetons, non indexé, sans cookie", async ({
     request,
   }) => {
-    const jeton = randomBytes(32).toString("base64url");
-    const reponse = await request.get(`/lien/devis/${jeton}`);
+    const lire = () => request.get(`/lien/devis/${randomBytes(32).toString("base64url")}`);
+    const reponse = await lire();
+    const autre = await lire();
     const recus = reponse.headers();
-    const inexistante = await request.get("/adresse-inexistante");
 
-    // Toute page introuvable passe par notFound() : même document qu'une
-    // adresse inexistante, la page « introuvable » s'affichant après
-    // hydratation (docs/features/controle-deploiement.md, section 5).
+    // S-02 : deux jetons aléatoires, même statut et même document au nonce
+    // près (docs/features/controle-deploiement.md, section 5).
     expect(reponse.status()).toBe(404);
-    expect(documentServi(await reponse.text())).toBe(documentServi(await inexistante.text()));
+    expect(autre.status()).toBe(404);
+    expect(documentServi(await reponse.text())).toBe(documentServi(await autre.text()));
     expect(recus["content-security-policy"]).not.toMatch(/unsafe-/);
     expect(recus["x-robots-tag"]).toBe("noindex, nofollow");
     expect(recus["referrer-policy"]).toBe("same-origin");

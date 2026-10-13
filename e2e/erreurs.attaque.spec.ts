@@ -59,16 +59,15 @@ test.describe("page « introuvable »", () => {
     expect(`${titre} ${texte}`).not.toMatch(/not found|could not be found/i);
   });
 
-  // S-02, T-30 : rien ne distingue une page qui n'existe pas d'une page de
-  // l'application ouverte sans session, ou avec un cookie de session forgé.
-  // Tant que /tableau-de-bord n'existe pas (PR 3), les trois adresses sont
-  // inexistantes : le test ne prend toute sa valeur qu'avec la page.
-  test("identique pour une adresse inexistante et pour une page de l'application sans session", async ({
+  // S-02, T-30 : une page de l'application ouverte sans session, ou avec un
+  // cookie de session forgé, affiche la même page « introuvable ». Le nom
+  // d'une page est public : il n'est pas comparé à une adresse inexistante
+  // (docs/features/controle-deploiement.md, section 5).
+  test("identique pour une page de l'application sans session et avec un cookie forgé", async ({
     page,
     context,
     baseURL,
   }) => {
-    const inexistante = await rendu(page, `/adresse-inexistante-${randomBytes(4).toString("hex")}`);
     const sansSession = await rendu(page, "/tableau-de-bord");
 
     const forge = randomBytes(32).toString("base64url");
@@ -83,10 +82,9 @@ test.describe("page « introuvable »", () => {
     ]);
     const cookieForge = await rendu(page, "/tableau-de-bord");
 
-    expect(inexistante.statut).toBe(404);
-    expect(inexistante.texte).toContain(TEXTES_ERREURS.introuvable);
-    expect(sansSession).toEqual(inexistante);
-    expect(cookieForge).toEqual(inexistante);
+    expect(sansSession.statut).toBe(404);
+    expect(sansSession.texte).toContain(TEXTES_ERREURS.introuvable);
+    expect(cookieForge).toEqual(sansSession);
   });
 });
 

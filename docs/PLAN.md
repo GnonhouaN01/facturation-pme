@@ -90,6 +90,8 @@ La 1.6 livre le mécanisme qu'attend la chaîne de contrôles : jusque-là, tout
 
 **Démontrable à la fin :** le fichier client et le catalogue d'une entreprise, avec les droits de chaque rôle.
 
+**Test dû par chaque fonctionnalité qui ajoute une ressource** (3.1, 3.3, puis devis, factures, avoirs, paiements, relances et pages par lien des jalons 4 à 7) : sous la même route, un identifiant inexistant et l'identifiant d'une ressource d'une autre organisation donnent la même réponse, même statut et même document au nonce près, sans JavaScript comme dans le navigateur ; pour une page par lien, un jeton inexistant, expiré ou révoqué de même. S-02 porte sur les ressources, pas sur les noms de pages, déjà publics (`docs/features/controle-deploiement.md`, section 5, décision du 2026-10-13).
+
 ### Jalon 4 — Devis
 
 | # | Fonctionnalité | Cas d'utilisation | Exigences et menaces | Taille |
@@ -208,6 +210,8 @@ Toute fonctionnalité qui expose une action ou une lecture livre au minimum ces 
 | Autre organisation | Un membre de B vise une ressource de A | La même réponse que si elle n'existait pas |
 | Rôle insuffisant | Chaque rôle non autorisé par la matrice | Refus |
 | Entrée falsifiée | Données invalides, ou valeurs calculées envoyées par le client | Refus, ou valeurs ignorées et recalculées |
+
+Le test « Autre organisation » compare, sous la même route, un identifiant inexistant et celui d'une ressource de A : même statut, même document au nonce près (S-02, section 2, jalon 3).
 
 S'y ajoutent, selon la fonctionnalité, les tests propres aux menaces citées dans sa fiche.
 
