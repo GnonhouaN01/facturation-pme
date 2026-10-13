@@ -449,12 +449,13 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 11 relèven
 | `src/server/auth/journal.ts` | Nouveau : `consignerAuth` |
 | `src/server/auth/emails.ts` | Nouveau : rappels, limites, `after`, `envoyerEmail` |
 | `src/server/auth/points-entree.ts` | Nouveau : liste fermée, origine, validation, normalisation, durée plancher |
+| `src/server/auth/gestionnaire.ts` | Nouveau (PR 2) : `traiterRequeteAuth`, lié à `auth.handler`, importé par `route.ts` |
 | `src/server/auth/session.ts` | Session d'utilisateur non vérifié refusée |
 | `src/server/debit/limites.ts` | `adresse_ip`, quatre limites `auth.*`, `email.compte` |
 | `src/server/debit/better-auth.ts` | Nouveau : `stockageBetterAuth`, `reglesBetterAuth` |
 | `src/server/email/modeles.ts`, `src/textes/emails.ts` | Deux modèles, brique `jetonVerification`, type de lien `verification` |
 | `src/server/db/comptes.ts` | Nouveau : `purgerComptesNonVerifies` |
-| `src/server/db/outils-test/panne.ts` | Nouveau : base injoignable pour les tests |
+| `src/server/db/outils-test/panne.ts`, `src/server/db/outils-test/inscription.ts` | Nouveaux : base injoignable ; banc d'inscription sur la vraie base |
 | `src/schemas/compte.ts` | Nouveau : schémas des trois points d'entrée et du formulaire |
 | `src/app/api/auth/[...all]/route.ts` | Nouveau (PR 2) |
 | `src/app/(public)/inscription/**`, `src/app/lien/verification/page.tsx` | Nouveaux (PR 2) |
@@ -521,4 +522,20 @@ Appliquées par l'assistant le 2026-10-13, selon sa recommandation, sauf avis co
 
 ## Notes de l'implémentation
 
-(Vides.)
+### PR 1, le 2026-10-13
+
+**Phase rouge** (commit `test(1.1)`). Tests unitaires : 11 fichiers en échec ; 35 tests en échec par assertion (limites absentes, modèles et briques absents, `lireSession` qui accepte une adresse non vérifiée, règle T qui refuse `auth/emails.ts`), et 7 fichiers non chargés faute des modules à écrire (`points-entree.ts`, `emails.ts`, `journal.ts`, `debit/better-auth.ts`). Tests d'intégration : les 3 nouveaux fichiers non chargés, même raison. Passaient avant le code, et pourquoi : `adresse-ip-better-auth.test.ts` (il fige le comportement de la version installée de Better Auth, pas le nôtre ; la configuration de l'en-tête est vérifiée par `config.test.ts`, qui échouait) ; les cas « refusé » ajoutés à la règle T (`session.ts`, `points-entree.ts`, page) et les témoins de `session.test.ts` (garde-fous : l'exception ouverte pour `auth/emails.ts` ne doit pas s'étendre) ; l'invariant « deux limites `auth.*` n'ont pas la même règle », vide avant le code.
+
+**Tests corrigés pendant l'implémentation, sans changer ce qu'ils prouvent** :
+
+- `emails.test.ts` : la valeur comptée pour `Awa.Kone+essai@Exemple.invalid` est `awa.kone@exemple.invalid` (points gardés hors Gmail, décision 10 de la 0.7), et non `awakone@...` : erreur de l'attente.
+- `debit/better-auth.test.ts` : le cas « règle d'une limite qui n'est pas `auth.*` » prenait `email.destinataire` (1 h, 3), qui a la même règle que `auth.renvoi_verification` ; il prend `email.application` (24 h, 200), qu'aucune limite `auth.*` n'a.
+- `points-entree.attaque.test.ts` : espion typé par `vi.fn<...>()` au lieu d'un paramètre inutilisé (avertissement d'ESLint).
+
+**Outillage modifié** : `creerMembre` crée des utilisateurs à l'adresse vérifiée (section 4.6) ; `LIMITES_TEST` (`outils-test/email.ts`) déclare les nouvelles limites, que son type exige ; nouveaux `outils-test/panne.ts` (base injoignable, cookie signé) et `outils-test/inscription.ts` (banc d'inscription sur la vraie base). `VALEUR_APPLICATION` passe de `actions/action.ts` à `debit/limites.ts`, partagée avec `auth/emails.ts`.
+
+**Constat** : `better-call` écrit l'erreur complète par `console.error("# SERVER_ERROR: ", ...)` hors du journal de Better Auth (section 1.2) : `onAPIError: { throw: true }`. Avec le journal par défaut, le test 1 montre le jeton (lecture de session) et l'adresse saisie (inscription) dans la sortie ; avec la configuration de l'application, ni l'un ni l'autre. Dans `npm run verifier`, le serveur en panne du port 3101 n'écrit plus que des lignes `[auth] {"niveau":"error","incident":...}` (28 lignes) ; aucune occurrence de `Failed query`, `params:`, `SERVER_ERROR`, `[Better Auth]`, `session_token` ni `base_injoignable` dans tout le journal.
+
+**Écart avec la fiche** : la liaison du gestionnaire à l'instance réelle (`traiterRequeteAuth`, avec `auth.handler`, `BETTER_AUTH_URL` et `estProduction`) vient avec `route.ts`, en PR 2 ; la PR 1 livre la fabrique `creerTraitementAuth`. Raisons refusées : `refuse` (403, origine) s'ajoute à la liste de la section 2.2.
+
+**Vérifications** : `npm run verifier` vert (lint, typecheck, 51 fichiers et 1 706 tests unitaires, construction, 140 tests de bout en bout, ports 3000 et 3101 libres) ; `npm run test:integration` : 21 fichiers, 182 réussis et 1 échec attendu (déjà présent avant cette PR).

@@ -24,6 +24,9 @@ const DB_DEBIT = "src/server/db/debit.ts";
 const PROXY = "src/proxy.ts";
 const PORTE = "src/server/email/envoi.ts";
 const SMTP = "src/server/modules/email/smtp.ts";
+// Rappels d'envoi de Better Auth (1.1) : seul fichier de auth/ qui importe
+// envoyerEmail (règle T, docs/features/inscription.md, section 4.2).
+const EMAILS_AUTH = "src/server/auth/emails.ts";
 // Écrans : pages et composants, où s'affiche le texte (règle R). Les
 // composants de ui/, générés par shadcn, ne portent pas de texte affiché.
 const ECRANS = ["src/app/**", "src/components/**"];
@@ -389,8 +392,8 @@ const SYNTAXE_S = chargementsDynamiques("/(^|\\u002F)server\\u002Fenv(\\.ts)?$/"
 // T. Envoi d'emails : une seule porte, src/server/email/envoi.ts. nodemailer
 // ne s'importe que dans modules/email/smtp.ts ; modules/email/ que dans la
 // porte, son propre dossier, l'outillage de test et les tests ; envoyerEmail
-// que dans actions/action.ts et les tests (un service demande un envoi par
-// ctx.preparerEmail) ; la chaîne smtp.gmail.com n'apparaît que dans
+// que dans actions/action.ts, auth/emails.ts (rappels de Better Auth, 1.1) et
+// les tests (un service demande un envoi par ctx.preparerEmail) ; la chaîne smtp.gmail.com n'apparaît que dans
 // modules/email/smtp.ts et les tests. Chargement dynamique compris. Fiche :
 // docs/features/envoi-emails.md, section 1.2.
 const MESSAGE_T_NODEMAILER =
@@ -398,7 +401,7 @@ const MESSAGE_T_NODEMAILER =
 const MESSAGE_T_MODULES =
   "src/server/modules/email/ ne s'importe que dans src/server/email/envoi.ts : envoyer par la porte d'envoi (docs/features/envoi-emails.md, section 1.2, règle T).";
 const MESSAGE_T_ENVOYER =
-  "envoyerEmail ne s'importe que dans src/server/actions/action.ts et les tests : un service demande un envoi par ctx.preparerEmail (docs/features/envoi-emails.md, section 1.2, règle T).";
+  "envoyerEmail ne s'importe que dans src/server/actions/action.ts, src/server/auth/emails.ts et les tests : un service demande un envoi par ctx.preparerEmail (docs/features/envoi-emails.md, section 1.2, règle T).";
 const MESSAGE_T_HOTE =
   "smtp.gmail.com n'apparaît que dans src/server/modules/email/smtp.ts et les tests (docs/features/envoi-emails.md, section 1.2, règle T).";
 const IMPORTS_T_NODEMAILER = {
@@ -499,7 +502,19 @@ const eslintConfig = defineConfig([
   // Imports statiques.
   {
     files: [SRC],
-    ignores: [DB, ENV, TESTS, CONFIG_AUTH, JOURNAL_AUDIT, ACTIONS, DEBIT, PROXY, PORTE, SMTP],
+    ignores: [
+      DB,
+      ENV,
+      TESTS,
+      CONFIG_AUTH,
+      JOURNAL_AUDIT,
+      ACTIONS,
+      DEBIT,
+      PROXY,
+      PORTE,
+      SMTP,
+      EMAILS_AUTH,
+    ],
     rules: {
       "no-restricted-imports": restreindreImports(...IMPORTS_GENERAUX),
     },
@@ -510,6 +525,16 @@ const eslintConfig = defineConfig([
     rules: {
       "no-restricted-imports": restreindreImports(
         ...IMPORTS_GENERAUX.filter((liste) => liste !== IMPORTS_T_MODULES),
+      ),
+    },
+  },
+  // Les rappels d'envoi de Better Auth (1.1) : le cas général, sauf
+  // envoyerEmail (règle T).
+  {
+    files: [EMAILS_AUTH],
+    rules: {
+      "no-restricted-imports": restreindreImports(
+        ...IMPORTS_GENERAUX.filter((liste) => liste !== IMPORTS_T_ENVOYER),
       ),
     },
   },

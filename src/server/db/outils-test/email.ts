@@ -31,6 +31,12 @@ export const LIMITES_TEST = {
   "email.destinataire_jour": { maximum: 10, fenetreSecondes: 86_400, par: "destinataire" },
   "email.organisation": { maximum: 3, fenetreSecondes: 86_400, par: "organisation" },
   "email.application": { maximum: 5, fenetreSecondes: 86_400, par: "application" },
+  // 1.1 : présentes parce que le type l'exige ; la chaîne ne s'en sert pas.
+  "email.compte": { maximum: 100, fenetreSecondes: 86_400, par: "application" },
+  "auth.inscription": { maximum: 5, fenetreSecondes: 3_600, par: "adresse_ip" },
+  "auth.renvoi_verification": { maximum: 3, fenetreSecondes: 3_600, par: "adresse_ip" },
+  "auth.verification": { maximum: 10, fenetreSecondes: 600, par: "adresse_ip" },
+  "auth.defaut": { maximum: 30, fenetreSecondes: 60, par: "adresse_ip" },
 } as const satisfies Record<NomLimite, Limite>;
 
 const NOMS = Object.keys(LIMITES_TEST) as NomLimite[];

@@ -13,5 +13,17 @@ export const TEXTES_EMAILS = {
       corps:
         "Ceci est un email d'essai de Facturation PME. Il vérifie que l'envoi fonctionne ; aucune action n'est attendue de votre part.",
     },
+    "compte.verification": {
+      sujet: "Confirmez votre adresse email",
+      corps:
+        "Vous venez de créer un compte sur Facturation PME. Pour confirmer votre adresse email, ouvrez ce lien, puis cliquez sur « Confirmer mon adresse » :",
+      validite:
+        "Ce lien est valable une heure. Si vous n'êtes pas à l'origine de cette inscription, ignorez cet email : aucun compte ne sera activé.",
+    },
+    "compte.existant": {
+      sujet: "Tentative d'inscription avec votre adresse",
+      corps:
+        "Quelqu'un a tenté de créer un compte sur Facturation PME avec votre adresse email, qui a déjà un compte. Si c'est vous, connectez-vous avec votre mot de passe habituel. Sinon, ignorez cet email : votre compte n'a pas été modifié.",
+    },
   },
 } as const;

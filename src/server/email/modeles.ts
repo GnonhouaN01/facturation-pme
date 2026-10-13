@@ -16,6 +16,14 @@ export const LONGUEUR_MAX_CORPS = 10_000;
 const LONGUEUR_MAX_EN_TETE = 200;
 
 const JETON = new RegExp(`^[A-Za-z0-9_-]{${LONGUEUR_JETON}}$`, "u");
+
+// Jeton de vérification de Better Auth : un JWT signé, trois segments
+// base64url non vides séparés par des points, longueur bornée. Il contient
+// l'adresse email (encodée) : il ne voyage que dans le fragment d'un lien
+// (docs/features/inscription.md, section 4.3, décision 3).
+export const LONGUEUR_MAX_JETON_VERIFICATION = 1024;
+export const MOTIF_JETON_VERIFICATION = "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$";
+const JETON_VERIFICATION = new RegExp(MOTIF_JETON_VERIFICATION, "u");
 // Caractères de contrôle C0, DEL et C1.
 const SANS_CONTROLE = /^[^\u0000-\u001f\u007f-\u009f]*$/u;
 const CONTROLES = /[\u0000-\u001f\u007f-\u009f]+/gu;
@@ -29,6 +37,8 @@ export const briques = {
   entier: () => z.int(),
   booleen: () => z.boolean(),
   jeton: () => z.string().regex(JETON),
+  jetonVerification: () =>
+    z.string().max(LONGUEUR_MAX_JETON_VERIFICATION).regex(JETON_VERIFICATION),
   texteAffichable: (max: number) => z.string().max(max).regex(SANS_CONTROLE),
 };
 
@@ -57,6 +67,37 @@ export const MODELES_EMAIL = {
       void parametres;
       void contexte;
       const textes = TEXTES_EMAILS.modeles["essai.verification_envoi"];
+      return { sujet: textes.sujet, corps: corpsAvecFin(textes.corps) };
+    },
+  },
+  // Vérification de l'adresse à l'inscription (UC-01, étape 3). Le lien porte
+  // le jeton dans son fragment : jamais dans une adresse reçue par le
+  // serveur. Fiche : docs/features/inscription.md, sections 4.3 et 4.5.
+  "compte.verification": {
+    parametres: z.strictObject({ jeton: briques.jetonVerification() }),
+    construire: (
+      parametres: Record<string, unknown>,
+      contexte: { origine: string },
+    ): Construction => {
+      const textes = TEXTES_EMAILS.modeles["compte.verification"];
+      const lien = lienFragment(contexte.origine, "verification", String(parametres.jeton));
+      return {
+        sujet: textes.sujet,
+        corps: corpsAvecFin(`${textes.corps}\n\n${lien}\n\n${textes.validite}`),
+      };
+    },
+  },
+  // Inscription avec une adresse qui a déjà un compte (UC-01, 3a) : ni
+  // paramètre, ni lien.
+  "compte.existant": {
+    parametres: z.strictObject({}),
+    construire: (
+      parametres: Record<string, unknown>,
+      contexte: { origine: string },
+    ): Construction => {
+      void parametres;
+      void contexte;
+      const textes = TEXTES_EMAILS.modeles["compte.existant"];
       return { sujet: textes.sujet, corps: corpsAvecFin(textes.corps) };
     },
   },
@@ -91,4 +132,18 @@ export function lienPublic(origine: string, type: string, jeton: string): string
   const url = new URL(origine);
   if (url.protocol !== "https:" && url.protocol !== "http:") throw new LienInvalide();
   return `${url.origin}/lien/${type}/${jeton}`;
+}
+
+// L'adresse d'un lien dont le jeton voyage dans le fragment : l'origine de la
+// configuration, le chemin fixe /lien/<type>, puis #<jeton>. Un navigateur
+// n'envoie jamais le fragment au serveur, ni dans la requête ni dans Referer
+// (décision 3 de docs/features/inscription.md). Même contrôle que lienPublic
+// (T-65) : l'appelant ne fournit qu'un jeton.
+export function lienFragment(origine: string, type: string, jeton: string): string {
+  if (!TYPE_LIEN.test(type) || !briques.jetonVerification().safeParse(jeton).success) {
+    throw new LienInvalide();
+  }
+  const url = new URL(origine);
+  if (url.protocol !== "https:" && url.protocol !== "http:") throw new LienInvalide();
+  return `${url.origin}/lien/${type}#${jeton}`;
 }

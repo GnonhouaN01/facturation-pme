@@ -138,8 +138,8 @@ describe("emailVerification : rappel de vérification", () => {
     await emails.emailVerification({ user: utilisateur(), url: "", token: JETON });
     await executer();
     expect(debits).toEqual([
-      ["email.destinataire", "awakone@exemple.invalid"],
-      ["email.destinataire_jour", "awakone@exemple.invalid"],
+      ["email.destinataire", "awa.kone@exemple.invalid"],
+      ["email.destinataire_jour", "awa.kone@exemple.invalid"],
       ["email.compte", "gmail"],
       ["email.application", "gmail"],
     ]);

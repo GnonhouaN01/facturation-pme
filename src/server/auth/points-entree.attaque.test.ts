@@ -48,7 +48,9 @@ const CORPS_VALIDES: Readonly<Record<string, unknown>> = {
 };
 
 function espion() {
-  return vi.fn(async (_requete: Request) => Response.json({ status: true }));
+  return vi.fn<(requete: Request) => Promise<Response>>(async () =>
+    Response.json({ status: true }),
+  );
 }
 
 function traitement(options: { estProduction?: boolean } = {}) {

@@ -122,7 +122,9 @@ describe("stockage : consume", () => {
     ["règle spéciale par défaut de Better Auth (10 s, 3)", { window: 10, max: 3 }],
     ["règle spéciale par défaut de Better Auth (60 s, 3)", { window: 60, max: 3 }],
     ["règle par défaut de Better Auth (10 s, 100)", { window: 10, max: 100 }],
-    ["règle d'une limite qui n'est pas auth.*", regle("email.destinataire")],
+    // email.destinataire a la même règle (1 h, 3) que auth.renvoi_verification :
+    // le cas prend une règle qu'aucune limite auth.* n'a.
+    ["règle d'une limite qui n'est pas auth.*", regle("email.application")],
   ])("règle inconnue refusée sans compter : %s", async (_nom, inconnue) => {
     const { compteur, appels } = compteurFactice();
     const stockage = creerStockageBetterAuth({

@@ -10,8 +10,10 @@ export type Limite = {
   fenetreSecondes: number;
   // Ce que la clé désigne : l'utilisateur de la session (étape 4 de la
   // chaîne) ; pour les emails (0.7), l'application entière, l'organisation de
-  // la transaction ou l'adresse du destinataire, normalisée pour le compteur.
-  par: "utilisateur" | "application" | "organisation" | "destinataire";
+  // la transaction ou l'adresse du destinataire, normalisée pour le compteur ;
+  // pour les points d'entrée de Better Auth (1.1), l'adresse IP, lue par
+  // Better Auth lui-même et jamais stockée en clair.
+  par: "utilisateur" | "application" | "organisation" | "destinataire" | "adresse_ip";
 };
 
 export const LIMITES = {
@@ -27,7 +29,25 @@ export const LIMITES = {
   "email.destinataire_jour": { maximum: 10, fenetreSecondes: 24 * 60 * 60, par: "destinataire" },
   "email.organisation": { maximum: 40, fenetreSecondes: 24 * 60 * 60, par: "organisation" },
   "email.application": { maximum: 200, fenetreSecondes: 24 * 60 * 60, par: "application" },
+  // Emails sans organisation (vérification, compte existant ; réinitialisation
+  // en 1.3) : jamais plus de la moitié d'email.application. Vérifiée avant
+  // elle, après les deux limites par destinataire. Fiche :
+  // docs/features/inscription.md, section 3.2.
+  "email.compte": { maximum: 100, fenetreSecondes: 24 * 60 * 60, par: "application" },
+  // Points d'entrée de Better Auth, par adresse IP (S-11, T-41). Les règles
+  // de Better Auth sont construites depuis ces valeurs (debit/better-auth.ts) ;
+  // deux d'entre elles n'ont jamais la même fenêtre et le même maximum, le
+  // stockage reconnaissant une limite à sa règle.
+  "auth.inscription": { maximum: 5, fenetreSecondes: 60 * 60, par: "adresse_ip" },
+  "auth.renvoi_verification": { maximum: 3, fenetreSecondes: 60 * 60, par: "adresse_ip" },
+  "auth.verification": { maximum: 10, fenetreSecondes: 10 * 60, par: "adresse_ip" },
+  // Tout autre chemin, ouvert plus tard par une fiche : valeur sûre.
+  "auth.defaut": { maximum: 30, fenetreSecondes: 60, par: "adresse_ip" },
 } as const satisfies Record<string, Limite>;
+
+// Valeur comptée par les limites « par application » : un seul compte Gmail
+// sert toute l'application.
+export const VALEUR_APPLICATION = "gmail";
 
 export type NomLimite = keyof typeof LIMITES;
 
