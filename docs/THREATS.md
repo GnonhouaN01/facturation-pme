@@ -132,6 +132,7 @@ Le navigateur n'est **jamais** une zone de confiance : tout ce qui s'y trouve pe
 | T-36 | Lire toute la base par une injection | P1, P2 | 3 | 1 | Moyenne | S-50, S-86 | Aucune requête construite par concaténation dans le code |
 | T-37 | Faire fuiter un lien public par l'adresse d'origine envoyée à un autre site | P1 | 2 | 1 | Faible | S-80 | Les pages publiques n'envoient pas leur adresse aux sites tiers |
 | T-38 | Garder l'accès à un document par un lien ancien | P5 | 1 | 2 | Faible | S-20 | Un lien révoqué ou expiré ne donne plus rien |
+| T-39 | Lire un jeton de session dans le journal du serveur : en cas d'échec de la base, Better Auth y écrit la requête et ses paramètres, dont la valeur du jeton (constaté le 2026-10-12 dans les journaux du serveur de test en panne, `e2e/serveur-panne.ts`) | P6 | 3 | 2 | Haute | S-54, S-85 | À la 1.1 : une panne de la base provoquée pendant la lecture d'une session ne fait apparaître aucun jeton dans le journal du serveur (journal de Better Auth coupé ou filtré) |
 
 ### 5.5 Déni de service
 
@@ -325,3 +326,4 @@ Le modèle de menaces a fait apparaître des protections techniques absentes de 
 1. **Validé :** le Commercial voit les factures émises, avoirs et paiements de ses clients en lecture seule (SPEC.md, F-016).
 2. **Validé :** les durées de conservation de la section 7.2 (SPEC.md, S-63).
 3. **Ouvert :** le cadre légal ivoirien sur les données personnelles et la durée de conservation des pièces comptables reste à vérifier auprès d'une source officielle.
+4. **Ouvert, à traiter en 1.1 (T-39) :** en cas d'échec de la base, Better Auth écrit dans le journal du serveur la requête et ses paramètres, dont la valeur du jeton de session. Constaté le 2026-10-12 dans les journaux du serveur de test en panne. La 1.1, avant toute exposition de `/api/auth`, coupe ou filtre le journal de Better Auth, avec un test qui provoque une panne et vérifie qu'aucun jeton n'apparaît. Jusque-là, aucune session réelle n'existe (aucune route d'inscription ni de connexion).

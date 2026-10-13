@@ -9,6 +9,7 @@ import { TEXTES_EMAILS } from "@/textes/emails";
 import { configurationEmail, env } from "../env";
 import { creerTransportFichier } from "../modules/email/fichier";
 import { creerTransportMemoire } from "../modules/email/memoire";
+import { creerTransportSmtp, optionsTransportSmtp } from "../modules/email/smtp";
 import { EchecTransport, type Transport } from "../modules/email/transport";
 
 import { schemaAdresse } from "./adresse";
@@ -166,15 +167,23 @@ export function creerPorteEmail(configuration: ConfigurationPorte): {
   return { envoyerEmail };
 }
 
-// Expéditeur des transports de la PR 1 (memoire, fichier), qui n'envoient
-// rien. Le transport smtp de la PR 2 prendra GMAIL_UTILISATEUR.
+// Expéditeur des transports memoire et fichier, qui n'envoient rien. Le
+// transport smtp prend GMAIL_UTILISATEUR : Gmail remplace de toute façon
+// l'expéditeur par le compte authentifié.
 const EXPEDITEUR_LOCAL = "ne-pas-repondre@facturation.invalid";
 
-function transportConfigure(): Transport {
-  if (configurationEmail.transport === "fichier" && configurationEmail.dossier !== null) {
-    return creerTransportFichier(configurationEmail.dossier);
+function transportConfigure(): { transport: Transport; expediteur: string } {
+  const { transport, dossier, gmail } = configurationEmail;
+  if (transport === "smtp" && gmail !== null) {
+    return {
+      transport: creerTransportSmtp(optionsTransportSmtp(gmail)),
+      expediteur: gmail.utilisateur,
+    };
   }
-  return creerTransportMemoire();
+  if (transport === "fichier" && dossier !== null) {
+    return { transport: creerTransportFichier(dossier), expediteur: EXPEDITEUR_LOCAL };
+  }
+  return { transport: creerTransportMemoire(), expediteur: EXPEDITEUR_LOCAL };
 }
 
 // Construite au premier envoi, jamais au chargement : un module qui importe
@@ -185,8 +194,7 @@ let porte: ReturnType<typeof creerPorteEmail> | undefined;
 // src/server/actions/action.ts et les tests (règle T).
 export function envoyerEmail(demande: DemandeEmail): Promise<ResultatEnvoi> {
   porte ??= creerPorteEmail({
-    transport: transportConfigure(),
-    expediteur: EXPEDITEUR_LOCAL,
+    ...transportConfigure(),
     estProduction: configurationEmail.estProduction,
     destinatairesAutorises: configurationEmail.destinatairesAutorises,
     origine: env.BETTER_AUTH_URL,
