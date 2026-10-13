@@ -61,6 +61,9 @@ afterEach(() => {
 });
 
 describe("env.ts : chargement", () => {
+  // Premier cas du fichier : il paie le premier chargement réel des modules
+  // (env.ts, env-schema.ts, Zod), qui dépasse parfois les 5 s par défaut
+  // quand npm run verifier le lance juste après lint et typecheck.
   test("témoin : configuration valide, env et configurationEmail exportés", async () => {
     poser({ ...BASE, NODE_ENV: "test" });
 
@@ -74,7 +77,7 @@ describe("env.ts : chargement", () => {
       estProduction: false,
       gmail: null,
     });
-  });
+  }, 30_000);
 
   test("témoin : DATABASE_URL invalide, le chargement échoue", async () => {
     poser({ ...BASE, NODE_ENV: "test", DATABASE_URL: "pas-une-adresse" });

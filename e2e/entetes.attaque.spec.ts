@@ -5,9 +5,9 @@ import type { AddressInfo } from "node:net";
 import { type APIRequestContext, type Page, expect, test } from "@playwright/test";
 
 import { TEXTES_COMMUNS } from "../src/textes/commun";
-import { TEXTES_ERREURS } from "../src/textes/erreurs";
 import {
   attaques,
+  documentServi,
   ENTETES_SECTION_6,
   nonceDe,
   observerViolations,
@@ -359,9 +359,14 @@ test.describe("autres en-têtes (section 6)", () => {
     const jeton = randomBytes(32).toString("base64url");
     const reponse = await request.get(`/lien/devis/${jeton}`);
     const recus = reponse.headers();
+    const inexistante = await request.get("/adresse-inexistante");
 
+    // Toute page introuvable passe par notFound() : même document qu'une
+    // adresse inexistante, la page « introuvable » s'affichant après
+    // hydratation (docs/features/controle-deploiement.md, section 5).
     expect(reponse.status()).toBe(404);
-    expect(await reponse.text()).toContain(TEXTES_ERREURS.introuvable);
+    expect(documentServi(await reponse.text())).toBe(documentServi(await inexistante.text()));
+    expect(recus["content-security-policy"]).not.toMatch(/unsafe-/);
     expect(recus["x-robots-tag"]).toBe("noindex, nofollow");
     expect(recus["referrer-policy"]).toBe("same-origin");
     expect(recus["set-cookie"]).toBeUndefined();
