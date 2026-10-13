@@ -989,68 +989,24 @@ describe(
   () => {
     test.each([
       ["server/taches/ dans une page", TACHES_ALIAS, "src/app/essai/page.tsx"],
-      [
-        "server/taches/ dans une autre route",
-        TACHES_ALIAS,
-        "src/app/api/autre/route.ts",
-      ],
-      [
-        "server/taches/ dans une action",
-        TACHES_RELATIF,
-        "src/server/actions/essai.ts",
-      ],
-      [
-        "server/taches/ dans un service",
-        TACHES_RELATIF,
-        "src/server/services/essai.ts",
-      ],
+      ["server/taches/ dans une autre route", TACHES_ALIAS, "src/app/api/autre/route.ts"],
+      ["server/taches/ dans une action", TACHES_RELATIF, "src/server/actions/essai.ts"],
+      ["server/taches/ dans un service", TACHES_RELATIF, "src/server/services/essai.ts"],
       ["server/taches/ dans auth/", TACHES_RELATIF, "src/server/auth/essai.ts"],
-      [
-        "import dynamique de server/taches/",
-        TACHES_DYNAMIQUE,
-        "src/server/services/essai.ts",
-      ],
-      [
-        "réexportation de server/taches/",
-        TACHES_REEXPORT,
-        "src/server/services/essai.ts",
-      ],
-      [
-        "db/comptes.ts dans un service",
-        COMPTES_ALIAS,
-        "src/server/services/essai.ts",
-      ],
-      [
-        "db/comptes.ts dans une action",
-        COMPTES_ALIAS,
-        "src/server/actions/essai.ts",
-      ],
+      ["import dynamique de server/taches/", TACHES_DYNAMIQUE, "src/server/services/essai.ts"],
+      ["réexportation de server/taches/", TACHES_REEXPORT, "src/server/services/essai.ts"],
+      ["db/comptes.ts dans un service", COMPTES_ALIAS, "src/server/services/essai.ts"],
+      ["db/comptes.ts dans une action", COMPTES_ALIAS, "src/server/actions/essai.ts"],
       ["db/comptes.ts dans une page", COMPTES_ALIAS, "src/app/essai/page.tsx"],
-      [
-        "db/comptes.ts dans auth/config.ts",
-        COMPTES_ALIAS,
-        "src/server/auth/config.ts",
-      ],
-      [
-        "db/comptes.ts dans un autre fichier de db/",
-        COMPTES_RELATIF_DB,
-        "src/server/db/essai.ts",
-      ],
+      ["db/comptes.ts dans auth/config.ts", COMPTES_ALIAS, "src/server/auth/config.ts"],
+      ["db/comptes.ts dans un autre fichier de db/", COMPTES_RELATIF_DB, "src/server/db/essai.ts"],
       [
         "db/comptes.ts dans une requête",
         COMPTES_RELATIF_REQUETES,
         "src/server/db/requetes/essai.ts",
       ],
-      [
-        "import dynamique de db/comptes.ts",
-        COMPTES_DYNAMIQUE,
-        "src/server/services/essai.ts",
-      ],
-      [
-        "purgerCompteurs dans un service",
-        PURGER_ALIAS,
-        "src/server/services/essai.ts",
-      ],
+      ["import dynamique de db/comptes.ts", COMPTES_DYNAMIQUE, "src/server/services/essai.ts"],
+      ["purgerCompteurs dans un service", PURGER_ALIAS, "src/server/services/essai.ts"],
       [
         "purgerCompteurs dans actions/action.ts",
         PURGER_RELATIF_ACTIONS,
@@ -1063,46 +1019,22 @@ describe(
     });
 
     test.each([
-      [
-        "server/taches/ dans sa route",
-        TACHES_ALIAS,
-        "src/app/api/taches/[tache]/route.ts",
-      ],
-      [
-        "server/taches/ dans un test",
-        TACHES_RELATIF,
-        "src/server/actions/essai.test.ts",
-      ],
+      ["server/taches/ dans sa route", TACHES_ALIAS, "src/app/api/taches/[tache]/route.ts"],
+      ["server/taches/ dans un test", TACHES_RELATIF, "src/server/actions/essai.test.ts"],
       [
         "server/taches/ dans un test d'intégration de db/",
         TACHES_ALIAS,
         "src/server/db/essai.integration.test.ts",
       ],
-      [
-        "fichiers de server/taches/ entre eux",
-        TACHES_INTERNE,
-        "src/server/taches/quotidienne.ts",
-      ],
-      [
-        "db/comptes.ts dans server/taches/",
-        COMPTES_ALIAS,
-        "src/server/taches/etapes.ts",
-      ],
+      ["fichiers de server/taches/ entre eux", TACHES_INTERNE, "src/server/taches/quotidienne.ts"],
+      ["db/comptes.ts dans server/taches/", COMPTES_ALIAS, "src/server/taches/etapes.ts"],
       [
         "db/comptes.ts dans un test d'intégration de db/",
         COMPTES_RELATIF_DB,
         "src/server/db/essai.integration.test.ts",
       ],
-      [
-        "purgerCompteurs dans server/taches/",
-        PURGER_ALIAS,
-        "src/server/taches/etapes.ts",
-      ],
-      [
-        "purgerCompteurs dans un test",
-        PURGER_ALIAS,
-        "src/server/taches/essai.test.ts",
-      ],
+      ["purgerCompteurs dans server/taches/", PURGER_ALIAS, "src/server/taches/etapes.ts"],
+      ["purgerCompteurs dans un test", PURGER_ALIAS, "src/server/taches/essai.test.ts"],
       [
         "verifierDebit dans actions/action.ts (inchangé)",
         VERIFIER_DEBIT_ACTION,
@@ -1115,26 +1047,10 @@ describe(
     // Un refus de la règle U cite sa fiche : un refus venu d'une autre règle
     // ne prouverait rien sur U.
     test.each([
-      [
-        "server/taches/ dans un service",
-        TACHES_RELATIF,
-        "src/server/services/essai.ts",
-      ],
-      [
-        "db/comptes.ts dans un service",
-        COMPTES_ALIAS,
-        "src/server/services/essai.ts",
-      ],
-      [
-        "purgerCompteurs dans un service",
-        PURGER_ALIAS,
-        "src/server/services/essai.ts",
-      ],
-      [
-        "import dynamique de db/comptes.ts",
-        COMPTES_DYNAMIQUE,
-        "src/server/services/essai.ts",
-      ],
+      ["server/taches/ dans un service", TACHES_RELATIF, "src/server/services/essai.ts"],
+      ["db/comptes.ts dans un service", COMPTES_ALIAS, "src/server/services/essai.ts"],
+      ["purgerCompteurs dans un service", PURGER_ALIAS, "src/server/services/essai.ts"],
+      ["import dynamique de db/comptes.ts", COMPTES_DYNAMIQUE, "src/server/services/essai.ts"],
     ])("%s : le refus cite la règle U", async (_nom, code, fichier) => {
       expect(await refus(code, fichier)).toEqual(
         expect.arrayContaining([expect.stringContaining("règle U")]),
