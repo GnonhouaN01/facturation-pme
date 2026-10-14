@@ -80,7 +80,7 @@ export function consignerAuth(niveau: "info" | "warn" | "error" | "debug"): void
 Deux tests, écrits en premier (« Tests à écrire ») :
 
 1. **Sans base réelle, sous Vitest** (`src/server/auth/journal.attaque.test.ts`). Une instance de Better Auth construite avec `optionsAuth` (même journal) et un adaptateur sur une base injoignable (`127.0.0.1:1`, outil `basePanne()` de `src/server/db/outils-test/`). Cookie de session au jeton aléatoire, signé avec le secret de test (même méthode qu'`e2e/serveur-panne.ts`). Espions sur `console.*`, `process.stdout.write` et `process.stderr.write`. Appels : `getSession`, puis une inscription par `auth.handler`. Attendu : la lecture échoue ; aucune sortie ne contient le jeton, sa signature, l'adresse saisie, `Failed query`, `select`, ni `params`. Témoin : le même scénario avec le journal par défaut de Better Auth fait apparaître le jeton (sinon le test ne prouverait rien).
-2. **Sur le site construit** (`e2e/erreurs.attaque.spec.ts`, serveur en panne du port 3101). Le serveur en panne écrit sa sortie dans un fichier temporaire (lanceur `e2e/lancer-serveur-panne.mjs`, à la place de la commande directe de `playwright.config.ts`). Le test pose le cookie signé, ouvre `/tableau-de-bord` et appelle `POST /api/auth/sign-up/email`, puis lit le fichier : ni le jeton, ni l'adresse, ni `Failed query`. C'est la reproduction exacte du constat du 2026-10-12.
+2. **Sur le site construit** (`e2e/erreurs.attaque.spec.ts`, serveur en panne du port 3101). Le serveur en panne écrit sa sortie dans un fichier temporaire (lanceur `e2e/lancer-serveur-panne.mjs`, devenu `e2e/lancer-serveur.mjs` et `.e2e-journaux/` le 2026-10-14, `e2e-base-jetable.md`, à la place de la commande directe de `playwright.config.ts`). Le test pose le cookie signé, ouvre `/tableau-de-bord` et appelle `POST /api/auth/sign-up/email`, puis lit le fichier : ni le jeton, ni l'adresse, ni `Failed query`. C'est la reproduction exacte du constat du 2026-10-12.
 
 ### 2. Les points d'entrée exposés (T-55, S-81, S-84)
 
@@ -481,7 +481,7 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 11 relèven
 | `src/textes/compte.ts` | Nouveau : textes des pages |
 | `eslint.config.mjs` | Règle T |
 | `src/server/actions/inventaire.test.ts` | Forme exacte de `route.ts` |
-| `playwright.config.ts`, `e2e/lancer-serveur-panne.mjs`, `e2e/*.spec.ts` | Sortie du serveur en panne dans un fichier ; nouveaux tests |
+| `playwright.config.ts`, `e2e/lancer-serveur-panne.mjs` (devenu `e2e/lancer-serveur.mjs`), `e2e/*.spec.ts` | Sortie du serveur en panne dans un fichier ; nouveaux tests |
 | `scripts/controle-deploiement.mjs` | Contrôle T-55 |
 | `docs/THREATS.md` 7.5, `docs/STACK.md` | Have I Been Pwned, destinataire extérieur (PR 1, décision 2) |
 | `docs/DESIGN.md` 3.1, `docs/STRUCTURE.md` 2, 3 et 7, `docs/CONFIGURATION.md`, `docs/THREATS.md` 10.4 | Mises à jour (PR 2) |
@@ -589,7 +589,7 @@ Appliquées par l'assistant le 2026-10-13, selon sa recommandation, sauf avis co
 7. `BETTER_AUTH_URL` imposée à `http://localhost:3000` pour le serveur de bout en bout : l'origine acceptée ne dépend plus de `.env.local`.
 8. L'erreur inattendue s'affiche « Une erreur est survenue. » sans identifiant d'incident : la réponse normalisée de la PR 1 n'en porte pas (l'identifiant est au journal technique).
 
-**Limites constatées** : `email.compte` (100 par 24 h) est partagée par tous les tests de bout en bout lancés sur `dev` (environ 6 emails par exécution) : au-delà d'une quinzaine d'exécutions par jour, les emails ne partent plus et les tests du parcours échouent, jusqu'à la purge des compteurs. En CI, la base est neuve.
+**Limites constatées** (réglé le 2026-10-14 par `e2e-base-jetable.md`, sauf avec `E2E_BASE=dev`) : `email.compte` (100 par 24 h) est partagée par tous les tests de bout en bout lancés sur `dev` (environ 6 emails par exécution) : au-delà d'une quinzaine d'exécutions par jour, les emails ne partent plus et les tests du parcours échouent, jusqu'à la purge des compteurs. En CI, la base est neuve.
 
 **Vérifications** : `npm run verifier` vert (format, lint, typecheck, 57 fichiers et 1 841 tests unitaires, construction, 279 tests de bout en bout, ports 3000 et 3101 libres) ; `npm run test:integration` : 21 fichiers, 185 réussis et 1 échec attendu (déjà présent).
 

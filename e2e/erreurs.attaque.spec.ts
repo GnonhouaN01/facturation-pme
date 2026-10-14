@@ -280,7 +280,7 @@ test.describe("page « erreur », serveur à la base injoignable", () => {
 
 // T-39 sur le site construit : la reproduction du constat du 2026-10-12. Le
 // serveur en panne écrit sa sortie dans JOURNAL_PANNE_E2E (lanceur
-// e2e/lancer-serveur-panne.mjs). Une lecture de session au cookie signé et
+// e2e/lancer-serveur.mjs). Une lecture de session au cookie signé et
 // une inscription échouent sur la base injoignable ; ni le jeton, ni sa
 // signature, ni l'adresse, ni le mot de passe, ni la requête SQL n'arrivent
 // dans le journal, qui ne garde que des lignes fixes [auth]. Fiche :

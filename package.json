@@ -14,7 +14,7 @@
     "test": "vitest run --project unitaires",
     "test:watch": "vitest --project unitaires",
     "test:integration": "vitest run --project integration",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/e2e-base-jetable.mjs",
     "format:check": "prettier --check .",
     "verifier:auth": "tsx --conditions=react-server scripts/verifier-auth.mts",
     "verifier:creation-auth": "tsx --conditions=react-server scripts/verifier-creation-auth.mts",

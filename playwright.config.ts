@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
 
 import { ADRESSES_E2E } from "./e2e/comptes-e2e";
+import { DOSSIER_JOURNAUX, preparerJournaux } from "./e2e/journaux";
 import { ADRESSE_PANNE, CONFIGURATION_PANNE, PORT_PANNE } from "./e2e/serveur-panne";
 
 // Les tests tournent sur le site construit, en CI comme en local : lancer
@@ -45,13 +46,17 @@ const INSCRIPTION_E2E = {
   EMAIL_DESTINATAIRES_AUTORISES: ADRESSES_E2E.join(","),
 };
 
-// Journal du serveur en panne, relu par le test T-39 (e2e/erreurs.attaque.spec.ts) :
-// un fichier par exécution, partagé par les processus comme CRON_SECRET_E2E.
-// Fiche : docs/features/inscription.md, section 1.3, test 2.
-process.env.JOURNAL_PANNE_E2E ??= join(
-  tmpdir(),
-  `facturation-pme-e2e-panne-${randomBytes(6).toString("hex")}.log`,
-);
+// Sortie des deux serveurs, conservée à chaque exécution dans .e2e-journaux/
+// (ignoré par git), pour expliquer après coup une réponse 500 ; celle du
+// serveur en panne est relue par le test T-39 (e2e/erreurs.attaque.spec.ts).
+// Chemins tirés par le premier processus et partagés comme CRON_SECRET_E2E.
+// Fiches : docs/features/e2e-base-jetable.md, section 4 ;
+// docs/features/inscription.md, section 1.3, test 2.
+if (!process.env.JOURNAL_SITE_E2E || !process.env.JOURNAL_PANNE_E2E) {
+  const journaux = preparerJournaux({ dossier: resolve(DOSSIER_JOURNAUX) });
+  process.env.JOURNAL_SITE_E2E = journaux.site;
+  process.env.JOURNAL_PANNE_E2E = journaux.panne;
+}
 
 export default defineConfig({
   testDir: "./e2e",
@@ -87,7 +92,9 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "npm run start",
+      // next start sur le port 3000, sortie écrite dans JOURNAL_SITE_E2E,
+      // sortie d'erreur aussi affichée dans le terminal.
+      command: `node e2e/lancer-serveur.mjs 3000 "${process.env.JOURNAL_SITE_E2E}" --recopier-erreurs`,
       url: ADRESSE,
       reuseExistingServer: false,
       timeout: 120_000,
@@ -100,7 +107,7 @@ export default defineConfig({
     // sur l'environnement du job de CI.
     {
       // Sortie écrite dans JOURNAL_PANNE_E2E (test T-39).
-      command: `node e2e/lancer-serveur-panne.mjs ${PORT_PANNE} "${process.env.JOURNAL_PANNE_E2E}"`,
+      command: `node e2e/lancer-serveur.mjs ${PORT_PANNE} "${process.env.JOURNAL_PANNE_E2E}"`,
       url: ADRESSE_PANNE,
       reuseExistingServer: false,
       timeout: 120_000,
