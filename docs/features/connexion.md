@@ -1,6 +1,6 @@
 # Fonctionnalité : connexion et déconnexion
 
-Statut : brouillon, rédigé le 2026-10-14. Trois vrais choix attendent le développeur (section « Questions ouvertes ») ; les autres points suivent la recommandation de l'assistant (section « Décisions par défaut »).
+Statut : validée le 2026-10-14. Fiche rédigée le même jour ; les trois vrais choix et l'organisation de test tranchés par le développeur (section « Décisions »), les autres points selon la recommandation de l'assistant (section « Décisions par défaut »).
 
 Jalon 1, fonctionnalité 1.2 de `docs/PLAN.md`. Taille M. Cas d'utilisation : UC-02 (sans l'étape 3, double authentification, qui vient en 1.4). Exigences : F-002 (connexion, déconnexion), S-11, S-17 (partie session), S-54, S-63, S-81, S-82, S-85. Menaces : T-01, T-03, T-07, T-17, T-39, T-43, T-55.
 
@@ -43,9 +43,9 @@ Vue d'ensemble :
 |---|---|---|
 | Deux points d'entrée de plus | `src/server/auth/points-entree.ts` | `POST /sign-in/email`, `POST /sign-out` dans la liste fermée ; `/get-session` reste fermé |
 | Limite par compte | `src/server/debit/limites.ts`, `src/server/auth/gestionnaire.ts` | `auth.connexion_compte`, comptée par notre gestionnaire avant Better Auth |
-| Session | `src/server/auth/config.ts` | 7 jours, sans prolongation, cookie aligné (question 3) |
+| Session | `src/server/auth/config.ts` | 7 jours, sans prolongation, cookie aligné (décision 3) |
 | Identifiant d'incident | `points-entree.ts`, `journal.ts`, `src/components/compte/` | Toute réponse `erreur` porte l'incident écrit au journal technique |
-| Zone « compte » | `src/app/(compte)/`, `src/server/actions/exposer.ts` | Pages d'un utilisateur connecté, sans organisation (question 2) |
+| Zone « compte » | `src/app/(compte)/`, `src/server/actions/exposer.ts` | Pages d'un utilisateur connecté, sans organisation (décision 2) |
 | Pages | `src/app/(public)/connexion/`, `src/app/(compte)/compte/` | Formulaire, page d'arrivée, bouton « Se déconnecter » |
 | Purge | `src/server/db/comptes.ts`, `src/server/taches/etapes.ts` | Sessions expirées, par la tâche quotidienne (S-63) |
 
@@ -68,7 +68,7 @@ Ils suivent les étapes de la section 2.2 de `inscription.md` (origine, taille e
 
 | Points d'entrée | Jusqu'à |
 |---|---|
-| `/get-session` | **Toujours, sauf fiche contraire** (question 1). Son corps contient `session.token`, le jeton en clair (`parseSessionOutput` ne le retire pas) : l'ouvrir rendrait le jeton lisible par tout script de la page, ce que `HttpOnly` interdit (S-82). Les pages lisent la session côté serveur (`lireSession`) ; le navigateur n'en a pas besoin |
+| `/get-session` | **Toujours, sauf fiche contraire** (décision 1). Son corps contient `session.token`, le jeton en clair (`parseSessionOutput` ne le retire pas) : l'ouvrir rendrait le jeton lisible par tout script de la page, ce que `HttpOnly` interdit (S-82). Les pages lisent la session côté serveur (`lireSession`) ; le navigateur n'en a pas besoin |
 | `/sign-in/social`, `/sign-in/*` autres | Une fiche qui en a besoin |
 | `/request-password-reset`, `/reset-password/*` | 1.3 |
 | `/two-factor/*` | 1.4 |
@@ -136,7 +136,7 @@ session: {
 },
 ```
 
-**Retenu (question 3)** : une session dure 7 jours à partir de la connexion, **sans prolongation**. Au bout de 7 jours, l'utilisateur se reconnecte, même s'il est actif.
+**Retenu (décision 3)** : une session dure 7 jours à partir de la connexion, **sans prolongation**. Au bout de 7 jours, l'utilisateur se reconnecte, même s'il est actif.
 
 - **Durée absolue.** Une session volée cesse au plus tard 7 jours après la connexion (T-03). Avec la prolongation par défaut, un usage régulier, légitime ou non, la ferait vivre sans fin.
 - **Cookie aligné sur la base.** Le cookie reçoit `Max-Age` égal à `expiresIn` à la connexion ; la base, `expiresAt` à la même échéance. Sans prolongation, rien ne les fait diverger. Avec elle, une page (composant serveur) prolongerait la base sans pouvoir réécrire le cookie (`nextCookies` ne pose un cookie que dans une action serveur ou une route).
@@ -161,7 +161,7 @@ Réglages de la 1.1 inchangés : `HttpOnly`, `SameSite=Lax`, `Secure` en `https`
 
 `purgerSessionsExpirees()` (`src/server/db/comptes.ts`) supprime les sessions dont `expires_at` est passé ; nouvelle étape `sessions_expirees` de la tâche quotidienne (`src/server/taches/etapes.ts`). Une session expirée ne sert plus à rien, et elle contient une adresse IP et un navigateur (`THREATS.md` 7.2). Requête par `db`, dans `src/server/db/`, comme `purgerComptesNonVerifies`.
 
-### 5. Zone « compte » et pages (question 2)
+### 5. Zone « compte » et pages (décision 2)
 
 #### 5.1 Une zone pour un utilisateur connecté sans organisation
 
@@ -209,7 +209,16 @@ Les comptes de bout en bout sont créés par le parcours réel : inscription, le
 
 #### 8.2 Organisation de test pour le gabarit de l'application
 
-Le gabarit de `(app)/` demande une adhésion, qu'aucun écran ne crée avant la 2.1. Un outil de bout en bout, `e2e/organisation-e2e.ts`, crée par SQL une organisation, une adhésion au rôle `proprietaire` et l'organisation active de la session, pour un compte de l'exécution. Mêmes garde-fous que `e2e/nettoyer-comptes.ts` (décision du développeur, PR 2 de la 1.1) : `DATABASE_URL` seule, jamais `DATABASE_URL_MIGRATION` ; refus si `VERCEL_ENV` est défini ; seulement pour une adresse de l'exécution, en `.invalid`, par égalité ; requêtes paramétrées. L'organisation est supprimée en fin de suite avant les comptes. Hors de `src/` : la règle 4 ne s'y applique pas, comme pour le nettoyage.
+Le gabarit de `(app)/` demande une adhésion, qu'aucun écran ne crée avant la 2.1. Un outil de bout en bout, `e2e/organisation-e2e.ts`, crée par SQL une organisation, une adhésion au rôle `proprietaire` et l'organisation active de la session, pour un compte de l'exécution. Conditions fixées par le développeur (décision 4), **chacune testée** (`e2e/organisation-e2e.spec.ts`, faux `Pool`, sans base) :
+
+1. **Code dans `e2e/` seulement**, jamais dans `src/` (test : aucun fichier de `src/` ne l'importe ni ne contient ses requêtes).
+2. **Base jetable ou service PostgreSQL de la CI seulement.** Le lanceur `scripts/e2e-base-jetable.mjs` pose `E2E_BASE_JETABLE=1` pour Playwright en mode jetable ; en CI, `CI` est défini. L'outil exige l'un des deux, **et** une `DATABASE_URL` dont l'hôte est `127.0.0.1` ou `localhost`. Avec `E2E_BASE=dev`, ou sans ces conditions, les tests qui en dépendent sont **sautés** (`test.skip`) avec un message explicite, et l'outil n'ouvre aucune connexion, donc n'écrit rien.
+3. **`DATABASE_URL` seule**, prise dans l'environnement du processus, jamais dans `.env.local`, jamais `DATABASE_URL_MIGRATION` ; utilisateur de l'adresse égal à `app_facturation`, le rôle de l'application, jamais le rôle propriétaire.
+4. **Identifiants tirés à chaque exécution** : identifiant d'organisation par `randomUUID()`, `slug` `e2e-<exécution>-<aléa>`.
+5. **Suppression par liste exacte** : les identifiants créés par l'exécution, `DELETE FROM "organization" WHERE id = ANY($1::uuid[])`, sans `LIKE` ni motif ; adhésions par `ON DELETE CASCADE`. En fin de fichier (`afterAll`), donc avant le nettoyage des comptes.
+6. **Refus si `VERCEL_ENV` est défini**, quelle que soit sa valeur, avant toute autre lecture.
+
+Requêtes paramétrées seulement. L'adresse du compte doit être une adresse de l'exécution (`ADRESSES_E2E`). Hors de `src/` : la règle 4 ne s'y applique pas, comme pour le nettoyage des comptes.
 
 #### 8.3 Reprise de la 0.6 (décision 27)
 
@@ -336,6 +345,7 @@ Dans cet ordre, chacun vu en échec avant le code.
 23. [ ] **Incident affiché** — `e2e/erreurs.attaque.spec.ts`, serveur en panne : la connexion affiche « Une erreur est survenue. » et un identifiant ; cet identifiant figure dans `.e2e-journaux/` sur une ligne `[auth]`, sans adresse ni jeton.
 24. [ ] **Gabarit connecté** — `e2e/affichage-connecte.spec.ts` (outil de la section 8.2) : vérifications de la section 8.3 à 1280, 390 et 360 px, focus au clavier, captures.
 25. [ ] **Contrôle après déploiement** — `e2e/controle-deploiement.spec.ts`, serveur factice : `comptes:*` échoue si l'un des cinq `POST` diffère d'un chemin inexistant ; `auth:identique` échoue si `/get-session` diffère ; `/compte` contrôlé comme `/tableau-de-bord`.
+26. [ ] **Organisation de test, conditions de la décision 4** — `e2e/organisation-e2e.spec.ts` (faux `Pool`, sans base), un test par condition : aucun fichier de `src/` ne l'importe ; sans `CI` ni `E2E_BASE_JETABLE`, avec `E2E_BASE=dev`, ou avec un hôte autre que `127.0.0.1` ou `localhost` : saut annoncé par un message explicite, aucune connexion ouverte ; `DATABASE_URL_MIGRATION` jamais prise, `.env.local` jamais lu, utilisateur autre que `app_facturation` refusé ; identifiants différents d'une exécution à l'autre ; suppression par `id = ANY($1::uuid[])` de la liste exacte, sans `LIKE` ; refus si `VERCEL_ENV` est défini, pour toute valeur, sans connexion ; adresse hors de l'exécution refusée. `scripts/e2e-base-jetable.test.mjs` : `E2E_BASE_JETABLE=1` transmis à Playwright en mode jetable seulement.
 
 ### Vérifications manuelles (développeur)
 
@@ -358,9 +368,9 @@ Dans cet ordre, chacun vu en échec avant le code.
 | `src/components/compte/*`, `src/components/gabarits/*` | Formulaire de connexion, bouton de déconnexion, incident dans les formulaires |
 | `src/textes/compte.ts`, `src/textes/emails.ts` | Textes de la connexion ; texte de `compte.existant` |
 | `src/server/actions/inventaire.test.ts` | Règle de `(compte)/` |
-| `e2e/*.spec.ts`, `e2e/organisation-e2e.ts`, `playwright.config.ts` | Nouveaux tests, organisation de test, `connexion` dans `mobile-390` |
+| `e2e/*.spec.ts`, `e2e/organisation-e2e.ts`, `e2e/organisation-e2e.spec.ts`, `playwright.config.ts`, `scripts/e2e-base-jetable.mjs` (`E2E_BASE_JETABLE=1`) | Nouveaux tests, organisation de test, `connexion` dans `mobile-390` |
 | `scripts/controle-deploiement.mjs` | `comptes:*`, `/get-session`, `/connexion`, `/compte` |
-| `docs/PLAN.md` 7, `docs/DESIGN.md` 3.1, `docs/STRUCTURE.md` 2, 3 et 7, `docs/THREATS.md` 10, `docs/features/controle-deploiement.md`, `docs/features/socle-interface.md`, `docs/features/inscription.md`, `CLAUDE.md` | Dette close, zone `(compte)`, liste des points ouverts, contrôle |
+| `docs/THREATS.md` 8 (RR-12), `docs/PLAN.md` 7, `docs/DESIGN.md` 3.1, `docs/STRUCTURE.md` 2, 3 et 7, `docs/THREATS.md` 10, `docs/features/controle-deploiement.md`, `docs/features/socle-interface.md`, `docs/features/inscription.md`, `CLAUDE.md` | Dette close, zone `(compte)`, liste des points ouverts, contrôle |
 
 ## Reporté
 
@@ -373,20 +383,22 @@ Dans cet ordre, chacun vu en échec avant le code.
 
 ## Limites connues
 
-- **Blocage d'un compte par un tiers** (T-43) : 5 requêtes bloquent la connexion d'une adresse 15 minutes, renouvelables (section 3). Accepté : temporaire et limité.
+- **Blocage d'un compte par un tiers** (T-43) : 5 requêtes bloquent la connexion d'une adresse 15 minutes, renouvelables (section 3), sans rien apprendre sur l'existence du compte. Risque résiduel RR-12 de `THREATS.md` (décision 5).
 - **Durée au-delà du plancher** : une base lente rend l'écart mesurable (section 2.2), comme en 1.1.
-- **Reconnexion hebdomadaire** : une session ne dure que 7 jours, même active (question 3).
+- **Reconnexion hebdomadaire** : une session ne dure que 7 jours, même active (décision 3).
 - **Session antérieure gardée** : se reconnecter ne ferme pas la session précédente du même navigateur ou d'un autre ; visible et révocable en 1.5.
 - **Pages inertes en production** jusqu'à la 1.3 : `/connexion` y affiche une erreur à l'envoi (section 1.3).
 - **Ligne `[auth] warn` par échec** : un essai en masse remplit le journal technique d'autant de lignes, bornées par les limites de la section 3.
 
-## Questions ouvertes
+## Décisions
 
-Trois vrais choix, chacun avec la recommandation de l'assistant, appliquée dans la fiche en attendant la réponse.
+Prises par le développeur le 2026-10-14.
 
-1. **`/get-session` : fermé** (recommandé), ou ouvert comme le demande la consigne de la 1.2 ? Ouvert, il renverrait le jeton de session en clair dans un corps JSON, lisible par tout script de la page (S-82), sans usage : les pages lisent la session côté serveur. L'ouvrir demanderait de filtrer son corps, donc un traitement de plus pour rien.
-2. **Page d'arrivée : nouvelle zone `(compte)/` avec `/compte`** (recommandé), ou arrivée sur `/tableau-de-bord` ? Sans organisation, `/tableau-de-bord` répond « introuvable » à tout utilisateur jusqu'à la 2.1. La zone `(compte)/` ajoute une fonction de protection (`lireComptePourPage`) et une règle d'inventaire, réutilisées par la 1.4, la 1.5 et la 2.1.
-3. **Durée de session : 7 jours sans prolongation** (recommandé), 7 jours prolongés à chaque jour d'activité (défaut de Better Auth), ou 24 heures sans prolongation ? La durée fixe borne la vie d'une session volée et garde le cookie aligné sur la base ; 24 heures, avec la double authentification de la 1.4, demanderait un code chaque jour aux Propriétaires et Comptables.
+1. **`/get-session` reste fermé** (section 1.2).
+2. **Zone `(compte)/` et page `/compte` comme arrivée** (section 5).
+3. **Session de 7 jours sans prolongation** (section 4.1).
+4. **Organisation de test créée par SQL**, aux conditions de la section 8.2, chacune testée (test 26).
+5. **Risque assumé de la limite par compte**, inscrit dans `THREATS.md` (RR-12) : un tiers peut bloquer la connexion d'un compte 15 minutes, sans apprendre s'il existe.
 
 ## Décisions par défaut
 
@@ -402,6 +414,6 @@ Appliquées par l'assistant le 2026-10-14, selon sa recommandation, sauf avis co
 8. **Identifiant d'incident** : l'UUID de la ligne `[auth]`, une ligne par réponse `erreur` (section 6).
 9. **`compte.existant`** : nouveau texte, sans lien ; liens en 1.3 (section 7).
 10. **Purge des sessions expirées** par la tâche quotidienne (section 4.4).
-11. **Organisation de test par SQL** dans `e2e/`, garde-fous du nettoyage de la 1.1 (section 8.2).
+11. **Organisation de test par SQL** : remplacée par la décision 4.
 12. **Une seule PR** (« Découpage en PR »).
 13. **Contrôle après déploiement étendu** : `comptes:*`, `/get-session`, `/connexion`, `/compte` (section 10).
