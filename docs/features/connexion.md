@@ -1,6 +1,6 @@
 # Fonctionnalité : connexion et déconnexion
 
-Statut : validée le 2026-10-14. Fiche rédigée le même jour ; les trois vrais choix et l'organisation de test tranchés par le développeur (section « Décisions »), les autres points selon la recommandation de l'assistant (section « Décisions par défaut »).
+Statut : validée le 2026-10-14 ; implémentée le 2026-10-14 (« Notes de l'implémentation ») ; essai sur la prévisualisation à faire par le développeur.
 
 Jalon 1, fonctionnalité 1.2 de `docs/PLAN.md`. Taille M. Cas d'utilisation : UC-02 (sans l'étape 3, double authentification, qui vient en 1.4). Exigences : F-002 (connexion, déconnexion), S-11, S-17 (partie session), S-54, S-63, S-81, S-82, S-85. Menaces : T-01, T-03, T-07, T-17, T-39, T-43, T-55.
 
@@ -97,7 +97,7 @@ Pourquoi : l'inscription étant fermée en production, aucun compte n'y existe ;
 
 **Même réponse** : même statut, mêmes en-têtes, même corps, octet pour octet, aucun `Set-Cookie`. La traduction ne regarde que le statut et le code de Better Auth, et les trois codes mènent à la même fonction de réponse.
 
-**Message affiché** (`src/textes/compte.ts`) : « Adresse email ou mot de passe incorrect. Si vous venez de créer votre compte, confirmez d'abord votre adresse. » suivi du lien « Recevoir un nouveau lien de confirmation » (formulaire de renvoi de la 1.1). Le message vaut pour les trois cas sans en distinguer aucun.
+**Message affiché** (`src/textes/compte.ts`) : « Email ou mot de passe incorrect », mot pour mot `DESIGN-SYSTEM.md` (« Connexion échouée »). Sous le formulaire, une aide fixe, affichée quel que soit le résultat : « Si vous venez de créer votre compte, confirmez d'abord votre adresse. », suivie du lien « Recevoir un nouveau lien de confirmation » (`/connexion/nouveau-lien`, formulaire de renvoi de la 1.1). Rien ne distingue les trois cas. Corrigé à l'implémentation : la première version de la fiche plaçait l'aide dans le message d'échec, ce qui s'écartait du texte imposé.
 
 #### 2.2 Même durée
 
@@ -175,7 +175,8 @@ Aucun utilisateur n'a d'organisation avant la 2.1, et toute page de `(app)/` exi
 
 | Adresse | Zone | Contenu |
 |---|---|---|
-| `/connexion` | `(public)` | Email, mot de passe, « Se connecter » ; message de la section 2.1 ; lien « Recevoir un nouveau lien de confirmation » ; lien « Créer un compte ». Envoi par `fetch` en JSON. Succès : navigation complète vers `/compte` |
+| `/connexion` | `(public)` | Email, mot de passe, « Se connecter » ; message et aide de la section 2.1 ; lien « Recevoir un nouveau lien de confirmation » ; lien « Créer un compte ». Envoi par `fetch` en JSON. Succès : `/compte` (navigation du routeur, page jamais visitée auparavant, rendue par le serveur avec le nouveau cookie) |
+| `/connexion/nouveau-lien` | `(public)` | Formulaire de renvoi du lien de confirmation (1.1), réponse identique pour toute adresse |
 | `/compte` | `(compte)` | « Vous êtes connecté » et le nom de l'utilisateur ; bouton « Se déconnecter ». La 2.1 y ajoutera la création d'organisation et la liste des organisations (UC-02, étape 4) |
 | Gabarit de `(app)/` | `(app)` | Bouton « Se déconnecter » en bas de la barre latérale (et du menu replié sous 768 px) |
 | `/inscription/verifiee` | `(public)` | Lien vers `/compte` (la vérification ouvre une session) |
@@ -288,25 +289,25 @@ Une seule PR. La connexion reste fermée en production (section 1.3) : rien de n
 
 ## Critères d'acceptation
 
-- [ ] Les seuls points d'entrée de `/api/auth` qui ne répondent pas comme une adresse inexistante sont les cinq de la section 1, vérifié pour chaque point déclaré par l'instance ; `GET /get-session` répond comme une adresse inexistante (T-55, S-82).
-- [ ] Adresse inconnue, mauvais mot de passe, compte non vérifié avec son bon mot de passe : même statut, mêmes en-têtes, même corps, aucun `Set-Cookie`, durée de 800 ms au moins (T-07).
-- [ ] Aucun email n'est envoyé par une tentative de connexion, compte non vérifié compris.
-- [ ] La sixième tentative en 15 minutes sur une même adresse, connue ou non, depuis des adresses IP différentes, reçoit `trop_de_requetes`, même avec le bon mot de passe ; la onzième depuis une même adresse IP aussi ; aucune adresse email ni IP en clair dans `compteur_debit` (T-01, T-43).
-- [ ] La connexion réussie répond `{ ok: true }`, sans jeton dans le corps ; cookie `HttpOnly`, `SameSite=Lax`, `Max-Age` de 7 jours ; `Secure` en `https`.
-- [ ] Un cookie posé avant la connexion n'est pas repris : le jeton change (T-03).
-- [ ] La session n'est jamais prolongée : `expiresAt` inchangé après une lecture un jour plus tard (horloge simulée).
-- [ ] Après la déconnexion, l'ancien cookie rejoué donne une session absente, et `/compte` comme `/tableau-de-bord` répondent « introuvable » (T-03, UC-02 abus 4).
-- [ ] Une déconnexion dont la suppression en base échoue répond `erreur` avec un incident, et le cookie n'est pas effacé.
-- [ ] `POST /sign-in/email` et `POST /sign-out` sans `Origin`, avec une autre origine ou `Origin: null` : refusés, Better Auth jamais appelé (S-81, T-17).
-- [ ] `rememberMe`, `callbackURL`, un champ inconnu, un corps de plus de 4 Kio ou un autre type que JSON : refusés, Better Auth jamais appelé.
-- [ ] En production, `POST /sign-in/email` et `POST /sign-out` répondent comme un chemin fermé, octet pour octet.
-- [ ] Toute réponse `erreur` de `/api/auth` porte un `incident` au format UUID, égal à celui de la ligne `[auth]` du journal ; les formulaires l'affichent (dette de `PLAN.md`).
-- [ ] Le modèle `compte.existant` porte le nouveau texte (section 7).
-- [ ] `/compte` sans session, avec un cookie forgé, ou pour un utilisateur non vérifié : page « introuvable » ; chaque `page.tsx` de `(compte)/` appelle `lireComptePourPage` (test d'inventaire).
-- [ ] Les sessions expirées sont supprimées par la tâche quotidienne ; une session en cours est gardée.
-- [ ] Gabarit de l'application connecté vérifié à 1280 et 390 px (section 8.3), captures jointes.
-- [ ] Contrôle après déploiement : `comptes:*` et `auth:identique` étendus ; en local, seuls `comptes:*` échouent.
-- [ ] `npm run verifier` et `npm run test:integration` verts, sorties montrées.
+- [x] Les seuls points d'entrée de `/api/auth` qui ne répondent pas comme une adresse inexistante sont les cinq de la section 1, vérifié pour chaque point déclaré par l'instance ; `GET /get-session` répond comme une adresse inexistante (T-55, S-82).
+- [x] Adresse inconnue, mauvais mot de passe, compte non vérifié avec son bon mot de passe : même statut, mêmes en-têtes, même corps, aucun `Set-Cookie`, durée de 800 ms au moins (T-07).
+- [x] Aucun email n'est envoyé par une tentative de connexion, compte non vérifié compris.
+- [x] La sixième tentative en 15 minutes sur une même adresse, connue ou non, depuis des adresses IP différentes, reçoit `trop_de_requetes`, même avec le bon mot de passe ; la onzième depuis une même adresse IP aussi ; aucune adresse email ni IP en clair dans `compteur_debit` (T-01, T-43).
+- [x] La connexion réussie répond `{ ok: true }`, sans jeton dans le corps ; cookie `HttpOnly`, `SameSite=Lax`, `Max-Age` de 7 jours ; `Secure` en `https`.
+- [x] Un cookie posé avant la connexion n'est pas repris : le jeton change (T-03).
+- [x] La session n'est jamais prolongée : `expiresAt` inchangé après une lecture un jour plus tard (horloge simulée).
+- [x] Après la déconnexion, l'ancien cookie rejoué donne une session absente, et `/compte` comme `/tableau-de-bord` répondent « introuvable » (T-03, UC-02 abus 4).
+- [x] Une déconnexion dont la suppression en base échoue répond `erreur` avec un incident, et le cookie n'est pas effacé.
+- [x] `POST /sign-in/email` et `POST /sign-out` sans `Origin`, avec une autre origine ou `Origin: null` : refusés, Better Auth jamais appelé (S-81, T-17).
+- [x] `rememberMe`, `callbackURL`, un champ inconnu, un corps de plus de 4 Kio ou un autre type que JSON : refusés, Better Auth jamais appelé.
+- [x] En production, `POST /sign-in/email` et `POST /sign-out` répondent comme un chemin fermé, octet pour octet.
+- [x] Toute réponse `erreur` de `/api/auth` porte un `incident` au format UUID, égal à celui de la ligne `[auth]` du journal ; les formulaires l'affichent (dette de `PLAN.md`).
+- [x] Le modèle `compte.existant` porte le nouveau texte (section 7).
+- [x] `/compte` sans session, avec un cookie forgé, ou pour un utilisateur non vérifié : page « introuvable » ; chaque `page.tsx` de `(compte)/` appelle `lireComptePourPage` (test d'inventaire).
+- [x] Les sessions expirées sont supprimées par la tâche quotidienne ; une session en cours est gardée.
+- [x] Gabarit de l'application connecté vérifié à 1280 et 390 px (section 8.3), captures jointes.
+- [x] Contrôle après déploiement : `comptes:*` et `auth:identique` étendus ; en local, seuls `comptes:*` échouent.
+- [x] `npm run verifier` et `npm run test:integration` verts, sorties montrées.
 
 ## Tests à écrire
 
@@ -314,38 +315,38 @@ Dans cet ordre, chacun vu en échec avant le code.
 
 ### Tests d'attaque, puis unitaires
 
-1. [ ] **T-55 et S-82, liste fermée** — `src/server/auth/points-entree.attaque.test.ts` : l'inventaire passe à cinq points ouverts ; `GET /get-session`, `POST /get-session`, `/sign-in/social`, `/revoke-session`, `/list-sessions` reçoivent `reponseInexistante()`, octet pour octet ; `auth.handler` jamais appelé (espion).
-2. [ ] **T-07, réponse unique** — même fichier, Better Auth simulé : `401 INVALID_EMAIL_OR_PASSWORD`, `403 EMAIL_NOT_VERIFIED`, `401` sans code et `400 INVALID_EMAIL` donnent la même réponse (statut, en-têtes, corps), sans `Set-Cookie` ; un `Set-Cookie` présent sur un refus n'est pas transmis.
-3. [ ] **S-82, corps de la connexion** — même fichier : un `200` de Better Auth avec `token` et `user` dans le corps donne exactement `{ ok: true }` et ses `Set-Cookie` ; un `200` sans cookie de session, ou avec `twoFactorRedirect`, donne `erreur` avec un incident.
-4. [ ] **Origine et entrée falsifiée** — même fichier : `Origin` absente, étrangère, `null`, `Sec-Fetch-Site: cross-site` sur les deux `POST` ; `rememberMe`, `callbackURL`, champ inconnu, mot de passe de 129 caractères, adresse hors de la règle de la porte, corps de 4 Kio + 1, autre type que JSON, données dans l'adresse ; `/sign-out` avec un corps non vide. Refus, Better Auth jamais appelé, limite par compte jamais comptée.
-5. [ ] **Comptes fermés en production** — même fichier : avec `estProduction` vrai, les cinq `POST` reçoivent exactement `reponseInexistante()` ; témoin hors production.
-6. [ ] **Limite par compte** — même fichier, `limiterCompte` simulé : appelé avec l'adresse validée et normalisée, avant Better Auth ; refus : `trop_de_requetes`, Better Auth jamais appelé ; en échec : `erreur` avec incident ; jamais appelé pour `/sign-out` ni pour une entrée refusée.
-7. [ ] **Durée plancher** — `points-entree.test.ts`, horloge simulée : la connexion retenue jusqu'à 800 ms pour un refus, une limite atteinte, une entrée invalide et un succès ; `/sign-out` sans plancher.
-8. [ ] **Déconnexion vérifiée** — `points-entree.test.ts` : session relue absente : `{ ok: true }` avec les `Set-Cookie` d'effacement ; session encore lisible ou relecture qui lève : `erreur`, incident, aucun `Set-Cookie` ; l'en-tête `cookie` n'est transmis qu'à `/sign-out`.
-9. [ ] **Identifiant d'incident** — `points-entree.test.ts` et `journal.test.ts` : chaque chemin vers `erreur` (exception, `5xx`, limite en échec, déconnexion non vérifiée, `200` inattendu) porte un UUID égal à celui de l'unique ligne `[auth]` écrite ; aucune autre propriété dans le corps.
-10. [ ] **Configuration** — `config.test.ts`, ajouts : `session.expiresIn` 604 800, `disableSessionRefresh` vrai, `cookieCache` absent, `sendOnSignIn` absent ou faux ; attributs du cookie de session pour une `baseURL` en `https`, `Max-Age` 604 800.
-11. [ ] **Limites** — `limites.test.ts` : `auth.connexion`, `auth.connexion_compte`, `auth.deconnexion` présentes, sous 24 h ; `par` `adresse_ip` ou `adresse_email` ; `reglesBetterAuth()` couvre exactement les chemins ouverts qui passent par Better Auth ; aucune règle partagée entre deux limites `auth.*`. `debit/better-auth.test.ts` : la règle de `/sign-in/email` est acceptée par le stockage.
-12. [ ] **Zone compte** — `inventaire.test.ts` : chaque `page.tsx` de `(compte)/` appelle `lireComptePourPage`, aucune métadonnée ni `loading.tsx` ; `exposer.test.ts` : sans session, `lireComptePourPage` appelle `notFound()` sans appeler `lire` ; avec session, `lire` ne reçoit que l'identifiant de l'utilisateur.
-13. [ ] **Modèle `compte.existant`** — `modeles.test.ts` : nouveau texte, aucun lien.
-14. [ ] **Client** — `appel-auth.test.ts` : `incident` lu seulement au format UUID ; `identifiants_incorrects` reconnue ; raison inconnue : `erreur`.
+1. [x] **T-55 et S-82, liste fermée** — `src/server/auth/points-entree.attaque.test.ts` : l'inventaire passe à cinq points ouverts ; `GET /get-session`, `POST /get-session`, `/sign-in/social`, `/revoke-session`, `/list-sessions` reçoivent `reponseInexistante()`, octet pour octet ; `auth.handler` jamais appelé (espion).
+2. [x] **T-07, réponse unique** — même fichier, Better Auth simulé : `401 INVALID_EMAIL_OR_PASSWORD`, `403 EMAIL_NOT_VERIFIED`, `401` sans code et `400 INVALID_EMAIL` donnent la même réponse (statut, en-têtes, corps), sans `Set-Cookie` ; un `Set-Cookie` présent sur un refus n'est pas transmis.
+3. [x] **S-82, corps de la connexion** — même fichier : un `200` de Better Auth avec `token` et `user` dans le corps donne exactement `{ ok: true }` et ses `Set-Cookie` ; un `200` sans cookie de session, ou avec `twoFactorRedirect`, donne `erreur` avec un incident.
+4. [x] **Origine et entrée falsifiée** — même fichier : `Origin` absente, étrangère, `null`, `Sec-Fetch-Site: cross-site` sur les deux `POST` ; `rememberMe`, `callbackURL`, champ inconnu, mot de passe de 129 caractères, adresse hors de la règle de la porte, corps de 4 Kio + 1, autre type que JSON, données dans l'adresse ; `/sign-out` avec un corps non vide. Refus, Better Auth jamais appelé, limite par compte jamais comptée.
+5. [x] **Comptes fermés en production** — même fichier : avec `estProduction` vrai, les cinq `POST` reçoivent exactement `reponseInexistante()` ; témoin hors production.
+6. [x] **Limite par compte** — même fichier, `limiterCompte` simulé : appelé avec l'adresse validée et normalisée, avant Better Auth ; refus : `trop_de_requetes`, Better Auth jamais appelé ; en échec : `erreur` avec incident ; jamais appelé pour `/sign-out` ni pour une entrée refusée.
+7. [x] **Durée plancher** — `points-entree.test.ts`, horloge simulée : la connexion retenue jusqu'à 800 ms pour un refus, une limite atteinte, une entrée invalide et un succès ; `/sign-out` sans plancher.
+8. [x] **Déconnexion vérifiée** — `points-entree.test.ts` : session relue absente : `{ ok: true }` avec les `Set-Cookie` d'effacement ; session encore lisible ou relecture qui lève : `erreur`, incident, aucun `Set-Cookie` ; l'en-tête `cookie` n'est transmis qu'à `/sign-out`.
+9. [x] **Identifiant d'incident** — `points-entree.test.ts` et `journal.test.ts` : chaque chemin vers `erreur` (exception, `5xx`, limite en échec, déconnexion non vérifiée, `200` inattendu) porte un UUID égal à celui de l'unique ligne `[auth]` écrite ; aucune autre propriété dans le corps.
+10. [x] **Configuration** — `config.test.ts`, ajouts : `session.expiresIn` 604 800, `disableSessionRefresh` vrai, `cookieCache` absent, `sendOnSignIn` absent ou faux ; attributs du cookie de session pour une `baseURL` en `https`, `Max-Age` 604 800.
+11. [x] **Limites** — `limites.test.ts` : `auth.connexion`, `auth.connexion_compte`, `auth.deconnexion` présentes, sous 24 h ; `par` `adresse_ip` ou `adresse_email` ; `reglesBetterAuth()` couvre exactement les chemins ouverts qui passent par Better Auth ; aucune règle partagée entre deux limites `auth.*`. `debit/better-auth.test.ts` : la règle de `/sign-in/email` est acceptée par le stockage.
+12. [x] **Zone compte** — `inventaire.test.ts` : chaque `page.tsx` de `(compte)/` appelle `lireComptePourPage`, aucune métadonnée ni `loading.tsx` ; `exposer.test.ts` : sans session, `lireComptePourPage` appelle `notFound()` sans appeler `lire` ; avec session, `lire` ne reçoit que l'identifiant de l'utilisateur.
+13. [x] **Modèle `compte.existant`** — `modeles.test.ts` : nouveau texte, aucun lien.
+14. [x] **Client** — `appel-auth.test.ts` : `incident` lu seulement au format UUID ; `identifiants_incorrects` reconnue ; raison inconnue : `erreur`.
 
 ### Tests d'intégration, avec base
 
-15. [ ] `src/server/auth/connexion.integration.test.ts` (par `traiterRequeteAuth`, vraie instance, banc de la 1.1) : compte vérifié, compte non vérifié, adresse inconnue ; les trois refus identiques octet pour octet, chacun d'au moins 800 ms ; aucun email dans le transport `memoire` ; connexion réussie, puis `lireSession` avec le cookie reçu ; le jeton diffère de celui de la session ouverte par la vérification ; déconnexion, puis `lireSession` avec l'ancien cookie : `null`, et ligne de session absente en base.
-16. [ ] Même fichier, **limites** : 5 tentatives sur une adresse depuis 5 adresses IP, la sixième refusée avec le bon mot de passe ; même chose pour une adresse inconnue ; `compteur_debit` sans adresse en clair. Nettoyage des clés et des comptes.
-17. [ ] Même fichier, **sans prolongation** : session lue après avoir reculé `updated_at` et `created_at` de deux jours en base ; `expires_at` inchangé.
-18. [ ] `src/server/db/comptes.integration.test.ts` : `purgerSessionsExpirees` supprime une session expirée et garde une session en cours ; nouvelle étape dans `etapes.test.ts`.
+15. [x] `src/server/db/connexion.integration.test.ts` (dans `src/server/db/`, seul dossier dont les tests peuvent importer `db`) (par `traiterRequeteAuth`, vraie instance, banc de la 1.1) : compte vérifié, compte non vérifié, adresse inconnue ; les trois refus identiques octet pour octet, chacun d'au moins 800 ms ; aucun email dans le transport `memoire` ; connexion réussie, puis `lireSession` avec le cookie reçu ; le jeton diffère de celui de la session ouverte par la vérification ; déconnexion, puis `lireSession` avec l'ancien cookie : `null`, et ligne de session absente en base.
+16. [x] Même fichier, **limites** : 5 tentatives sur une adresse depuis 5 adresses IP, la sixième refusée avec le bon mot de passe ; même chose pour une adresse inconnue ; `compteur_debit` sans adresse en clair. Nettoyage des clés et des comptes.
+17. [x] Même fichier, **sans prolongation** : session lue après avoir reculé `updated_at` et `created_at` de deux jours en base ; `expires_at` inchangé.
+18. [x] `src/server/db/comptes.integration.test.ts` : `purgerSessionsExpirees` supprime une session expirée et garde une session en cours ; nouvelle étape dans `etapes.test.ts`.
 
 ### Tests de bout en bout
 
-19. [ ] **Parcours UC-02** — `e2e/connexion.spec.ts` (ordinateur-1280 et mobile-390) : compte créé par le parcours de la 1.1 ; déconnexion ; connexion par le formulaire ; arrivée sur `/compte` ; la requête porte `Origin` ; le corps de la réponse ne contient pas le jeton ; cookie `HttpOnly`, `SameSite=Lax`, `Max-Age` de 7 jours.
-20. [ ] **T-07 en bout en bout** — même fichier : adresse inconnue, mauvais mot de passe, compte non vérifié : même écran, même message, même corps de réponse ; lien vers le renvoi présent.
-21. [ ] **T-03** — même fichier : cookie copié avant la déconnexion, puis rejoué dans un nouveau contexte : `/compte` et `/tableau-de-bord` donnent la page « introuvable » ; retour arrière du navigateur après déconnexion : aucune donnée affichée.
-22. [ ] **T-01 et T-43** — `e2e/auth.attaque.spec.ts` : six tentatives sur une adresse, chacune avec un `X-Forwarded-For` différent : la sixième reçoit `trop_de_requetes` ; `GET /get-session` avec un cookie valide : réponse identique à `/api/auth/n-existe-pas`.
-23. [ ] **Incident affiché** — `e2e/erreurs.attaque.spec.ts`, serveur en panne : la connexion affiche « Une erreur est survenue. » et un identifiant ; cet identifiant figure dans `.e2e-journaux/` sur une ligne `[auth]`, sans adresse ni jeton.
-24. [ ] **Gabarit connecté** — `e2e/affichage-connecte.spec.ts` (outil de la section 8.2) : vérifications de la section 8.3 à 1280, 390 et 360 px, focus au clavier, captures.
-25. [ ] **Contrôle après déploiement** — `e2e/controle-deploiement.spec.ts`, serveur factice : `comptes:*` échoue si l'un des cinq `POST` diffère d'un chemin inexistant ; `auth:identique` échoue si `/get-session` diffère ; `/compte` contrôlé comme `/tableau-de-bord`.
-26. [ ] **Organisation de test, conditions de la décision 4** — `e2e/organisation-e2e.spec.ts` (faux `Pool`, sans base), un test par condition : aucun fichier de `src/` ne l'importe ; sans `CI` ni `E2E_BASE_JETABLE`, avec `E2E_BASE=dev`, ou avec un hôte autre que `127.0.0.1` ou `localhost` : saut annoncé par un message explicite, aucune connexion ouverte ; `DATABASE_URL_MIGRATION` jamais prise, `.env.local` jamais lu, utilisateur autre que `app_facturation` refusé ; identifiants différents d'une exécution à l'autre ; suppression par `id = ANY($1::uuid[])` de la liste exacte, sans `LIKE` ; refus si `VERCEL_ENV` est défini, pour toute valeur, sans connexion ; adresse hors de l'exécution refusée. `scripts/e2e-base-jetable.test.mjs` : `E2E_BASE_JETABLE=1` transmis à Playwright en mode jetable seulement.
+19. [x] **Parcours UC-02** — `e2e/connexion.spec.ts` (ordinateur-1280 et mobile-390) : compte créé par le parcours de la 1.1 ; déconnexion ; connexion par le formulaire ; arrivée sur `/compte` ; la requête porte `Origin` ; le corps de la réponse ne contient pas le jeton ; cookie `HttpOnly`, `SameSite=Lax`, `Max-Age` de 7 jours.
+20. [x] **T-07 en bout en bout** — même fichier : adresse inconnue, mauvais mot de passe, compte non vérifié : même écran, même message, même corps de réponse ; lien vers le renvoi présent.
+21. [x] **T-03** — même fichier : cookie copié avant la déconnexion, puis rejoué dans un nouveau contexte : `/compte` et `/tableau-de-bord` donnent la page « introuvable » ; retour arrière du navigateur après déconnexion : aucune donnée affichée.
+22. [x] **T-01 et T-43** — `e2e/auth.attaque.spec.ts` : six tentatives sur une adresse, chacune avec un `X-Forwarded-For` différent : la sixième reçoit `trop_de_requetes` ; `GET /get-session` avec un cookie valide : réponse identique à `/api/auth/n-existe-pas`.
+23. [x] **Incident affiché** — `e2e/erreurs.attaque.spec.ts`, serveur en panne : la connexion affiche « Une erreur est survenue. » et un identifiant ; cet identifiant figure dans `.e2e-journaux/` sur une ligne `[auth]`, sans adresse ni jeton.
+24. [x] **Gabarit connecté** — `e2e/affichage-connecte.spec.ts` (outil de la section 8.2) : vérifications de la section 8.3 à 1280, 390 et 360 px, focus au clavier, captures.
+25. [x] **Contrôle après déploiement** — `e2e/controle-deploiement.spec.ts`, serveur factice : `comptes:*` échoue si l'un des cinq `POST` diffère d'un chemin inexistant ; `auth:identique` échoue si `/get-session` diffère ; `/compte` contrôlé comme `/tableau-de-bord`.
+26. [x] **Organisation de test, conditions de la décision 4** — `e2e/organisation-e2e.spec.ts` (faux `Pool`, sans base), un test par condition : aucun fichier de `src/` ne l'importe ; sans `CI` ni `E2E_BASE_JETABLE`, avec `E2E_BASE=dev`, ou avec un hôte autre que `127.0.0.1` ou `localhost` : saut annoncé par un message explicite, aucune connexion ouverte ; `DATABASE_URL_MIGRATION` jamais prise, `.env.local` jamais lu, utilisateur autre que `app_facturation` refusé ; identifiants différents d'une exécution à l'autre ; suppression par `id = ANY($1::uuid[])` de la liste exacte, sans `LIKE` ; refus si `VERCEL_ENV` est défini, pour toute valeur, sans connexion ; adresse hors de l'exécution refusée. `scripts/e2e-base-jetable.test.mjs` : `E2E_BASE_JETABLE=1` transmis à Playwright en mode jetable seulement.
 
 ### Vérifications manuelles (développeur)
 
@@ -380,6 +381,7 @@ Dans cet ordre, chacun vu en échec avant le code.
 - **1.6** : `freshAge` et nouvelle authentification.
 - **2.1** : arrivée sur la dernière organisation active ou la liste (UC-02, étape 4) ; création d'organisation dans `(compte)/`.
 - **8.1** : signalement des lignes `[auth] error` et du rythme des `[auth] warn` (essais en masse) au service de suivi.
+- **Prévus pour la 1.2 par `socle-interface.md`, non repris ici** (constaté à l'implémentation) : le nom de l'utilisateur en bas de la barre latérale (section 10 de la 0.6 ; demande une lecture de `user`, RR-8) et le scénario « base injoignable avec une session valide » (section 4.3 de la 0.6) passent au jalon 2. La redirection de `connexion_requise` vers `/connexion` (section 2.2 de la 0.6) : question ouverte, voir « Notes de l'implémentation ».
 
 ## Limites connues
 
@@ -417,3 +419,33 @@ Appliquées par l'assistant le 2026-10-14, selon sa recommandation, sauf avis co
 11. **Organisation de test par SQL** : remplacée par la décision 4.
 12. **Une seule PR** (« Découpage en PR »).
 13. **Contrôle après déploiement étendu** : `comptes:*`, `/get-session`, `/connexion`, `/compte` (section 10).
+
+## Notes de l'implémentation
+
+Le 2026-10-14, une seule PR (branche `feat/1.2-connexion`) : commits `docs(1.2): fiche`, `docs(1.2): décisions`, `test(1.2)` (phase rouge), `feat(1.2)`.
+
+**Phase rouge** (commit `test(1.2)`). Unitaires : 72 tests en échec dans 12 fichiers, chacun faute du code (points d'entrée absents de la liste, donc réponse inexistante au lieu de 401, 400, 429 ou 500 ; `consignerIncidentAuth`, `lireComptePourPage`, `purgerSessionsExpirees` et les trois limites absentes ; session sans réglage ; texte de `compte.existant` ; étape de la tâche). Intégration (sur `dev`) : 9 échecs, mêmes causes. Bout en bout (site construit avant le code, base jetable) : 67 échecs (pages `/connexion`, `/connexion/nouveau-lien` et `/compte` absentes, points d'entrée fermés, contrôle après déploiement sans les nouveaux contrôles, marque de la base jetable absente) ; `affichage-connecte.spec.ts` et `organisation-e2e.spec.ts` non chargés (module `e2e/organisation-e2e.ts` absent). La construction vérifiant les types de tout le dépôt, le site de la phase rouge a été construit avec les tests remisés (`git stash`), puis les tests restaurés.
+
+**Passaient avant le code, et pourquoi** : les chemins qui restent fermés (`/get-session`, `/sign-in/social`, sessions) et l'identité des quatre échecs entre eux (tous en 404 avant le code) : garde-fous de non-régression ; « la limite par compte n'est jamais comptée » ailleurs (la dépendance n'existait pas) ; `config.test.ts`, durée et `Max-Age` de 7 jours et `sendOnSignIn` absent (valeurs par défaut de Better Auth, figées) ; les démonstrations de l'inventaire et `RANGS` (outillage de test) ; la zone `(compte)` sans session en bout en bout (la page n'existait pas : 404 « introuvable » ; le test d'inventaire exige qu'elle existe) ; `/get-session` avec un cookie valide (déjà fermé) ; la règle « code dans e2e/ seulement » de l'organisation de test.
+
+**Tests modifiés, sans changer ce qu'ils prouvent** :
+
+- Tests de la 1.1 qui attendaient un corps « erreur » exact (`points-entree.test.ts`, `journal.attaque.test.ts`, `mots-de-passe.attaque.test.ts`, `e2e/erreurs.attaque.spec.ts`) : l'identifiant d'incident s'ajoute au corps (dette soldée) ; ils le vérifient désormais.
+- Listes de la 1.1 (trois points ouverts, `/sign-in/email` et `/sign-out` fermés, `INSCRIPTION_OUVERTE_EN_PRODUCTION`, contrôles `inscription:*`, 34 requêtes du contrôle) : étendues à cinq points, `COMPTES_OUVERTS_EN_PRODUCTION`, `comptes:*`, 46 requêtes.
+- `e2e/pages-livrees.ts` : la première action de « Adresse vérifiée » est le nouveau lien « Accéder à mon compte ».
+- Texte de la connexion échouée : « Email ou mot de passe incorrect », mot pour mot `DESIGN-SYSTEM.md` ; l'aide sur la confirmation devient une phrase fixe de la page (section 2.1).
+- `gestionnaire.test.ts` : la relecture de session est simulée sur l'adaptateur (`findSession`) au lieu d'`auth.api.getSession` (constat ci-dessous).
+- `e2e/connexion.spec.ts` et `e2e/erreurs.attaque.spec.ts` : l'alerte est cherchée dans le formulaire, l'annonceur de route de Next.js portant aussi `role="alert"`.
+- `e2e/affichage-connecte.spec.ts` : le lien d'évitement, masqué hors focus (1 px), n'est pas compté parmi les cibles de 44 px ; son anneau de focus reste vérifié.
+- Banc d'inscription, `LIMITES_TEST`, appels de `creerTraitementAuth` des tests de la 1.1 : nouvelles dépendances exigées par le type.
+
+**Constats et corrections pendant l'implémentation** :
+
+- **Déconnexion** : relire la session par `auth.api.getSession` faisait écrire par l'extension `nextCookies` un `Set-Cookie` d'effacement dans notre réponse (cookie vide resté dans le navigateur), y compris quand la déconnexion échouait. La relecture passe par `internalAdapter.findSession`, avec le jeton du cookie reçu (`jetonDeSession`, testée).
+- **Gabarit `(compte)`** : sans session, il s'affichait autour de la page « introuvable », bouton « Se déconnecter » compris. Il appelle désormais `lireComptePourPage`, comme `(app)/layout.tsx` appelle `lirePourPage` ; chaque page continue de se protéger elle-même.
+- **Connexion réussie** : navigation par le routeur (`router.push("/compte")`) plutôt que `window.location.assign`, refusée par la règle de Next.js ; `/compte` n'ayant jamais été visitée, elle est rendue par le serveur avec le nouveau cookie. La déconnexion garde `window.location.replace("/connexion")` : rechargement complet, et l'entrée quittée sort de l'historique.
+- **Test d'intégration** dans `src/server/db/connexion.integration.test.ts` (seul dossier dont les tests importent `db`).
+
+**Point prévu par la 0.6, non repris (question ouverte)** : `socle-interface.md` (section 2.2) prévoyait qu'en 1.2, `connexion_requise` redirige vers `/connexion` avec l'adresse de retour. Non fait : la réponse « introuvable » reste, pour `(app)/` comme pour `(compte)/`, comme décidé dans cette fiche. Les tests de la 0.6 et le contrôle après déploiement reposent sur ce 404. Le nom de l'utilisateur dans la barre latérale et le scénario « base injoignable avec une session valide » passent au jalon 2 (« Reporté »).
+
+**Vérifications** : `npm run verifier` vert (format, lint, typecheck, 59 fichiers et 1 968 tests unitaires, construction, 381 tests de bout en bout sur la base jetable, aucun sauté, ports 3000 et 3101 libres) ; `npm run test:integration` sur `dev` : 22 fichiers, 194 réussis et 1 échec attendu (déjà présent).

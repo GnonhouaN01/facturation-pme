@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { creerTraitementAuth, DUREE_PLANCHER_MS, type Horloge } from "./points-entree";
+import {
+  creerTraitementAuth,
+  DUREE_PLANCHER_MS,
+  jetonDeSession,
+  type Horloge,
+} from "./points-entree";
 
 // Le gestionnaire des points d'entrée ouverts : réponses de Better Auth
 // traduites en une liste fermée, erreurs attrapées, durée plancher (T-07).
@@ -305,10 +310,13 @@ describe("déconnexion vérifiée côté serveur (T-03)", () => {
   });
 
   test.each([
-    ["session encore lisible (suppression avalée par Better Auth)", async () => true],
+    [
+      "session encore lisible (suppression avalée par Better Auth)",
+      async (): Promise<boolean> => true,
+    ],
     [
       "relecture en échec (base en panne)",
-      async () => {
+      async (): Promise<boolean> => {
         throw new Error("Failed query: select ... params: jeton");
       },
     ],
@@ -455,5 +463,24 @@ describe("identifiant d'incident dans toute réponse « erreur » (S-85, dette d
     const gerer = avec(Response.json({ code: "PASSWORD_COMPROMISED" }, { status: 400 }));
     const reponse = await gerer(post("/sign-up/email", INSCRIPTION));
     expect(await reponse.json()).toEqual({ ok: false, raison: "mot_de_passe_compromis" });
+  });
+});
+
+// Ajouté à l'implémentation, avec la relecture par l'adaptateur (section 4.2).
+describe("jetonDeSession", () => {
+  test.each([
+    ["cookie signé", "better-auth.session_token=jeton.signature", "jeton"],
+    ["encodé, parmi d'autres", "a=b; better-auth.session_token=je%2Bton.sig%3D; c=d", "je+ton"],
+    ["absent", "a=b", null],
+    ["sans signature", "better-auth.session_token=jeton", null],
+    ["vide", "better-auth.session_token=", null],
+    ["encodage invalide", "better-auth.session_token=%E0%A4%A.sig", null],
+    ["autre nom qui le contient", "x-better-auth.session_token=jeton.sig", null],
+  ] as const)("%s", (_nom, cookie, attendu) => {
+    expect(jetonDeSession(cookie, "better-auth.session_token")).toBe(attendu);
+  });
+
+  test("aucun en-tête Cookie : null", () => {
+    expect(jetonDeSession(null, "better-auth.session_token")).toBeNull();
   });
 });

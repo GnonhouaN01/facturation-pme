@@ -48,6 +48,14 @@ export const optionsAuth = {
     // Un seul en-tête, fixé ici, valeur unique et valide (section 3.4).
     ipAddress: { ipAddressHeaders: ["x-forwarded-for"] },
   },
+  // Session de 7 jours, jamais prolongée (décision 3 de la 1.2) : durée
+  // absolue, cookie aligné sur la base, aucune écriture pendant la lecture
+  // d'une page. Aucun cache de session dans un cookie : relue en base à
+  // chaque requête. Fiche : docs/features/connexion.md, section 4.1.
+  session: {
+    expiresIn: 7 * 24 * 60 * 60,
+    disableSessionRefresh: true,
+  },
   emailAndPassword: {
     enabled: true,
     // Réponse identique pour une adresse déjà prise (T-07), connexion refusée

@@ -53,8 +53,10 @@ export const TEXTES_COMPTE = {
     motDePasse: "Mot de passe",
     envoyer: "Se connecter",
     envoiEnCours: "Connexion en cours",
-    identifiantsIncorrects:
-      "Adresse email ou mot de passe incorrect. Si vous venez de créer votre compte, confirmez d'abord votre adresse.",
+    // Mot pour mot DESIGN-SYSTEM.md, « Connexion échouée ».
+    identifiantsIncorrects: "Email ou mot de passe incorrect",
+    // Aide fixe de la page, affichée quel que soit le résultat (T-07).
+    aideConfirmation: "Si vous venez de créer votre compte, confirmez d'abord votre adresse.",
     nouveauLien: "Recevoir un nouveau lien de confirmation",
     creerCompte: "Créer un compte",
     sansJavaScript: "Activez JavaScript dans votre navigateur pour vous connecter.",
@@ -70,6 +72,7 @@ export const TEXTES_COMPTE = {
   erreurs: {
     nom: "Saisissez votre nom.",
     email: "Saisissez une adresse email valable.",
+    motDePasse: "Saisissez votre mot de passe.",
     motDePasseTropCourt: "Le mot de passe doit compter 12 caractères au moins.",
     motDePasseTropLong: "Le mot de passe doit compter 128 caractères au plus.",
     motDePasseCompromis:

@@ -16,6 +16,10 @@ export default function PageInscriptionVerifiee() {
       <p className="text-[0.9375rem] leading-6 text-muted-foreground">
         {TEXTES_COMPTE.verifiee.message}
       </p>
+      {/* 1.2 : la vérification ouvre une session ; la page de compte la lit. */}
+      <Link href="/compte" className={buttonVariants({ className: "self-start" })}>
+        {TEXTES_COMPTE.verifiee.lienCompte}
+      </Link>
       <Link href="/" className={buttonVariants({ variant: "outline", className: "self-start" })}>
         {TEXTES_COMMUNS.revenirAccueil}
       </Link>

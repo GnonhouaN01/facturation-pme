@@ -92,10 +92,14 @@ test.describe("gabarit de l'application, navigateur connecté", () => {
     const hauteurs = await page
       .locator("a:visible, button:visible, summary:visible")
       .evaluateAll((elements) =>
-        elements.map((e) => ({
-          texte: (e.textContent ?? "").trim(),
-          hauteur: e.getBoundingClientRect().height,
-        })),
+        elements
+          // Modifié : le lien d'évitement, masqué hors focus (1 px), n'est pas
+          // une cible ; son focus est vérifié plus bas.
+          .filter((e) => e.getBoundingClientRect().width > 1)
+          .map((e) => ({
+            texte: (e.textContent ?? "").trim(),
+            hauteur: e.getBoundingClientRect().height,
+          })),
       );
     expect(hauteurs.map((h) => h.texte)).toContain(TEXTES_COMPTE.deconnexion.bouton);
     for (const { texte, hauteur } of hauteurs) expect(hauteur, texte).toBeGreaterThanOrEqual(44);

@@ -19,6 +19,9 @@ export const CHEMINS_LIMITES = {
   "/sign-up/email": "auth.inscription",
   "/send-verification-email": "auth.renvoi_verification",
   "/verify-email": "auth.verification",
+  // 1.2 (docs/features/connexion.md, section 3).
+  "/sign-in/email": "auth.connexion",
+  "/sign-out": "auth.deconnexion",
 } as const satisfies Record<string, NomLimite>;
 
 export type RegleBetterAuth = { window: number; max: number };
@@ -48,11 +51,13 @@ export function creerStockageBetterAuth(options: {
 }): StockageBetterAuth {
   const { limites, compteur, secret } = options;
 
-  // La limite auth.* dont la règle est exactement celle reçue. Deux limites
-  // auth.* n'ont jamais la même règle (limites.test.ts).
+  // La limite auth.* par adresse IP dont la règle est exactement celle reçue.
+  // Deux limites auth.* n'ont jamais la même règle (limites.test.ts). La
+  // limite par compte (adresse_email, 1.2) n'est jamais une règle de Better
+  // Auth : elle est comptée par notre gestionnaire.
   function limiteDe(recue: RegleBetterAuth): [NomLimite, Limite] | null {
     for (const [nom, limite] of Object.entries(limites) as [NomLimite, Limite | undefined][]) {
-      if (limite === undefined || !nom.startsWith("auth.")) continue;
+      if (limite === undefined || !nom.startsWith("auth.") || limite.par !== "adresse_ip") continue;
       if (limite.fenetreSecondes === recue.window && limite.maximum === recue.max) {
         return [nom, limite];
       }

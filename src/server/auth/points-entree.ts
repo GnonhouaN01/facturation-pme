@@ -4,6 +4,8 @@ import type { z } from "zod";
 
 import {
   LONGUEUR_MIN_MOT_DE_PASSE,
+  schemaConnexion,
+  schemaDeconnexion,
   schemaInscription,
   schemaRenvoiVerification,
   schemaVerification,
@@ -12,21 +14,23 @@ import {
 import { verifierOrigine } from "../actions/origine";
 import { schemaAdresse } from "../email/adresse";
 
-import { consignerAuth } from "./journal";
+import { consignerIncidentAuth } from "./journal";
 
 // Le gestionnaire de /api/auth : une liste fermée de points d'entrée ouverts
 // (T-55). Tout autre chemin, toute autre méthode, et les points ouverts en
-// production tant que l'inscription y est fermée, reçoivent la même réponse
+// production tant que les comptes y sont fermés, reçoivent la même réponse
 // qu'une adresse inexistante, sans que Better Auth soit appelé. Un point
 // ouvert passe par : origine (S-81), taille et type du corps, schéma strict,
 // appel à Better Auth avec les seuls champs validés, réponse traduite en une
 // liste fermée (jamais le corps ni le message de Better Auth), durée
-// plancher (T-07). Fiche : docs/features/inscription.md, section 2.
+// plancher (T-07). Toute réponse « erreur » porte l'identifiant d'incident
+// de sa ligne de journal (S-85). Fiches : docs/features/inscription.md,
+// section 2 ; docs/features/connexion.md, sections 1 à 4 et 6.
 
-// Décision 1 : inscription fermée en production jusqu'à la 1.3. Une
-// constante du code, jamais une variable d'environnement ; la PR de la 1.3 la
-// retire.
-export const INSCRIPTION_OUVERTE_EN_PRODUCTION = false;
+// Décision 1 de la 1.1, étendue à la connexion par la 1.2 : comptes fermés en
+// production jusqu'à la 1.3. Une constante du code, jamais une variable
+// d'environnement ; la PR de la 1.3 la retire.
+export const COMPTES_OUVERTS_EN_PRODUCTION = false;
 
 export const DUREE_PLANCHER_MS = 800;
 export const TAILLE_MAX_CORPS = 4096;
@@ -49,6 +53,13 @@ export type DependancesPointsEntree = {
   // BETTER_AUTH_URL : l'origine acceptée, et celle des appels internes.
   origine: string;
   estProduction: boolean;
+  // Limite auth.connexion_compte, pour l'adresse validée : vrai si la
+  // tentative est admise. Comptée pour toute adresse (T-07).
+  limiterCompte: (adresse: string) => Promise<boolean>;
+  // Relecture de la session après la déconnexion, avec les en-têtes reçus :
+  // vrai si une session est encore lisible (suppression avalée par Better
+  // Auth, docs/features/connexion.md, section 4.2).
+  sessionEncoreLisible: (entetes: Headers) => Promise<boolean>;
   horloge?: Horloge;
 };
 
@@ -56,6 +67,7 @@ type Raison =
   | "mot_de_passe_trop_court"
   | "mot_de_passe_compromis"
   | "invalide"
+  | "identifiants_incorrects"
   | "trop_de_requetes"
   | "lien_invalide"
   | "refuse"
@@ -66,36 +78,55 @@ const STATUTS: Readonly<Record<Raison, number>> = {
   mot_de_passe_compromis: 400,
   invalide: 400,
   lien_invalide: 400,
+  identifiants_incorrects: 401,
   trop_de_requetes: 429,
   refuse: 403,
   erreur: 500,
 };
 
 // Ce que Better Auth a répondu, réduit à ce dont la traduction a besoin.
-type ReponseLue = { statut: number; code: string | null; cookies: string[] };
+type ReponseLue = {
+  statut: number;
+  code: string | null;
+  cookies: string[];
+  // Extension twoFactor : session remplacée par une demande de code (1.4).
+  doubleAuthentification: boolean;
+};
+
+type Traduction = { raison: Raison } | { ok: true; cookies: string[] };
 
 type PointEntree = {
   methode: "POST";
   schema: z.ZodType;
-  // Durée plancher : l'inscription et le renvoi diraient sinon, par leur
-  // durée, si l'adresse a un compte.
+  // Durée plancher : l'inscription, le renvoi et la connexion diraient sinon,
+  // par leur durée, si l'adresse a un compte.
   plancher: boolean;
   // La requête passée à Better Auth, construite en mémoire depuis les seules
-  // données validées. null : données refusées après le schéma.
+  // données validées, ou la raison d'un refus.
   versBetterAuth: (
     donnees: Record<string, unknown>,
     entetes: Headers,
     origine: string,
-  ) => Request | Raison;
-  traduire: (lue: ReponseLue) => { raison: Raison } | { ok: true; cookies: string[] };
+    dependances: DependancesPointsEntree,
+  ) => Promise<Request | Raison>;
+  traduire: (lue: ReponseLue) => Traduction;
+  // Contrôle après un succès de Better Auth (déconnexion) : faux ou une
+  // exception donnent « erreur », sans cookie.
+  verifier?: (entetes: Headers, dependances: DependancesPointsEntree) => Promise<boolean>;
 };
 
 // En-têtes repris de la requête reçue : l'adresse IP (limite de Better Auth,
-// session) et le navigateur (session). Jamais le cookie : le renvoi sans
-// session répond pareil pour toute adresse.
-function entetesInternes(recus: Headers, json: boolean, origine: string): Headers {
+// session) et le navigateur (session). Le cookie seulement pour la
+// déconnexion : le renvoi sans session répond pareil pour toute adresse, et
+// la connexion crée toujours une nouvelle session (T-03).
+function entetesInternes(
+  recus: Headers,
+  json: boolean,
+  origine: string,
+  avecCookie = false,
+): Headers {
   const entetes = new Headers();
-  for (const nom of ["x-forwarded-for", "user-agent"]) {
+  for (const nom of ["x-forwarded-for", "user-agent", ...(avecCookie ? ["cookie"] : [])]) {
     const valeur = recus.get(nom);
     if (valeur !== null) entetes.set(nom, valeur);
   }
@@ -117,13 +148,16 @@ function traductionCommune(lue: ReponseLue): { raison: Raison } | null {
   return null;
 }
 
+// Un cookie de session posé, à valeur non vide (sur http ou https).
+const COOKIE_SESSION = /^(?:__Secure-)?[^=;]*session_token=[^;]/u;
+
 export const POINTS_ENTREE_OUVERTS: Readonly<Record<string, PointEntree>> = Object.freeze({
   // UC-01, étapes 1 à 3.
   "/sign-up/email": {
     methode: "POST",
     schema: schemaInscription,
     plancher: true,
-    versBetterAuth: (donnees, entetes, origine) => {
+    versBetterAuth: async (donnees, entetes, origine) => {
       const email = adresseValide(donnees.email);
       if (email === null) return "invalide";
       const motDePasse = String(donnees.motDePasse);
@@ -148,7 +182,7 @@ export const POINTS_ENTREE_OUVERTS: Readonly<Record<string, PointEntree>> = Obje
     methode: "POST",
     schema: schemaRenvoiVerification,
     plancher: true,
-    versBetterAuth: (donnees, entetes, origine) => {
+    versBetterAuth: async (donnees, entetes, origine) => {
       const email = adresseValide(donnees.email);
       if (email === null) return "invalide";
       return new Request(`${origine}${BASE}/send-verification-email`, {
@@ -171,7 +205,7 @@ export const POINTS_ENTREE_OUVERTS: Readonly<Record<string, PointEntree>> = Obje
     methode: "POST",
     schema: schemaVerification,
     plancher: false,
-    versBetterAuth: (donnees, entetes, origine) => {
+    versBetterAuth: async (donnees, entetes, origine) => {
       const adresse = new URL(`${origine}${BASE}/verify-email`);
       adresse.searchParams.set("token", String(donnees.jeton));
       return new Request(adresse, {
@@ -186,7 +220,81 @@ export const POINTS_ENTREE_OUVERTS: Readonly<Record<string, PointEntree>> = Obje
       return { raison: "lien_invalide" };
     },
   },
+  // UC-02, étapes 1, 2 et 4 (1.2). Limite par compte avant Better Auth ;
+  // adresse inconnue, mauvais mot de passe et compte non vérifié reçoivent la
+  // même réponse (T-07) ; seul le cookie de session est transmis, jamais le
+  // corps, qui porte le jeton (S-82). Fiche : docs/features/connexion.md,
+  // sections 1.1, 2 et 3.
+  "/sign-in/email": {
+    methode: "POST",
+    schema: schemaConnexion,
+    plancher: true,
+    versBetterAuth: async (donnees, entetes, origine, dependances) => {
+      const email = adresseValide(donnees.email);
+      if (email === null) return "invalide";
+      if (!(await dependances.limiterCompte(email))) return "trop_de_requetes";
+      return new Request(`${origine}${BASE}/sign-in/email`, {
+        method: "POST",
+        headers: entetesInternes(entetes, true, origine),
+        body: JSON.stringify({ email, password: String(donnees.motDePasse) }),
+      });
+    },
+    traduire: (lue) => {
+      const commune = traductionCommune(lue);
+      if (commune) return commune;
+      if (lue.statut >= 200 && lue.statut < 300) {
+        const cookies = lue.cookies.filter((cookie) => COOKIE_SESSION.test(cookie));
+        // Sans cookie de session, ou session remplacée par une demande de
+        // code (1.4) : fermé par défaut.
+        if (cookies.length === 0 || lue.doubleAuthentification) return { raison: "erreur" };
+        return { ok: true, cookies };
+      }
+      return { raison: "identifiants_incorrects" };
+    },
+  },
+  // F-002, déconnexion (1.2) : Better Auth supprime la session et efface le
+  // cookie ; la session est relue ensuite, car Better Auth avale une panne de
+  // la base pendant la suppression (T-03). Fiche : docs/features/connexion.md,
+  // section 4.2.
+  "/sign-out": {
+    methode: "POST",
+    schema: schemaDeconnexion,
+    plancher: false,
+    versBetterAuth: async (_donnees, entetes, origine) =>
+      new Request(`${origine}${BASE}/sign-out`, {
+        method: "POST",
+        headers: entetesInternes(entetes, true, origine, true),
+        body: "{}",
+      }),
+    traduire: (lue) => {
+      const commune = traductionCommune(lue);
+      if (commune) return commune;
+      if (lue.statut >= 200 && lue.statut < 300) return { ok: true, cookies: lue.cookies };
+      return { raison: "invalide" };
+    },
+    verifier: async (entetes, dependances) => !(await dependances.sessionEncoreLisible(entetes)),
+  },
 } satisfies Record<string, PointEntree>);
+
+// Le jeton de session porté par un en-tête Cookie (valeur signée
+// « jeton.signature », encodée), sans vérifier la signature : sert à relire
+// la session après la déconnexion (section 4.2). Absent ou mal formé : null.
+export function jetonDeSession(cookie: string | null, nom: string): string | null {
+  if (cookie === null) return null;
+  for (const morceau of cookie.split(";")) {
+    const egal = morceau.indexOf("=");
+    if (egal < 0 || morceau.slice(0, egal).trim() !== nom) continue;
+    let valeur: string;
+    try {
+      valeur = decodeURIComponent(morceau.slice(egal + 1).trim());
+    } catch {
+      return null;
+    }
+    const point = valeur.lastIndexOf(".");
+    return point > 0 ? valeur.slice(0, point) : null;
+  }
+  return null;
+}
 
 // La réponse d'une adresse inexistante sous /api/auth, d'un point d'entrée
 // fermé et d'un point ouvert fermé en production : une seule fonction, donc
@@ -204,7 +312,12 @@ function json(statut: number, corps: unknown, cookies: readonly string[] = []): 
   return new Response(JSON.stringify(corps), { status: statut, headers: entetes });
 }
 
+// Un refus ; « erreur » porte l'identifiant de l'incident, écrit au journal
+// technique au même moment (une ligne par réponse).
 function refus(raison: Raison): Response {
+  if (raison === "erreur") {
+    return json(STATUTS.erreur, { ok: false, raison, incident: consignerIncidentAuth() });
+  }
   return json(STATUTS[raison], { ok: false, raison });
 }
 
@@ -241,16 +354,27 @@ async function lireCorps(requete: Request): Promise<string | null> {
 
 async function lireReponse(reponse: Response): Promise<ReponseLue> {
   let code: string | null = null;
+  let doubleAuthentification = false;
   try {
     const corps: unknown = await reponse.json();
-    if (typeof corps === "object" && corps !== null && "code" in corps) {
-      const valeur = (corps as { code: unknown }).code;
-      if (typeof valeur === "string") code = valeur;
+    if (typeof corps === "object" && corps !== null) {
+      if ("code" in corps) {
+        const valeur = (corps as { code: unknown }).code;
+        if (typeof valeur === "string") code = valeur;
+      }
+      doubleAuthentification =
+        "twoFactorRedirect" in corps &&
+        (corps as { twoFactorRedirect: unknown }).twoFactorRedirect === true;
     }
   } catch {
     // Corps absent ou non JSON : seul le statut compte.
   }
-  return { statut: reponse.status, code, cookies: reponse.headers.getSetCookie() };
+  return {
+    statut: reponse.status,
+    code,
+    cookies: reponse.headers.getSetCookie(),
+    doubleAuthentification,
+  };
 }
 
 export function creerTraitementAuth(
@@ -276,23 +400,24 @@ export function creerTraitementAuth(
     const lu = point.schema.safeParse(brut);
     if (!lu.success) return refus("invalide");
 
-    const interne = point.versBetterAuth(
-      lu.data as Record<string, unknown>,
-      requete.headers,
-      origine,
-    );
-    if (!(interne instanceof Request)) return refus(interne);
-
-    let lue: ReponseLue;
+    let traduite: Traduction;
     try {
-      lue = await lireReponse(await dependances.traiter(interne));
+      const interne = await point.versBetterAuth(
+        lu.data as Record<string, unknown>,
+        requete.headers,
+        origine,
+        dependances,
+      );
+      if (!(interne instanceof Request)) return refus(interne);
+      traduite = point.traduire(await lireReponse(await dependances.traiter(interne)));
+      if (!("raison" in traduite) && point.verifier) {
+        if (!(await point.verifier(requete.headers, dependances))) return refus("erreur");
+      }
     } catch {
-      // Panne de base ou autre erreur relancée par Better Auth
-      // (onAPIError.throw) : une ligne fixe, jamais l'erreur.
-      consignerAuth("error");
+      // Panne de base, compteur en échec, ou autre erreur relancée par Better
+      // Auth (onAPIError.throw) : une ligne fixe, jamais l'erreur.
       return refus("erreur");
     }
-    const traduite = point.traduire(lue);
     return "raison" in traduite
       ? refus(traduite.raison)
       : json(200, { ok: true }, traduite.cookies);
@@ -306,7 +431,7 @@ export function creerTraitementAuth(
       ? POINTS_ENTREE_OUVERTS[chemin]
       : undefined;
     if (point === undefined || requete.method !== point.methode) return reponseInexistante();
-    if (dependances.estProduction && !INSCRIPTION_OUVERTE_EN_PRODUCTION) {
+    if (dependances.estProduction && !COMPTES_OUVERTS_EN_PRODUCTION) {
       return reponseInexistante();
     }
 

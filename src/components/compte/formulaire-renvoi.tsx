@@ -7,7 +7,7 @@ import { TEXTES_COMPTE } from "@/textes/compte";
 import { TEXTES_RESULTATS } from "@/textes/resultats";
 
 import { appelerAuth } from "./appel-auth";
-import { Bandeau } from "./bandeau";
+import { Bandeau, BandeauErreur } from "./bandeau";
 import { Champ } from "./champ";
 import { useHydrate } from "./hydrate";
 
@@ -19,10 +19,19 @@ import { useHydrate } from "./hydrate";
 
 const TEXTES = TEXTES_COMPTE.renvoi;
 
+// inattendue : erreur du serveur, avec son identifiant d'incident (1.2).
 type Etat =
-  { etape: "saisie"; erreur?: string; general?: string } | { etape: "envoi" } | { etape: "envoye" };
+  | {
+      etape: "saisie";
+      erreur?: string;
+      general?: string;
+      inattendue?: { incident?: string | undefined };
+    }
+  | { etape: "envoi" }
+  | { etape: "envoye" };
 
-export function FormulaireRenvoi() {
+// sansTitre : la page qui l'accueille porte déjà le titre (/connexion/nouveau-lien).
+export function FormulaireRenvoi({ sansTitre = false }: { sansTitre?: boolean }) {
   const hydrate = useHydrate();
   const [etat, setEtat] = useState<Etat>({ etape: "saisie" });
 
@@ -40,31 +49,41 @@ export function FormulaireRenvoi() {
       setEtat({ etape: "envoye" });
       return;
     }
-    const general =
-      reponse.raison === "trop_de_requetes"
-        ? TEXTES_RESULTATS.trop_de_requetes
-        : reponse.raison === "invalide"
-          ? TEXTES_RESULTATS.invalide
-          : TEXTES_RESULTATS.erreur;
-    setEtat({ etape: "saisie", general });
+    if (reponse.raison === "trop_de_requetes" || reponse.raison === "invalide") {
+      setEtat({ etape: "saisie", general: TEXTES_RESULTATS[reponse.raison] });
+      return;
+    }
+    setEtat({
+      etape: "saisie",
+      inattendue: { incident: reponse.raison === "erreur" ? reponse.incident : undefined },
+    });
   }
 
   if (!hydrate) return null;
 
   return (
-    <section aria-labelledby="renvoi-titre" className="flex flex-col gap-4">
-      <h2
-        id="renvoi-titre"
-        className="font-heading text-[1.125rem] leading-[1.625rem] font-semibold text-foreground"
-      >
-        {TEXTES.titre}
-      </h2>
+    <section
+      aria-labelledby={sansTitre ? undefined : "renvoi-titre"}
+      aria-label={sansTitre ? TEXTES.titre : undefined}
+      className="flex flex-col gap-4"
+    >
+      {sansTitre ? null : (
+        <h2
+          id="renvoi-titre"
+          className="font-heading text-[1.125rem] leading-[1.625rem] font-semibold text-foreground"
+        >
+          {TEXTES.titre}
+        </h2>
+      )}
       {etat.etape === "envoye" ? (
         <Bandeau etat="succes">{TEXTES.confirmation}</Bandeau>
       ) : (
         <form noValidate onSubmit={soumettre} className="flex flex-col gap-4">
           {etat.etape === "saisie" && etat.general ? (
             <Bandeau etat="danger">{etat.general}</Bandeau>
+          ) : null}
+          {etat.etape === "saisie" && etat.inattendue ? (
+            <BandeauErreur incident={etat.inattendue.incident} />
           ) : null}
           <Champ
             id="renvoi-email"

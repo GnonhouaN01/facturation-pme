@@ -373,7 +373,8 @@ test.describe("identifiant d'incident, connexion sur le serveur en panne", () =>
     const corps = (await reponse.json()) as { incident?: string };
     expect(corps.incident).toMatch(UUID);
 
-    const alerte = page.getByRole("alert");
+    // Modifié : l'annonceur de route de Next.js porte aussi role="alert".
+    const alerte = page.locator("form").getByRole("alert");
     await expect(alerte).toContainText(TEXTES_ERREURS.erreur);
     await expect(alerte).toContainText(TEXTES_ERREURS.identifiantIncident);
     await expect(alerte).toContainText(corps.incident ?? "absent");

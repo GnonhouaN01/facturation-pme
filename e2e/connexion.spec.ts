@@ -132,7 +132,8 @@ test.describe("T-07 : adresse inconnue, mauvais mot de passe, compte non vérifi
     ] as const) {
       await adresseIpPropre(page);
       const { reponse, corps } = await seConnecter(page, email, motDePasse);
-      const alerte = page.getByRole("alert");
+      // Modifié : l'annonceur de route de Next.js porte aussi role="alert".
+      const alerte = page.locator("form").getByRole("alert");
       await expect(alerte).toHaveText(TEXTES.identifiantsIncorrects);
       await expect(page).toHaveURL(`${ADRESSE}/connexion`);
       await expect(page.getByRole("link", { name: TEXTES.nouveauLien })).toBeVisible();

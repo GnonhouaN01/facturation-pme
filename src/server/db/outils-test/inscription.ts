@@ -7,7 +7,7 @@ import { inArray } from "drizzle-orm";
 
 import { optionsAuth } from "../../auth/config";
 import { creerEmailsCompte } from "../../auth/emails";
-import { creerTraitementAuth } from "../../auth/points-entree";
+import { creerTraitementAuth, jetonDeSession } from "../../auth/points-entree";
 import { creerStockageBetterAuth } from "../../debit/better-auth";
 import { creerVerificateur } from "../../debit/debit";
 import { LIMITES } from "../../debit/limites";
@@ -109,8 +109,12 @@ export function bancInscription(options: { adresses: number }): BancInscription 
       estProduction: false,
       limiterCompte: (adresse) =>
         verificateur.verifierDebit("auth.connexion_compte", adressePourCompteur(adresse)),
-      sessionEncoreLisible: async (entetes) =>
-        (await auth.api.getSession({ headers: entetes })) !== null,
+      // Comme gestionnaire.ts : relecture par l'adaptateur, sans cookie écrit.
+      sessionEncoreLisible: async (entetes) => {
+        const contexte = await auth.$context;
+        const jeton = jetonDeSession(entetes.get("cookie"), contexte.authCookies.sessionToken.name);
+        return jeton !== null && (await contexte.internalAdapter.findSession(jeton)) !== null;
+      },
     }),
     transport,
     lireSession: async (entetes) => {

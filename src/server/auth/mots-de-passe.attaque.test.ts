@@ -62,6 +62,9 @@ function instance() {
     traiter: (requete) => auth.handler(requete),
     origine: ORIGINE,
     estProduction: false,
+    // 1.2 : dépendances exigées par le type, sans effet sur l'inscription.
+    limiterCompte: async () => true,
+    sessionEncoreLisible: async () => false,
     horloge: { maintenant: () => 0, attendre: async () => {} },
   });
 }
@@ -127,14 +130,24 @@ describe("Have I Been Pwned indisponible : inscription refusée (décision 2)", 
     const reponse = await instance()(inscription());
     expect(demandes).toHaveLength(1);
     expect(reponse.status).toBe(500);
-    expect(await reponse.json()).toEqual({ ok: false, raison: "erreur" });
+    // 1.2 : la réponse « erreur » porte un identifiant d'incident (connexion.md, section 6).
+    expect(await reponse.json()).toEqual({
+      ok: false,
+      raison: "erreur",
+      incident: expect.stringMatching(/^[0-9a-f-]{36}$/u),
+    });
   });
 
   test.each([503, 500, 429])("le service répond %i : erreur", async (statut) => {
     simulerHibp(async () => new Response("indisponible", { status: statut }));
     const reponse = await instance()(inscription());
     expect(reponse.status).toBe(500);
-    expect(await reponse.json()).toEqual({ ok: false, raison: "erreur" });
+    // 1.2 : la réponse « erreur » porte un identifiant d'incident (connexion.md, section 6).
+    expect(await reponse.json()).toEqual({
+      ok: false,
+      raison: "erreur",
+      incident: expect.stringMatching(/^[0-9a-f-]{36}$/u),
+    });
   });
 });
 
@@ -152,6 +165,11 @@ describe("garde réseau : aucun test n'appelle le vrai service", () => {
     expect((globalThis.fetch as unknown as { gardeReseau?: unknown }).gardeReseau).toBe(true);
     const reponse = await instance()(inscription());
     expect(reponse.status).toBe(500);
-    expect(await reponse.json()).toEqual({ ok: false, raison: "erreur" });
+    // 1.2 : la réponse « erreur » porte un identifiant d'incident (connexion.md, section 6).
+    expect(await reponse.json()).toEqual({
+      ok: false,
+      raison: "erreur",
+      incident: expect.stringMatching(/^[0-9a-f-]{36}$/u),
+    });
   });
 });

@@ -6,6 +6,7 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import type { z } from "zod";
 
+import { lireSession } from "../auth/session";
 import type { Droit } from "../autorisation/matrice";
 import type { ActionJournal } from "../journal/actions";
 
@@ -19,7 +20,7 @@ import {
   type ResultatLecture,
   type SchemaEntree,
 } from "./action";
-import type { Resultat } from "./refus";
+import { traduireErreur, type Resultat } from "./refus";
 
 // Adaptateur Next.js : la fonction exportée d'un fichier "use server". Lit les
 // en-têtes de la requête, appelle la chaîne, relance les erreurs de contrôle
@@ -70,6 +71,29 @@ export async function lirePourPage<T>(
 ): Promise<T> {
   const entetes = new Headers(await headers());
   return traduireLecture(await etablirContexte({ entetes }, droit, lire));
+}
+
+// Lecture par une page de la zone (compte) (1.2) : un utilisateur connecté,
+// adresse vérifiée, sans organisation ni adhésion. Chaque page.tsx de
+// (compte)/ l'appelle elle-même (le gabarit ne protège pas). Sans session :
+// la page « introuvable », comme lirePourPage ; lecture en échec : la page
+// « erreur », avec un incident, sans cause. lire ne reçoit que l'identifiant
+// de l'utilisateur : aucune donnée d'une organisation n'est lisible par
+// elle. Fiche : docs/features/connexion.md, section 5.1.
+export type ContexteCompte = { utilisateurId: string };
+
+export async function lireComptePourPage<T>(
+  lire: (compte: ContexteCompte) => Promise<T>,
+): Promise<T> {
+  const entetes = new Headers(await headers());
+  let session: Awaited<ReturnType<typeof lireSession>>;
+  try {
+    session = await lireSession(entetes);
+  } catch (erreur) {
+    return traduireLecture<T>(traduireErreur(erreur, "compte.lecture"));
+  }
+  if (session === null) notFound();
+  return lire({ utilisateurId: session.utilisateurId });
 }
 
 // Message fixe : ni l'incident, ni la cause, ni la raison (S-85, T-35).

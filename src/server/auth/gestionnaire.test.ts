@@ -41,7 +41,14 @@ const traiter = vi.fn<(requete: Request) => Promise<Response>>(
     }),
 );
 const verifierDebit = vi.fn<(nom: string, valeur: string) => Promise<boolean>>(async () => true);
-const getSession = vi.fn<(options: { headers: Headers }) => Promise<unknown>>(async () => null);
+// Modifié à l'implémentation : la déconnexion relit la session par
+// l'adaptateur interne (findSession), et non plus par auth.api.getSession,
+// qui faisait écrire un Set-Cookie d'effacement par nextCookies.
+const findSession = vi.fn<(jeton: string) => Promise<unknown>>(async () => null);
+const contexteAuth = {
+  authCookies: { sessionToken: { name: "better-auth.session_token" } },
+  internalAdapter: { findSession },
+};
 
 // Le gestionnaire, chargé avec une configuration factice. Better Auth est
 // remplacé par un espion : seul le branchement est vérifié ici.
@@ -61,7 +68,9 @@ async function charger(estProduction: boolean) {
       gmail: null,
     },
   }));
-  vi.doMock("./config", () => ({ auth: { handler: traiter, api: { getSession } } }));
+  vi.doMock("./config", () => ({
+    auth: { handler: traiter, $context: Promise.resolve(contexteAuth) },
+  }));
   vi.doMock("../debit/debit", () => ({ verifierDebit }));
   return import("./gestionnaire");
 }
@@ -85,7 +94,7 @@ async function forme(reponse: Response) {
 afterEach(() => {
   traiter.mockClear();
   verifierDebit.mockClear();
-  getSession.mockClear();
+  findSession.mockClear();
   vi.doUnmock("../env");
   vi.doUnmock("./config");
   vi.doUnmock("../debit/debit");
@@ -103,7 +112,7 @@ describe("gestionnaire de /api/auth, liaison", () => {
     expect(ferme).toEqual({ statut: 404, entetes: [], corps: "" });
     expect(traiter).not.toHaveBeenCalled();
     expect(verifierDebit).not.toHaveBeenCalled();
-    expect(getSession).not.toHaveBeenCalled();
+    expect(findSession).not.toHaveBeenCalled();
   }, 10_000);
 
   test("témoin, hors production : chacun atteint Better Auth, avec l'origine de BETTER_AUTH_URL", async () => {
@@ -147,7 +156,7 @@ describe("gestionnaire de /api/auth, liaison de la connexion (1.2)", () => {
     expect(traiter).not.toHaveBeenCalled();
   }, 10_000);
 
-  test("déconnexion : la session est relue par auth.api.getSession avec le cookie reçu", async () => {
+  test("déconnexion : la session est relue par l'adaptateur, avec le jeton du cookie reçu", async () => {
     const { traiterRequeteAuth } = await charger(false);
     const requete = new Request(`${BASE}/sign-out`, {
       method: "POST",
@@ -160,17 +169,25 @@ describe("gestionnaire de /api/auth, liaison de la connexion (1.2)", () => {
     });
     const reponse = await traiterRequeteAuth(requete);
     expect(reponse.status).toBe(200);
-    expect(getSession).toHaveBeenCalledTimes(1);
-    expect(getSession.mock.calls[0]?.[0].headers.get("cookie")).toBe(
-      "better-auth.session_token=jeton.signature",
-    );
+    expect(findSession).toHaveBeenCalledTimes(1);
+    expect(findSession).toHaveBeenCalledWith("jeton");
   }, 10_000);
 
   test("déconnexion : une session encore lue donne une erreur", async () => {
     const { traiterRequeteAuth } = await charger(false);
     vi.spyOn(console, "error").mockImplementation(() => {});
-    getSession.mockResolvedValueOnce({ session: { id: "s" }, user: { id: "u" } });
-    const reponse = await traiterRequeteAuth(post("/sign-out", {}));
+    findSession.mockResolvedValueOnce({ session: { id: "s" }, user: { id: "u" } });
+    const reponse = await traiterRequeteAuth(
+      new Request(`${BASE}/sign-out`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: ORIGINE,
+          cookie: "better-auth.session_token=jeton.signature",
+        },
+        body: "{}",
+      }),
+    );
     expect(reponse.status).toBe(500);
     vi.restoreAllMocks();
   }, 10_000);

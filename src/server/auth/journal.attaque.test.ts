@@ -175,6 +175,9 @@ describe("T-39 : inscription pendant une panne de la base", { timeout: 30_000 },
       traiter: (requete) => auth.handler(requete),
       origine: ORIGINE,
       estProduction: false,
+      // 1.2 : dépendances exigées par le type, sans effet sur l'inscription.
+      limiterCompte: async () => true,
+      sessionEncoreLisible: async () => false,
       horloge: { maintenant: () => 0, attendre: async () => {} },
     });
     const email = `victime-${randomUUID()}@exemple.invalid`;
@@ -183,7 +186,12 @@ describe("T-39 : inscription pendant une panne de la base", { timeout: 30_000 },
     const reponse = await traiter(inscription(email, MOT_DE_PASSE));
 
     expect(reponse.status).toBe(500);
-    expect(await reponse.json()).toEqual({ ok: false, raison: "erreur" });
+    // 1.2 : la réponse « erreur » porte un identifiant d'incident (connexion.md, section 6).
+    expect(await reponse.json()).toEqual({
+      ok: false,
+      raison: "erreur",
+      incident: expect.stringMatching(/^[0-9a-f-]{36}$/u),
+    });
     const sortie = lire();
     expect(sortie).not.toContain(email);
     expect(sortie).not.toContain(MOT_DE_PASSE);

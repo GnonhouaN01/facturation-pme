@@ -23,7 +23,7 @@ export const TEXTES_EMAILS = {
     "compte.existant": {
       sujet: "Tentative d'inscription avec votre adresse",
       corps:
-        "Quelqu'un a tenté de créer un compte sur Facturation PME avec votre adresse email, qui a déjà un compte. Si c'est vous, connectez-vous avec votre mot de passe habituel. Sinon, ignorez cet email : votre compte n'a pas été modifié.",
+        "Quelqu'un a tenté de créer un compte sur Facturation PME avec votre adresse email, qui a déjà un compte. Si c'est vous, connectez-vous depuis la page de connexion de Facturation PME avec votre mot de passe. Si vous n'avez pas encore confirmé votre adresse, demandez un nouveau lien de confirmation depuis cette même page. Sinon, ignorez cet email : votre compte n'a pas été modifié.",
     },
   },
 } as const;

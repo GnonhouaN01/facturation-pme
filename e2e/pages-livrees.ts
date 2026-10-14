@@ -76,7 +76,9 @@ export const PAGES: readonly PageLivree[] = [
       await page.goto("/inscription/verifiee");
       await attendreTitre(page, TEXTES_COMPTE.verifiee.titre);
     },
-    premiereAction: (page) => page.getByRole("link", { name: TEXTES_COMMUNS.revenirAccueil }),
+    // Modifié en 1.2 : le lien vers /compte précède le retour à l'accueil
+    // (docs/features/connexion.md, section 5.2).
+    premiereAction: (page) => page.getByRole("link", { name: TEXTES_COMPTE.verifiee.lienCompte }),
   },
   {
     // Jeton de forme valable, jamais envoyé : le bouton seul est vérifié.
