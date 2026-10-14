@@ -15,6 +15,7 @@ import {
   POLITIQUE_ATTENDUE,
   TEXTES_GABARIT,
 } from "../scripts/controle-deploiement.mjs";
+import { TEXTES_COMPTE } from "../src/textes/compte";
 import { TEXTES_NAVIGATION } from "../src/textes/navigation";
 import { TEXTES_SIMULATION } from "../src/textes/simulation";
 
@@ -26,7 +27,9 @@ import { documentServi, ENTETES_SECTION_6, POLITIQUE_PRODUCTION } from "./outils
 // docs/features/controle-deploiement.md, sections 1, 2 et 5. Page « tache »
 // (8.3) : docs/features/tache-quotidienne.md, section 6, test 10. Pages
 // « auth » et « inscription » (1.1) : docs/features/inscription.md,
-// section 2.3, test 16.
+// section 2.3, test 16. Connexion (1.2) : « inscription » devient « comptes »
+// (cinq POST), « auth » gagne /api/auth/get-session, pages « connexion » et
+// « compte » : docs/features/connexion.md, section 10, test 25.
 
 const SCRIPT = "scripts/controle-deploiement.mjs";
 const executer = promisify(execFile);
@@ -75,13 +78,23 @@ type Defaut =
   | "auth-x-powered-by"
   | "auth-en-anglais"
   | "inscription-ouverte"
-  | "renvoi-ouvert";
+  | "renvoi-ouvert"
+  // Connexion (1.2).
+  | "connexion-ouverte"
+  | "deconnexion-ouverte"
+  | "session-ouverte"
+  | "connexion-500"
+  | "compte-200"
+  | "compte-distingue"
+  | "gabarit-compte-dans-la-charge";
 
-// Les trois points d'entrée ouverts hors production, en POST.
-const POINTS_INSCRIPTION = [
+// Les cinq points d'entrée ouverts hors production, en POST (1.1 et 1.2).
+const POINTS_COMPTES = [
   "/api/auth/sign-up/email",
   "/api/auth/send-verification-email",
   "/api/auth/verify-email",
+  "/api/auth/sign-in/email",
+  "/api/auth/sign-out",
 ];
 
 type Factice = { adresse: string; requetes: Requete[]; fermer: () => Promise<void> };
@@ -205,12 +218,18 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
       };
       if (
         requete.method === "POST" &&
-        POINTS_INSCRIPTION.includes(chemin) &&
+        POINTS_COMPTES.includes(chemin) &&
         (defaut === "inscription-ouverte" ||
-          (defaut === "renvoi-ouvert" && chemin === "/api/auth/send-verification-email"))
+          (defaut === "renvoi-ouvert" && chemin === "/api/auth/send-verification-email") ||
+          (defaut === "connexion-ouverte" && chemin === "/api/auth/sign-in/email") ||
+          (defaut === "deconnexion-ouverte" && chemin === "/api/auth/sign-out"))
       ) {
         statut = 403;
         json('{"ok":false,"raison":"refuse"}');
+      }
+      if (defaut === "session-ouverte" && chemin === "/api/auth/get-session") {
+        statut = 200;
+        json("null");
       }
       if (defaut === "auth-organisation-ouverte" && chemin === "/api/auth/organization/list") {
         statut = 200;
@@ -231,6 +250,8 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
     }
 
     const accueil = chemin === "/";
+    const connexion = chemin === "/connexion";
+    const compte = chemin === "/compte";
     const tableau = chemin === "/tableau-de-bord";
     const lien = chemin.startsWith("/lien/devis/");
     const inexistante = chemin.startsWith("/adresse-inexistante-");
@@ -246,6 +267,14 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
     if (defaut === "chemin-de-fichier" && tableau) charge += " /var/task/node_modules/next/x.js";
     if (defaut === "variable-dans-le-corps" && accueil) charge += " DATABASE_URL absente";
     if (defaut === "gabarit-dans-la-charge" && tableau) charge += " Organisation active";
+    if (defaut === "gabarit-compte-dans-la-charge" && compte) charge += " Se déconnecter";
+
+    // Page publique de connexion (1.2) : 200, comme l'accueil.
+    if (connexion) {
+      reponse.writeHead(defaut === "connexion-500" ? 500 : 200, entetes);
+      reponse.end(page(nonce, "Facturation PME", "<h1>Se connecter</h1>", charge, defaut));
+      return;
+    }
 
     if (accueil) {
       if (defaut === "accueil-redirige" && redirection) {
@@ -266,8 +295,16 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
     if (tableau) {
       corps = defaut === "cookie-distingue" && requete.headers.cookie ? INTROUVABLE_FR : "";
     }
+    // Zone (compte), 1.2 : comme le tableau de bord, notFound() sans session.
+    if (compte) {
+      corps = defaut === "compte-distingue" && requete.headers.cookie ? INTROUVABLE_FR : "";
+    }
     if (lien && defaut === "lien-distingue") corps += `<p>${randomBytes(4).toString("hex")}</p>`;
-    reponse.writeHead(tableau && defaut === "tableau-de-bord-200" ? 200 : 404, entetes);
+    const statutPage =
+      (tableau && defaut === "tableau-de-bord-200") || (compte && defaut === "compte-200")
+        ? 200
+        : 404;
+    reponse.writeHead(statutPage, entetes);
     reponse.end(page(nonce, titre, corps, charge, defaut));
   });
   const adresse = await ecouter(serveur);
@@ -287,7 +324,7 @@ function echecs(resultats: readonly Resultat[]): string[] {
     .sort();
 }
 
-const PAGES = ["accueil", "tableau-de-bord", "inexistante", "lien"] as const;
+const PAGES = ["accueil", "tableau-de-bord", "inexistante", "lien", "connexion", "compte"] as const;
 const surToutes = (controle: string) => PAGES.map((p) => `${p}:${controle}`);
 // Politique et en-têtes : vérifiés aussi sur les pages « tache » (8.3) et
 // « auth » (1.1).
@@ -309,7 +346,11 @@ test.describe("contrôle après déploiement, serveur factice", () => {
   // Ouverte, elle refuserait ces POST avant Better Auth (origine absente) :
   // rien n'est écrit, rien n'est envoyé (docs/features/inscription.md,
   // section 2.3).
-  test("serveur conforme : tout passe, des GET et quatre POST vides vers /api/auth, sans cookie ni Authorization sauf les valeurs forgées", async () => {
+  // 1.2 (modifié, signalé) : 23 requêtes par passage. GET de
+  // /api/auth/get-session, de /connexion, de /compte sans cookie et avec le
+  // cookie forgé ; deux POST de plus, vers la connexion et la déconnexion
+  // (docs/features/connexion.md, section 10).
+  test("serveur conforme : tout passe, des GET et six POST vides vers /api/auth, sans cookie ni Authorization sauf les valeurs forgées", async () => {
     const factice = await demarrerFactice();
     try {
       const premier = await controlerSite(factice.adresse);
@@ -319,9 +360,9 @@ test.describe("contrôle après déploiement, serveur factice", () => {
       expect(echecs(second)).toEqual([]);
       expect(premier.length).toBeGreaterThan(10);
 
-      expect(factice.requetes).toHaveLength(34);
+      expect(factice.requetes).toHaveLength(46);
       const posts = factice.requetes.filter((r) => r.methode !== "GET");
-      expect(posts).toHaveLength(8);
+      expect(posts).toHaveLength(12);
       for (const requete of posts) {
         expect(requete.methode).toBe("POST");
         expect(requete.chemin).toMatch(/^\/api\/auth\//);
@@ -330,7 +371,7 @@ test.describe("contrôle après déploiement, serveur factice", () => {
         expect(requete.entetes.cookie).toBeUndefined();
         expect(requete.entetes.authorization).toBeUndefined();
       }
-      for (const point of POINTS_INSCRIPTION) {
+      for (const point of POINTS_COMPTES) {
         expect(
           posts.filter((r) => r.chemin === point),
           point,
@@ -353,10 +394,15 @@ test.describe("contrôle après déploiement, serveur factice", () => {
         expect(r.entetes.authorization).toMatch(/^Bearer [A-Za-z0-9_-]{43}$/);
       }
       expect(autorises[0]?.entetes.authorization).not.toBe(autorises[1]?.entetes.authorization);
-      // Un seul cookie par passage : la session forgée, sur /tableau-de-bord,
-      // sous ses deux noms, tirée au hasard à chaque passage.
+      // Un cookie forgé par passage, sous ses deux noms, tiré au hasard à
+      // chaque passage : sur /tableau-de-bord, et sur /compte (1.2).
       const avecCookie = factice.requetes.filter((r) => r.entetes.cookie !== undefined);
-      expect(avecCookie.map((r) => r.chemin)).toEqual(["/tableau-de-bord", "/tableau-de-bord"]);
+      expect(avecCookie.map((r) => r.chemin)).toEqual([
+        "/tableau-de-bord",
+        "/compte",
+        "/tableau-de-bord",
+        "/compte",
+      ]);
       const valeurs = avecCookie.map((r) => {
         const trouve =
           /^better-auth\.session_token=([^;]+); __Secure-better-auth\.session_token=\1$/.exec(
@@ -365,13 +411,15 @@ test.describe("contrôle après déploiement, serveur factice", () => {
         expect(trouve, r.entetes.cookie).not.toBeNull();
         return trouve?.[1];
       });
-      expect(valeurs[0]).not.toBe(valeurs[1]);
+      expect(valeurs[0]).not.toBe(valeurs[2]);
 
       const chemins = factice.requetes.map((r) => r.chemin);
       const inexistantes = chemins.filter((c) => /^\/adresse-inexistante-[0-9a-f]{16}$/.test(c));
       const liens = chemins.filter((c) => /^\/lien\/devis\/[A-Za-z0-9_-]{43}$/.test(c));
       expect(chemins.filter((c) => c === "/")).toHaveLength(4);
       expect(chemins.filter((c) => c === "/tableau-de-bord")).toHaveLength(4);
+      expect(chemins.filter((c) => c === "/connexion")).toHaveLength(2);
+      expect(chemins.filter((c) => c === "/compte")).toHaveLength(4);
       expect(inexistantes).toHaveLength(2);
       expect(inexistantes[0]).not.toBe(inexistantes[1]);
       expect(new Set(liens).size).toBe(4);
@@ -397,17 +445,23 @@ test.describe("contrôle après déploiement, serveur factice", () => {
       expect(auth.filter((c) => c === "/api/auth/organization/get-full-organization")).toHaveLength(
         2,
       );
+      expect(auth.filter((c) => c === "/api/auth/get-session")).toHaveLength(2);
       expect(auth.filter((c) => /^\/api\/auth\/[0-9a-f]{16}$/.test(c))).toHaveLength(2);
-      expect(premier.map((r) => r.nom).filter((n) => /^(auth|inscription):/.test(n))).toEqual([
+      expect(
+        premier.map((r) => r.nom).filter((n) => /^(auth|inscription|comptes):/.test(n)),
+      ).toEqual([
         "auth:statut",
         "auth:politique",
         "auth:entetes",
         "auth:fuite",
         "auth:anglais",
         "auth:identique",
-        "inscription:statut",
-        "inscription:identique",
+        "comptes:statut",
+        "comptes:identique",
       ]);
+      expect(
+        premier.map((r) => r.nom).filter((n) => /^compte:(identique|gabarit|anglais)$/.test(n)),
+      ).toEqual(["compte:anglais", "compte:gabarit", "compte:identique"]);
     } finally {
       await factice.fermer();
     }
@@ -428,7 +482,10 @@ test.describe("contrôle après déploiement, serveur factice", () => {
     ["script-sans-nonce", surToutes("nonce-scripts")],
     ["accueil-500", ["accueil:statut"]],
     ["tableau-de-bord-200", ["tableau-de-bord:statut"]],
-    ["introuvable-en-anglais", ["inexistante:anglais", "lien:anglais", "tableau-de-bord:anglais"]],
+    [
+      "introuvable-en-anglais",
+      ["compte:anglais", "inexistante:anglais", "lien:anglais", "tableau-de-bord:anglais"],
+    ],
     ["cookie-distingue", ["tableau-de-bord:identique"]],
     ["lien-distingue", ["lien:identique"]],
     ["gabarit-dans-la-charge", ["tableau-de-bord:gabarit"]],
@@ -447,8 +504,15 @@ test.describe("contrôle après déploiement, serveur factice", () => {
     ["auth-organisation-distingue", ["auth:identique"]],
     ["auth-x-powered-by", ["auth:entetes"]],
     ["auth-en-anglais", ["auth:anglais"]],
-    ["inscription-ouverte", ["inscription:identique", "inscription:statut"]],
-    ["renvoi-ouvert", ["inscription:identique", "inscription:statut"]],
+    ["inscription-ouverte", ["comptes:identique", "comptes:statut"]],
+    ["renvoi-ouvert", ["comptes:identique", "comptes:statut"]],
+    ["connexion-ouverte", ["comptes:identique", "comptes:statut"]],
+    ["deconnexion-ouverte", ["comptes:identique", "comptes:statut"]],
+    ["session-ouverte", ["auth:identique", "auth:statut"]],
+    ["connexion-500", ["connexion:statut"]],
+    ["compte-200", ["compte:statut"]],
+    ["compte-distingue", ["compte:identique"]],
+    ["gabarit-compte-dans-la-charge", ["compte:gabarit"]],
   ];
 
   for (const [defaut, attendus] of CAS) {
@@ -484,7 +548,7 @@ test.describe("contrôle après déploiement, serveur factice", () => {
 
     expect(resultats.length).toBeGreaterThan(10);
     expect(resultats.every((r) => !r.ok)).toBe(true);
-    for (const page of [...PAGES, "tache", "auth", "inscription"]) {
+    for (const page of [...PAGES, "tache", "auth", "comptes"]) {
       expect(echecs(resultats)).toContain(`${page}:statut`);
     }
   });
@@ -506,7 +570,9 @@ test.describe("contrôle après déploiement, serveur factice", () => {
 // reçoit (corps lu en entier, en-têtes reçus), et sur la construction de la
 // requête, qui refuse un POST porteur d'un cookie, d'un Authorization ou d'un
 // corps (docs/features/inscription.md, section 2.3).
-test.describe("contrôle après déploiement, les quatre POST de l'inscription", () => {
+// 1.2 : cinq points d'entrée des comptes au lieu de trois (connexion et
+// déconnexion), mêmes conditions (docs/features/connexion.md, section 10).
+test.describe("contrôle après déploiement, les six POST des comptes", () => {
   test("reçus par le serveur : aucun octet de corps, ni Origin, ni Cookie, ni Authorization, ni Content-Type", async () => {
     const factice = await demarrerFactice();
     try {
@@ -514,7 +580,7 @@ test.describe("contrôle après déploiement, les quatre POST de l'inscription",
       const posts = factice.requetes.filter((r) => r.methode === "POST");
 
       expect(posts.map((r) => r.chemin.replace(/[0-9a-f]{16}$/, "<inexistant>"))).toEqual([
-        ...POINTS_INSCRIPTION,
+        ...POINTS_COMPTES,
         "/api/auth/<inexistant>",
       ]);
       for (const requete of posts) {
@@ -611,9 +677,10 @@ test.describe("contrôle après déploiement, ligne de commande", () => {
       expect(detail[3]).toContain("<body><script");
       expect(detail[4]).toMatch(/^cookie forgé \[\d+, \d+\[ : "/);
       expect(detail[4]).toContain("<body><main><h1>Cette page");
-      // Deux comparaisons détaillées : 5 lignes, puis 3 pour les liens
-      // identiques ; aucune autre ligne en retrait.
-      expect(lignes.filter((l) => /^ {9}\S/.test(l))).toHaveLength(8);
+      // Trois comparaisons détaillées : 5 lignes, puis 3 pour les liens
+      // identiques et 3 pour /compte (1.2, modifié) ; aucune autre ligne en
+      // retrait.
+      expect(lignes.filter((l) => /^ {9}\S/.test(l))).toHaveLength(11);
 
       const l = await lancer(lien.adresse, "--detail");
       expect(l.code, l.sortie).toBe(1);
@@ -622,7 +689,7 @@ test.describe("contrôle après déploiement, ligne de commande", () => {
 
       const c = await lancer(conforme.adresse, "--detail");
       expect(c.code, c.sortie).toBe(0);
-      expect(c.sortie.match(/documents normalisés identiques/g)).toHaveLength(2);
+      expect(c.sortie.match(/documents normalisés identiques/g)).toHaveLength(3);
     } finally {
       await cookie.fermer();
       await lien.fermer();
@@ -719,6 +786,7 @@ test.describe("contrôle après déploiement, cohérence et site construit", () 
       TEXTES_NAVIGATION.organisationActive,
       TEXTES_NAVIGATION.entrees.tableauDeBord,
       ...Object.values(TEXTES_NAVIGATION.roles),
+      TEXTES_COMPTE.deconnexion.bouton,
     ]);
   });
 
@@ -770,6 +838,8 @@ test.describe("contrôle après déploiement, cohérence et site construit", () 
 
   // next start répond comme Vercel : une adresse sans page reçoit la page
   // « introuvable » rendue sur le serveur (fiche, section 5, décision 10).
+  // 1.2 (modifié, signalé) : les contrôles « inscription » deviennent
+  // « comptes » ; en local, connexion et inscription sont ouvertes.
   // 1.1 (modifié, signalé) : en local, l'inscription est ouverte (elle n'est
   // fermée qu'en production, décision 1 de docs/features/inscription.md) ;
   // les deux contrôles « inscription » y échouent, et eux seuls. C'est le
@@ -780,6 +850,6 @@ test.describe("contrôle après déploiement, cohérence et site construit", () 
   }) => {
     const resultats = await controlerSite(baseURL ?? "");
 
-    expect(echecs(resultats)).toEqual(["inscription:identique", "inscription:statut"]);
+    expect(echecs(resultats)).toEqual(["comptes:identique", "comptes:statut"]);
   });
 });

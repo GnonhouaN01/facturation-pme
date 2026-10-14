@@ -2,6 +2,7 @@ import { createHmac, randomBytes } from "node:crypto";
 
 import { type BrowserContext, type Page, expect, test } from "@playwright/test";
 
+import { TEXTES_COMPTE } from "../src/textes/compte";
 import { TEXTES_ERREURS } from "../src/textes/erreurs";
 import { TEXTES_NAVIGATION } from "../src/textes/navigation";
 import { TEXTES_SIMULATION } from "../src/textes/simulation";
@@ -201,5 +202,63 @@ test.describe("points d'entrée non exposés", () => {
     expect(inexistante.status()).toBe(404);
     expect(await auth.text()).toBe("");
     expect(await auth.text()).toBe(await inexistante.text());
+  });
+});
+
+// Zone (compte) de la 1.2 : sans session valide, /compte répond « introuvable »,
+// la même réponse avec ou sans cookie forgé, et rien de la page ni de son
+// gabarit ne part vers le navigateur (tests d'attaque « accès sans session »
+// et « entrée falsifiée »). Fiche : docs/features/connexion.md, section 5.1.
+test.describe("zone compte, sans session valide", () => {
+  const COMPTE = "/compte";
+  const TEXTES_ZONE_COMPTE = [
+    TEXTES_COMPTE.compte.titre,
+    TEXTES_COMPTE.compte.connecte,
+    TEXTES_COMPTE.deconnexion.bouton,
+  ];
+
+  test("sans cookie : « introuvable », 404", async ({ page }) => {
+    const obtenu = await rendu(page, COMPTE);
+
+    expect(obtenu.statut).toBe(404);
+    expect(obtenu.h1).toEqual([TEXTES_ERREURS.introuvable]);
+  });
+
+  test("cookies forgés : identiques à l'absence de cookie, dans le navigateur et en HTML brut", async ({
+    page,
+    context,
+    baseURL,
+    request,
+  }) => {
+    const attendu = await rendu(page, COMPTE);
+    await forger(context, baseURL, signeAvecUnAutreSecret());
+    expect(await rendu(page, COMPTE)).toEqual(attendu);
+
+    const servi = async (cookie?: string) => {
+      const reponse = await request.get(COMPTE, {
+        maxRedirects: 0,
+        headers: cookie === undefined ? {} : { cookie: `${COOKIE_SESSION}=${cookie}` },
+      });
+      return { statut: reponse.status(), document: documentServi(await reponse.text()) };
+    };
+    const brut = await servi();
+    expect(brut.statut).toBe(404);
+    for (const cookie of [signeAvecUnAutreSecret(), randomBytes(32).toString("base64url"), ""]) {
+      expect(await servi(cookie)).toEqual(brut);
+    }
+  });
+
+  test("rien de la page ni du gabarit de compte dans le HTML ni dans la charge utile RSC", async ({
+    request,
+  }) => {
+    const page = await request.get(COMPTE);
+    const rsc = await request.get(COMPTE, { headers: { rsc: "1" } });
+    const [corps, charge] = [await page.text(), await rsc.text()];
+
+    expect(page.status()).toBe(404);
+    for (const texte of [...TEXTES_ZONE_COMPTE, ...TEXTES_GABARIT]) {
+      expect(corps, texte).not.toContain(texte);
+      expect(charge, texte).not.toContain(texte);
+    }
   });
 });

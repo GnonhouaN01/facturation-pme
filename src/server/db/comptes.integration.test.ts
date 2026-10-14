@@ -7,7 +7,7 @@ import { ETAPES, executerEtapes } from "../taches/etapes";
 import { creerTraitementTache } from "../taches/quotidienne";
 
 import { db } from "./client";
-import { purgerComptesNonVerifies } from "./comptes";
+import { purgerComptesNonVerifies, purgerSessionsExpirees } from "./comptes";
 import { account, session, user } from "./schema/auth";
 import { compteurDebit } from "./schema/technique";
 
@@ -72,6 +72,33 @@ describe("purgerComptesNonVerifies", () => {
     expect(await db.select().from(session).where(eq(session.userId, ancien))).toEqual([]);
     expect(await existe(recent)).toBe(true);
     expect(await existe(verifie)).toBe(true);
+  });
+});
+
+// Purge des sessions expirées (S-63, 1.2) : une session expirée ne sert plus
+// et contient une adresse IP et un navigateur. Fiche :
+// docs/features/connexion.md, section 4.4, test 18.
+describe("purgerSessionsExpirees", () => {
+  test("supprime une session expirée, garde une session en cours et l'utilisateur", async () => {
+    const id = await creer({ verifie: true, ageJours: 0 });
+    const expiree = randomUUID();
+    await db.insert(session).values({
+      id: expiree,
+      token: randomUUID(),
+      userId: id,
+      expiresAt: new Date(Date.now() - 60_000),
+      createdAt: new Date(Date.now() - 8 * JOUR),
+      updatedAt: new Date(Date.now() - 8 * JOUR),
+    });
+
+    const supprimees = await purgerSessionsExpirees();
+
+    expect(supprimees).toBeGreaterThanOrEqual(1);
+    const restantes = await db.select().from(session).where(eq(session.userId, id));
+    // La session en cours, créée par creer() (expire dans un jour), reste.
+    expect(restantes.map((s) => s.id)).not.toContain(expiree);
+    expect(restantes).toHaveLength(1);
+    expect(await existe(id)).toBe(true);
   });
 });
 

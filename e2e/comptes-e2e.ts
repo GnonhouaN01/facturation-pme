@@ -19,8 +19,9 @@ const PROJETS = ["mobile-390", "ordinateur-1280"] as const;
 // répétitions (--repeat-each) au plus. Une adresse n'est jamais reprise par
 // un autre projet, un autre essai ni une autre répétition : un compte, ses
 // emails et ses compteurs de débit laissés par un essai échoué ne faussent
-// pas le suivant.
-const RANGS = 10;
+// pas le suivant. 1.2 : 16 rangs au lieu de 10, pour les comptes de la
+// connexion (rangs 8 à 15, docs/features/connexion.md, section 8.1).
+export const RANGS = 16;
 export const ESSAIS_MAX = 3;
 export const REPETITIONS_MAX = 5;
 

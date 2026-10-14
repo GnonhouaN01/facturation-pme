@@ -2,8 +2,8 @@ import { describe, expect, test, vi } from "vitest";
 
 import { auth } from "./config";
 import {
+  COMPTES_OUVERTS_EN_PRODUCTION,
   creerTraitementAuth,
-  INSCRIPTION_OUVERTE_EN_PRODUCTION,
   POINTS_ENTREE_OUVERTS,
   reponseInexistante,
 } from "./points-entree";
@@ -13,7 +13,10 @@ import {
 // inscription fermée en production (décision 1), jeton de vérification
 // jamais dans l'adresse reçue (décision 3). Better Auth est remplacé par un
 // espion : un point d'entrée fermé ne doit jamais l'atteindre. Fiche :
-// docs/features/inscription.md, sections 2 et 4.3.
+// docs/features/inscription.md, sections 2 et 4.3. Connexion et déconnexion
+// (1.2) : réponse unique pour les trois échecs (T-07), corps de Better Auth
+// jamais transmis (S-82), limite par compte, comptes fermés en production.
+// Fiche : docs/features/connexion.md, tests 1 à 6.
 
 // config.ts charge env.ts : valeurs factices, base sur un port fermé (aucune
 // connexion n'est ouverte : seul auth.api est lu).
@@ -45,23 +48,49 @@ const CORPS_VALIDES: Readonly<Record<string, unknown>> = {
   },
   "/send-verification-email": { email: "awa@exemple.invalid" },
   "/verify-email": { jeton: JETON },
+  "/sign-in/email": { email: "awa@exemple.invalid", motDePasse: "une-phrase-de-passe-solide" },
+  "/sign-out": {},
 };
 
-function espion() {
-  return vi.fn<(requete: Request) => Promise<Response>>(async () =>
-    Response.json({ status: true }),
-  );
+const COOKIE_SESSION = "better-auth.session_token=jeton.signature; Path=/; HttpOnly; SameSite=Lax";
+
+// Réponse de Better Auth par défaut : un succès qui pose le cookie de session
+// (exigé par la connexion ; ignoré par l'inscription et le renvoi).
+function succes(): Response {
+  return new Response(JSON.stringify({ status: true }), {
+    status: 200,
+    headers: { "content-type": "application/json", "set-cookie": COOKIE_SESSION },
+  });
 }
 
-function traitement(options: { estProduction?: boolean } = {}) {
-  const traiter = espion();
+function espion(reponse: () => Response = succes) {
+  return vi.fn<(requete: Request) => Promise<Response>>(async () => reponse());
+}
+
+function traitement(
+  options: {
+    estProduction?: boolean;
+    reponse?: () => Response;
+    limite?: () => Promise<boolean>;
+    sessionLisible?: () => Promise<boolean>;
+  } = {},
+) {
+  const traiter = espion(options.reponse);
+  const limiterCompte = vi.fn<(adresse: string) => Promise<boolean>>(
+    options.limite ?? (async () => true),
+  );
+  const sessionEncoreLisible = vi.fn<(entetes: Headers) => Promise<boolean>>(
+    options.sessionLisible ?? (async () => false),
+  );
   const gerer = creerTraitementAuth({
     traiter,
     origine: ORIGINE,
     estProduction: options.estProduction ?? false,
+    limiterCompte,
+    sessionEncoreLisible,
     horloge: { maintenant: () => 0, attendre: async () => {} },
   });
-  return { traiter, gerer };
+  return { traiter, gerer, limiterCompte, sessionEncoreLisible };
 }
 
 function requete(
@@ -111,8 +140,14 @@ function cheminsDeclares(): string[] {
 const OUVERTS = Object.keys(POINTS_ENTREE_OUVERTS).sort();
 
 describe("T-55 : liste fermée des points d'entrée", () => {
-  test("les points d'entrée ouverts sont exactement les trois de la fiche, en POST", () => {
-    expect(OUVERTS).toEqual(["/send-verification-email", "/sign-up/email", "/verify-email"]);
+  test("les points d'entrée ouverts sont exactement les cinq des fiches 1.1 et 1.2, en POST", () => {
+    expect(OUVERTS).toEqual([
+      "/send-verification-email",
+      "/sign-in/email",
+      "/sign-out",
+      "/sign-up/email",
+      "/verify-email",
+    ]);
     for (const point of Object.values(POINTS_ENTREE_OUVERTS)) expect(point.methode).toBe("POST");
   });
 
@@ -131,7 +166,7 @@ describe("T-55 : liste fermée des points d'entrée", () => {
     ).toBeGreaterThan(10);
   });
 
-  test("chaque point d'entrée déclaré, en GET et en POST, hors des trois ouverts : réponse inexistante, Better Auth jamais appelé", async () => {
+  test("chaque point d'entrée déclaré, en GET et en POST, hors des cinq ouverts : réponse inexistante, Better Auth jamais appelé", async () => {
     const attendue = await inexistante();
     const { traiter, gerer } = traitement();
     const fautifs: string[] = [];
@@ -158,7 +193,7 @@ describe("T-55 : liste fermée des points d'entrée", () => {
     ["mise à jour d'un rôle", "POST", "/organization/update-member-role"],
     ["retrait d'un membre", "POST", "/organization/remove-member"],
     ["invitation", "POST", "/organization/invite-member"],
-    ["connexion (1.2)", "POST", "/sign-in/email"],
+    ["connexion par un réseau social", "POST", "/sign-in/social"],
     ["lecture de session", "GET", "/get-session"],
   ] as const)("%s : réponse inexistante", async (_nom, methode, chemin) => {
     const attendue = await inexistante();
@@ -407,9 +442,9 @@ describe("entrée falsifiée : refusée avant Better Auth", () => {
   });
 });
 
-describe("décision 1 : inscription fermée en production", () => {
+describe("décision 1 : comptes fermés en production (inscription 1.1, connexion 1.2)", () => {
   test("la constante est à false jusqu'à la 1.3", () => {
-    expect(INSCRIPTION_OUVERTE_EN_PRODUCTION).toBe(false);
+    expect(COMPTES_OUVERTS_EN_PRODUCTION).toBe(false);
   });
 
   test.each(OUVERTS)(
@@ -482,4 +517,266 @@ describe("décision 3 : le jeton de vérification n'est jamais dans une adresse 
     expect(interne.headers.get("x-forwarded-for")).toBe("203.0.113.9");
     expect(interne.headers.get("cookie")).toBeNull();
   });
+});
+
+// Fonctionnalité 1.2 : connexion et déconnexion. Fiche :
+// docs/features/connexion.md, sections 1 à 3, tests 1 à 6.
+
+const CONNEXION = CORPS_VALIDES["/sign-in/email"] as Record<string, unknown>;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+
+function reponseBetterAuth(statut: number, corps: unknown, cookies: readonly string[] = []) {
+  return () => {
+    const entetes = new Headers({ "content-type": "application/json" });
+    for (const cookie of cookies) entetes.append("set-cookie", cookie);
+    return new Response(JSON.stringify(corps), { status: statut, headers: entetes });
+  };
+}
+
+describe("T-55 et S-82 (1.2) : ce qui reste fermé", () => {
+  test.each([
+    ["lecture de session, GET", "GET", "/get-session"],
+    ["lecture de session, POST", "POST", "/get-session"],
+    ["connexion par un réseau social", "POST", "/sign-in/social"],
+    ["GET de la connexion", "GET", "/sign-in/email"],
+    ["GET de la déconnexion", "GET", "/sign-out"],
+    ["liste des sessions (1.5)", "GET", "/list-sessions"],
+    ["révocation d'une session (1.5)", "POST", "/revoke-session"],
+    ["révocation des autres sessions (1.5)", "POST", "/revoke-other-sessions"],
+    ["mise à jour de la session", "POST", "/update-session"],
+  ] as const)(
+    "%s : réponse inexistante, Better Auth jamais appelé",
+    async (_nom, methode, chemin) => {
+      const attendue = await inexistante();
+      const { traiter, gerer, limiterCompte } = traitement();
+      const recue =
+        methode === "POST" ? await gerer(post(chemin, {})) : await gerer(requete("GET", chemin));
+      expect(await empreinte(recue)).toEqual(attendue);
+      expect(traiter).not.toHaveBeenCalled();
+      expect(limiterCompte).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("T-07 : une seule réponse pour les échecs de la connexion", () => {
+  const ECHECS = [
+    ["adresse inconnue ou mauvais mot de passe", 401, { code: "INVALID_EMAIL_OR_PASSWORD" }],
+    ["compte non vérifié, bon mot de passe", 403, { code: "EMAIL_NOT_VERIFIED" }],
+    ["refus sans code", 401, {}],
+    ["adresse refusée par Better Auth", 400, { code: "INVALID_EMAIL" }],
+  ] as const;
+
+  test.each(ECHECS)(
+    "%s : 401 identifiants_incorrects, sans cookie ni message de Better Auth",
+    async (_nom, statut, corps) => {
+      const { gerer } = traitement({
+        // Un Set-Cookie sur un refus n'est jamais transmis.
+        reponse: reponseBetterAuth(statut, { ...corps, message: "Message de Better Auth" }, [
+          COOKIE_SESSION,
+        ]),
+      });
+      const reponse = await gerer(post("/sign-in/email", CONNEXION));
+      expect(reponse.status).toBe(401);
+      expect(await reponse.text()).toBe(
+        JSON.stringify({ ok: false, raison: "identifiants_incorrects" }),
+      );
+      expect(reponse.headers.getSetCookie()).toEqual([]);
+    },
+  );
+
+  test("les quatre échecs : même statut, mêmes en-têtes, mêmes octets", async () => {
+    const empreintes = [];
+    for (const [, statut, corps] of ECHECS) {
+      const { gerer } = traitement({ reponse: reponseBetterAuth(statut, corps) });
+      empreintes.push(await empreinte(await gerer(post("/sign-in/email", CONNEXION))));
+    }
+    for (const recue of empreintes) expect(recue).toEqual(empreintes[0]);
+  });
+});
+
+describe("S-82 : le corps de la connexion n'est jamais transmis", () => {
+  test("succès : exactement { ok: true } et le cookie de session, sans jeton ni utilisateur", async () => {
+    const { gerer } = traitement({
+      reponse: reponseBetterAuth(
+        200,
+        {
+          redirect: false,
+          token: "jeton-de-session-en-clair",
+          user: { id: "u1", email: "awa@exemple.invalid" },
+        },
+        [COOKIE_SESSION],
+      ),
+    });
+    const reponse = await gerer(post("/sign-in/email", CONNEXION));
+    expect(reponse.status).toBe(200);
+    const texte = await reponse.text();
+    expect(texte).toBe(JSON.stringify({ ok: true }));
+    expect(texte).not.toContain("jeton-de-session-en-clair");
+    expect(reponse.headers.getSetCookie()).toEqual([COOKIE_SESSION]);
+  });
+
+  test.each([
+    ["200 sans cookie de session", reponseBetterAuth(200, { token: "t" })],
+    [
+      "200 avec un autre cookie seulement",
+      reponseBetterAuth(200, { token: "t" }, ["better-auth.dont_remember=x; Path=/"]),
+    ],
+    [
+      "200 avec un cookie de session vide",
+      reponseBetterAuth(200, { token: "t" }, ["better-auth.session_token=; Max-Age=0; Path=/"]),
+    ],
+    [
+      "200 avec twoFactorRedirect (1.4)",
+      reponseBetterAuth(200, { twoFactorRedirect: true }, [
+        COOKIE_SESSION,
+        "better-auth.two_factor=x; Path=/",
+      ]),
+    ],
+  ] as const)("%s : erreur avec incident, aucun cookie", async (_nom, reponse) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { gerer } = traitement({ reponse });
+    const recue = await gerer(post("/sign-in/email", CONNEXION));
+    expect(recue.status).toBe(500);
+    const corps = (await recue.json()) as Record<string, unknown>;
+    expect(Object.keys(corps).sort()).toEqual(["incident", "ok", "raison"]);
+    expect(corps.raison).toBe("erreur");
+    expect(corps.incident).toMatch(UUID);
+    expect(recue.headers.getSetCookie()).toEqual([]);
+    vi.restoreAllMocks();
+  });
+});
+
+describe("entrée falsifiée : connexion et déconnexion, refusées avant Better Auth", () => {
+  test.each([
+    ["rememberMe", "/sign-in/email", { ...CONNEXION, rememberMe: false }],
+    ["callbackURL", "/sign-in/email", { ...CONNEXION, callbackURL: "https://attaquant.exemple" }],
+    ["champ inconnu", "/sign-in/email", { ...CONNEXION, role: "proprietaire" }],
+    [
+      "noms de champs de Better Auth",
+      "/sign-in/email",
+      { email: "awa@exemple.invalid", password: "une-phrase-de-passe-solide" },
+    ],
+    [
+      "mot de passe de 129 caractères",
+      "/sign-in/email",
+      { ...CONNEXION, motDePasse: "a".repeat(129) },
+    ],
+    ["mot de passe vide", "/sign-in/email", { ...CONNEXION, motDePasse: "" }],
+    ["mot de passe non textuel", "/sign-in/email", { ...CONNEXION, motDePasse: 12 }],
+    [
+      "adresse hors de la règle de la porte",
+      "/sign-in/email",
+      { ...CONNEXION, email: "Awa <awa@exemple.invalid>" },
+    ],
+    [
+      "adresse avec retour à la ligne",
+      "/sign-in/email",
+      { ...CONNEXION, email: "awa@exemple.invalid\r\nBcc: x@exemple.invalid" },
+    ],
+    ["adresse absente", "/sign-in/email", { motDePasse: "une-phrase-de-passe-solide" }],
+    ["déconnexion avec un champ", "/sign-out", { callbackURL: "https://attaquant.exemple" }],
+    ["déconnexion avec null", "/sign-out", null],
+  ] as const)(
+    "%s : 400 invalide, ni Better Auth ni la limite par compte",
+    async (_nom, chemin, corps) => {
+      const { traiter, gerer, limiterCompte } = traitement();
+      const reponse = await gerer(post(chemin, corps));
+      expect(reponse.status).toBe(400);
+      expect(await reponse.json()).toEqual({ ok: false, raison: "invalide" });
+      expect(traiter).not.toHaveBeenCalled();
+      expect(limiterCompte).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(["/sign-in/email", "/sign-out"])(
+    "%s : données dans l'adresse, autre type que JSON, ou corps de plus de 4 Kio : refusés",
+    async (chemin) => {
+      const { traiter, gerer } = traitement();
+      const corps = JSON.stringify(CORPS_VALIDES[chemin]);
+      const lourd = `${corps.slice(0, -1)}${" ".repeat(4097 - Buffer.byteLength(corps))}}`;
+      for (const recue of [
+        await gerer(requete("POST", `${chemin}?callbackURL=%2F`, { corps })),
+        await gerer(
+          requete("POST", chemin, {
+            corps,
+            entetes: { "content-type": "text/plain", origin: ORIGINE },
+          }),
+        ),
+        await gerer(requete("POST", chemin, { corps: lourd })),
+      ]) {
+        expect(recue.status).toBe(400);
+      }
+      expect(traiter).not.toHaveBeenCalled();
+    },
+  );
+
+  test("seuls l'adresse et le mot de passe parviennent à Better Auth, sous ses noms, sans cookie", async () => {
+    const { traiter, gerer } = traitement();
+    await gerer(
+      post("/sign-in/email", CONNEXION, {
+        "content-type": "application/json",
+        origin: ORIGINE,
+        cookie: "better-auth.session_token=ancienne",
+        "x-forwarded-for": "203.0.113.9",
+      }),
+    );
+    const interne = traiter.mock.calls[0]?.[0];
+    if (!interne) throw new Error("Better Auth non appelé");
+    expect(interne.method).toBe("POST");
+    expect(new URL(interne.url).pathname).toBe("/api/auth/sign-in/email");
+    expect(new URL(interne.url).search).toBe("");
+    expect(await interne.json()).toEqual({
+      email: "awa@exemple.invalid",
+      password: "une-phrase-de-passe-solide",
+    });
+    expect(interne.headers.get("cookie")).toBeNull();
+    expect(interne.headers.get("x-forwarded-for")).toBe("203.0.113.9");
+  });
+});
+
+describe("limite par compte (S-11, T-01) : auth.connexion_compte", () => {
+  test("appelée une fois avec l'adresse validée, avant Better Auth", async () => {
+    const { traiter, gerer, limiterCompte } = traitement();
+    await gerer(post("/sign-in/email", CONNEXION));
+    expect(limiterCompte).toHaveBeenCalledTimes(1);
+    expect(limiterCompte).toHaveBeenCalledWith("awa@exemple.invalid");
+    expect(traiter).toHaveBeenCalledTimes(1);
+    expect(limiterCompte.mock.invocationCallOrder[0]).toBeLessThan(
+      traiter.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  test("limite atteinte : 429 trop_de_requetes, Better Auth jamais appelé", async () => {
+    const { traiter, gerer } = traitement({ limite: async () => false });
+    const reponse = await gerer(post("/sign-in/email", CONNEXION));
+    expect(reponse.status).toBe(429);
+    expect(await reponse.text()).toBe(JSON.stringify({ ok: false, raison: "trop_de_requetes" }));
+    expect(reponse.headers.getSetCookie()).toEqual([]);
+    expect(traiter).not.toHaveBeenCalled();
+  });
+
+  test("compteur en panne : erreur avec incident, Better Auth jamais appelé (fermé par défaut)", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { traiter, gerer } = traitement({
+      limite: async () => {
+        throw new Error("base en panne");
+      },
+    });
+    const reponse = await gerer(post("/sign-in/email", CONNEXION));
+    expect(reponse.status).toBe(500);
+    const corps = (await reponse.json()) as Record<string, unknown>;
+    expect(corps.raison).toBe("erreur");
+    expect(corps.incident).toMatch(UUID);
+    expect(traiter).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  test.each(["/sign-out", "/sign-up/email", "/send-verification-email", "/verify-email"])(
+    "%s : la limite par compte n'est jamais comptée",
+    async (chemin) => {
+      const { gerer, limiterCompte } = traitement();
+      await gerer(post(chemin, CORPS_VALIDES[chemin]));
+      expect(limiterCompte).not.toHaveBeenCalled();
+    },
+  );
 });

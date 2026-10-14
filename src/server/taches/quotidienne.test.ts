@@ -65,8 +65,14 @@ function lignesTache(): { niveau: string; objet: Record<string, unknown> }[] {
 }
 
 describe("les étapes de la première version", () => {
-  test("compteurs_debit puis comptes_non_verifies, et rien d'autre", () => {
-    expect(ETAPES.map((e) => e.nom)).toEqual(["compteurs_debit", "comptes_non_verifies"]);
+  // Modifié en 1.2 : étape sessions_expirees ajoutée (docs/features/connexion.md,
+  // section 4.4, test 18).
+  test("compteurs_debit, comptes_non_verifies puis sessions_expirees, et rien d'autre", () => {
+    expect(ETAPES.map((e) => e.nom)).toEqual([
+      "compteurs_debit",
+      "comptes_non_verifies",
+      "sessions_expirees",
+    ]);
     expect(Object.isFrozen(ETAPES)).toBe(true);
   });
 });
