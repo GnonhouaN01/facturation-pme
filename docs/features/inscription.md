@@ -1,6 +1,6 @@
 # Fonctionnalité : inscription et vérification de l'email
 
-Statut : validée ; PR 1 et tâche quotidienne fusionnées ; PR 2 implémentée en local le 2026-10-13, preuves sur la prévisualisation à faire par le développeur (section 7). Fiche rédigée le 2026-10-13 ; les trois vrais choix tranchés par le développeur le même jour (section « Décisions »), les autres points selon la recommandation de l'assistant (section « Décisions par défaut »). Ordre retenu : PR 1 de cette fiche, puis fiche et PR de la tâche quotidienne (8.3 avancée), puis PR 2.
+Statut : validée ; PR 1 et tâche quotidienne fusionnées ; PR 2 implémentée le 2026-10-13, preuve sur la prévisualisation faite et conforme le 2026-10-14 (section 7). Fiche rédigée le 2026-10-13 ; les trois vrais choix tranchés par le développeur le même jour (section « Décisions »), les autres points selon la recommandation de l'assistant (section « Décisions par défaut »). Ordre retenu : PR 1 de cette fiche, puis fiche et PR de la tâche quotidienne (8.3 avancée), puis PR 2.
 
 Jalon 1, fonctionnalité 1.1 de `docs/PLAN.md`. Taille M. Cas d'utilisation : UC-01. Exigences : F-001, S-10, S-11, S-15, S-54, S-55, S-81, S-82, S-85. Menaces : T-07, T-39, T-40, T-41, T-55 ; T-01 et T-43 préparées (limites de Better Auth, connexion en 1.2).
 
@@ -327,7 +327,7 @@ Réglages par défaut de Better Auth gardés : `HttpOnly`, `SameSite=Lax`, `Secu
 
 Par le développeur, jamais par l'assistant (`envoi-emails.md`, section 9). L'assistant ne lance aucune commande contre `preview` ni `production`.
 
-1. **Essai depuis le poste** (étape 4 de la 0.7), au début de la PR 2 : `npm run essai:email` avec le second compte, mot de passe saisi sans écho. Vérifier la réception, `From`, un seul destinataire, `SPF` et `DKIM` en `pass`, la copie dans « Messages envoyés », et toute alerte de Google. **Échec : on s'arrête là.**
+1. **Essai depuis le poste** (étape 4 de la 0.7), au début de la PR 2 : `npm run essai:email` avec le second compte, mot de passe saisi sans écho. Vérifier la réception, `From`, un seul destinataire, `SPF` et `DKIM` en `pass`, la copie dans « Messages envoyés », et toute alerte de Google. **Échec : on s'arrête là.** **Non fait pour cette PR, par décision du développeur du 2026-10-14** : remplacé par la preuve Vercel → Gmail du point 3, plus complète (même compte, vrai chemin, code réel, `SPF`, `DKIM` et `DMARC`, journaux du déploiement) et sans saisie du mot de passe d'application sur le poste.
 2. **Variables de prévisualisation**, limitées à la branche `feat/1.1-inscription-pr2` (champ « Preview Branch » de Vercel ; la branche de la PR 2 porte ce nom), posées seulement quand elle porte la PR 2 : `GMAIL_UTILISATEUR` et `GMAIL_MOT_DE_PASSE_APPLICATION` (second compte, Sensitive), `EMAIL_TRANSPORT=smtp`, `EMAIL_DESTINATAIRES_AUTORISES` (adresse personnelle du développeur).
 3. **Preuve** (étape 8 de la 0.7) : sur la prévisualisation, ouverte par l'adresse du déploiement (section 2.4), s'inscrire avec l'adresse autorisée ; recevoir `compte.verification` ; ouvrir le lien, confirmer ; arriver sur « Adresse vérifiée » avec un cookie de session. Dans les journaux du déploiement, aucune requête ne porte le jeton. Mêmes vérifications qu'au point 1, et surtout les alertes de Google (connexion depuis Francfort, RR-10). Puis une seconde inscription avec la même adresse : `compte.existant` reçu, réponse identique à l'écran.
 4. **Essai de l'adresse IP** (section 3.4) sur le même déploiement, **après la preuve du point 3** (décision du développeur, PR 2). La limite `auth.inscription` admet 5 inscriptions par adresse IP sur une **fenêtre fixe d'une heure** (3 600 s), ouverte par la première tentative de cette adresse (section 3.3) ; les deux inscriptions de la preuve y comptent déjà si Vercel remplace l'en-tête par l'adresse réelle. Une réponse `trop_de_requetes` (429) avant la sixième requête est donc tout aussi concluante : l'en-tête forgé n'est pas cru. Six réponses `mot_de_passe_compromis` : il est cru. Pour repartir d'un compteur vide, attendre une heure après la première inscription de la preuve.
@@ -336,6 +336,22 @@ Par le développeur, jamais par l'assistant (`envoi-emails.md`, section 9). L'as
 7. Après la preuve : retirer les quatre variables de prévisualisation de la branche, ou les laisser jusqu'à la suppression de la branche (elles ne s'appliquent qu'à elle). Recommandé : les retirer après la fusion.
 
 Résultats notés dans « Notes de l'implémentation ».
+
+#### Résultats de la preuve sur la prévisualisation, le 2026-10-14
+
+Par le développeur, sur la prévisualisation de la branche `feat/1.1-inscription-pr2`, ouverte par l'adresse propre du déploiement. Tout est conforme. L'essai depuis le poste (`npm run essai:email`, point 1) n'est pas fait : cette preuve le remplace, par décision du développeur (point 1).
+
+- **Have I Been Pwned réel** : un mot de passe compromis est refusé, avec le message « Ce mot de passe figure dans une fuite de données connue. Choisissez-en un autre. »
+- **Email de vérification** (point 3), envoyé par `mataderleii@gmail.com` à l'adresse autorisée : `SPF` PASS, `DKIM` PASS (`gmail.com`), `DMARC` PASS. Lien sur l'adresse propre du déploiement, jeton dans le fragment (`/lien/verification#<jeton>`) ; bouton « Confirmer mon adresse » ; page « Adresse vérifiée ».
+- **Cookie de session** : `__Secure-better-auth.session_token`, `HttpOnly`, `Secure`, `SameSite=Lax` (S-82). Le second cookie visible, `_vercel_jwt`, est celui de la protection des prévisualisations de Vercel, absent en production.
+- **Réinscription avec la même adresse** : écran identique, email « Tentative d'inscription avec votre adresse » reçu (UC-01, 3a ; T-07).
+- **Compte d'envoi et journaux** : « Messages envoyés » conforme, aucune alerte de Google ; journaux du déploiement sans adresse email, sans jeton, sans ligne `[Better Auth]` (point 5).
+- **Essai de l'adresse IP** (section 3.4, point 4), après la preuve : six requêtes, chacune avec un `X-Forwarded-For` forgé différent ; réponses 400, 400, puis 429 dès la troisième. Le compteur ne tient pas compte de l'en-tête forgé : Vercel le remplace par l'adresse réelle, et les inscriptions de la preuve comptaient déjà dans la fenêtre d'une heure. **`x-forwarded-for` est confirmé** ; le repli `x-real-ip` n'est pas nécessaire. Une requête refusée sur l'origine (adresse `-git-`) ne compte pas dans la limite : elle est refusée avant Better Auth, donc avant le compteur.
+
+Notes :
+
+- **Adresse `-git-` d'une prévisualisation** : l'inscription y répond « Cette action n'est pas disponible. » (origine refusée, voulu, section 2.4). Toujours tester sur l'adresse propre du déploiement.
+- **L'email « Tentative d'inscription » invite à se connecter**, alors que la page de connexion n'arrive qu'en 1.2. Acceptable tant que l'inscription reste fermée en production (jusqu'à la 1.3, décision 1) ; texte et liens du modèle `compte.existant` à revoir en 1.2.
 
 ### Alternatives écartées
 
@@ -399,7 +415,7 @@ Aucune. Les tables de Better Auth existent ; `compteur_debit` reçoit de nouvell
 - [ ] Un lien expiré ou altéré mène à « Ce lien n'est plus valable » et au renvoi (UC-01 4a) ; un lien déjà utilisé n'ouvre pas de nouvelle session.
 - [ ] Une session d'utilisateur non vérifié est lue comme absente.
 - [ ] `envoyerEmail` n'est importable que par `action.ts`, `auth/emails.ts` et les tests (règle T) ; aucune limite n'est écrite hors de `limites.ts`.
-- [ ] Essai depuis le poste, preuve depuis la prévisualisation et essai de l'adresse IP réussis et notés (section 7).
+- [x] Essai depuis le poste, preuve depuis la prévisualisation et essai de l'adresse IP réussis et notés (section 7). L'essai depuis le poste est remplacé par la preuve depuis la prévisualisation (décision du 2026-10-14, section 7, point 1).
 - [ ] `npm run verifier` et `npm run test:integration` verts, sorties montrées.
 
 ## Tests à écrire
@@ -439,7 +455,7 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 11 relèven
 
 ### Vérifications manuelles (PR 2, développeur)
 
-- [ ] Essai depuis le poste, preuve depuis la prévisualisation, essai de l'adresse IP, journaux du déploiement (section 7).
+- [x] Essai depuis le poste, preuve depuis la prévisualisation, essai de l'adresse IP, journaux du déploiement (section 7). Essai depuis le poste remplacé par la preuve depuis la prévisualisation (décision du 2026-10-14).
 
 ## Fichiers concernés
 
@@ -577,4 +593,4 @@ Appliquées par l'assistant le 2026-10-13, selon sa recommandation, sauf avis co
 
 **Vérifications** : `npm run verifier` vert (format, lint, typecheck, 57 fichiers et 1 841 tests unitaires, construction, 279 tests de bout en bout, ports 3000 et 3101 libres) ; `npm run test:integration` : 21 fichiers, 185 réussis et 1 échec attendu (déjà présent).
 
-**À faire par le développeur avant la fusion** : section 7, points 1 à 5, dans cet ordre (essai depuis le poste, variables de la branche `feat/1.1-inscription-pr2`, preuve Vercel → Gmail, puis essai de l'en-tête d'adresse IP selon la section 3.4 corrigée, journaux du déploiement). Résultats à noter ici.
+**À faire par le développeur avant la fusion** : section 7, points 1 à 5, dans cet ordre (essai depuis le poste, variables de la branche `feat/1.1-inscription-pr2`, preuve Vercel → Gmail, puis essai de l'en-tête d'adresse IP selon la section 3.4 corrigée, journaux du déploiement). Fait le 2026-10-14, tout conforme : résultats en section 7 (« Résultats de la preuve sur la prévisualisation »).
