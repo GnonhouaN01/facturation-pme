@@ -1,14 +1,18 @@
 import { z } from "zod";
 
+import {
+  LONGUEUR_MAX_MOT_DE_PASSE,
+  LONGUEUR_MAX_NOM,
+  LONGUEUR_MIN_MOT_DE_PASSE,
+} from "./regles-compte";
+
 // Schémas des points d'entrée ouverts de /api/auth (1.1), partagés par les
 // formulaires et le gestionnaire. Objets stricts : tout champ non prévu est
 // refusé. Le serveur applique en plus la règle d'adresse de la porte d'envoi
 // (src/server/email/adresse.ts). Fiche : docs/features/inscription.md,
 // sections 2.2 et 5.2.
 
-export const LONGUEUR_MIN_MOT_DE_PASSE = 12;
-export const LONGUEUR_MAX_MOT_DE_PASSE = 128;
-export const LONGUEUR_MAX_NOM = 100;
+export { LONGUEUR_MAX_MOT_DE_PASSE, LONGUEUR_MAX_NOM, LONGUEUR_MIN_MOT_DE_PASSE };
 const LONGUEUR_MAX_ADRESSE = 254;
 const LONGUEUR_MAX_JETON = 1024;
 

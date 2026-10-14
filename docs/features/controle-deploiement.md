@@ -34,10 +34,12 @@ Un module Node.js sans dépendance (`fetch` de Node 24), qui exporte `controlerS
 node scripts/controle-deploiement.mjs https://facturation-pme.vercel.app [--essais 3] [--pause 20] [--detail]
 ```
 
-- **Uniquement des requêtes `GET`**, sans cookie (sauf un cookie de session forgé, tiré au hasard, sur une requête de `/tableau-de-bord`, sous les noms `better-auth.session_token` et `__Secure-better-auth.session_token`), sans en-tête d'authentification, sans corps, `redirect: "manual"` (une redirection n'est jamais suivie : elle échoue au contrôle du statut), délai de 15 s par requête.
+- **Des requêtes `GET`**, plus quatre `POST` sans corps de la page `inscription` (ci-dessous), sans cookie (sauf un cookie de session forgé, tiré au hasard, sur une requête de `/tableau-de-bord`, sous les noms `better-auth.session_token` et `__Secure-better-auth.session_token`), sans en-tête d'authentification, sans corps, `redirect: "manual"` (une redirection n'est jamais suivie : elle échoue au contrôle du statut), délai de 15 s par requête.
 - **Adresse acceptée** : une origine seule (`https://hôte`, sans chemin, paramètre, fragment ni identifiants). `http:` n'est accepté que pour `localhost` et `127.0.0.1` (tests). Toute autre adresse est refusée avant la première requête (code de sortie 2).
 - **Sept requêtes** : `/` deux fois, `/tableau-de-bord` sans cookie puis avec le cookie forgé, une adresse inexistante (`/adresse-inexistante-<8 octets en hexadécimal>`) et deux `/lien/devis/<32 octets en base64url>`, tirées au hasard à chaque passage.
 - **Page `tache`** (8.3, `docs/features/tache-quotidienne.md`, section 6) : trois requêtes de plus, `/api/taches/quotidienne` sans `Authorization`, puis avec `Authorization: Bearer <32 octets aléatoires en base64url>` (seconde exception à « aucun en-tête d'authentification », jamais affichée, même avec `--detail`), et `/api/taches/<8 octets en hexadécimal>`.
+- **Page `auth`** (1.1, `docs/features/inscription.md`, section 2.3, T-55) : trois `GET` de plus, `/api/auth/organization/list`, `/api/auth/organization/get-full-organization` et `/api/auth/<8 octets en hexadécimal>`.
+- **Page `inscription`** (1.1, décision 1 de la fiche) : quatre `POST` **sans corps, sans `Origin`, sans cookie**, vers `/api/auth/sign-up/email`, `/api/auth/send-verification-email`, `/api/auth/verify-email` et `/api/auth/<8 octets en hexadécimal>`. Seule exception à « uniquement des `GET` » : un `GET` ne peut pas prouver que l'inscription est fermée, ces chemins n'admettant que `POST`. Sans effet par construction : fermés (production), ils répondent comme un chemin inexistant ; ouverts (prévisualisation, local), le gestionnaire refuse un `POST` sans `Origin` par 403 avant toute lecture du corps et avant Better Auth, donc sans écriture, sans compteur, sans email.
 - **Sortie** : une ligne par contrôle (`ok` ou `ÉCHEC`, nom, détail sans valeur reçue sauf le statut), puis le bilan. Code 0 si tout passe, 1 sinon. `--detail` ajoute, sous chaque contrôle `identique` seulement, les deux statuts, la longueur des deux documents servis, la position du premier caractère différent et 120 caractères autour dans chacun : ni en-tête ni cookie. `--essais` relance l'ensemble après `--pause` secondes tant qu'un contrôle échoue (décision 6).
 - Aucun secret, aucune variable d'environnement lue, aucune écriture.
 
@@ -57,6 +59,8 @@ Chaque contrôle porte un nom stable `<page>:<contrôle>` (pages `accueil`, `tab
 | `gabarit` | tableau-de-bord (les deux réponses), inexistante | Le corps entier, charge utile RSC comprise, ne contient aucun texte du gabarit de l'application (bandeau de simulation, nom de la navigation, « Organisation active », entrées, rôles), recopiés et comparés à `src/textes/` par un test |
 | `identique` | tableau-de-bord, lien | `/tableau-de-bord` : même statut et même document servi sans cookie et avec le cookie forgé. `/lien/devis/<jeton>` : même statut et même document servi pour deux jetons aléatoires. Aucune comparaison entre `/tableau-de-bord` et une adresse inexistante (section 5) |
 | `tache:statut`, `tache:politique`, `tache:entetes`, `tache:fuite`, `tache:anglais`, `tache:identique` | tache (8.3) | Les trois réponses : 404, politique et en-têtes de production, aucune fuite (dont `CRON_SECRET`), aucun anglais ; même statut, même `Content-Type`, même corps (vide). Aucune ligne de détail |
+| `auth:statut`, `auth:politique`, `auth:entetes`, `auth:fuite`, `auth:anglais`, `auth:identique` | auth (1.1) | Les trois réponses : 404, politique et en-têtes de production, aucune fuite, aucun anglais ; même statut, même `Content-Type`, même corps (vide) pour les deux points d'entrée de `/organization/*` et le chemin inexistant (T-55) |
+| `inscription:statut`, `inscription:identique` | inscription (1.1) | Les quatre `POST` : 404 ; les trois points d'entrée de l'inscription répondent comme le chemin inexistant (statut, `Content-Type`, corps). Échoue hors production, où l'inscription est ouverte : le test sur le site construit en local le vérifie (témoin) |
 
 **Document servi** : le HTML de la réponse, contenu des scripts en ligne vidé (leurs attributs gardés) et chaque nonce remplacé par une valeur fixe (`documentServi`, même définition dans le script et dans `e2e/outils.ts`, vérifiée par un test). Les octets bruts ne peuvent pas être comparés : le nonce change à chaque requête, et la charge utile RSC des scripts en ligne contient l'adresse demandée et le segment de route, si bien que deux adresses inexistantes diffèrent déjà entre elles. La recherche de « 404 » porte sur le document servi : le `digest` interne `NEXT_HTTP_ERROR_FALLBACK;404` de Next.js figure dans la charge utile et n'est pas affiché.
 
@@ -112,7 +116,7 @@ Options écartées : réécriture dans le proxy des adresses de `(app)/` sans co
 
 - Exigences vérifiées en production : S-02 (même réponse qu'une adresse inexistante), S-80 (politique et en-têtes), S-85 (aucun détail technique dans une page).
 - Menaces : T-53 et T-74 en partie (section 4) ; T-34, T-35, T-37 vérifiées sur la production.
-- Le contrôle n'a aucun droit : requêtes `GET` publiques, sans session, sans secret ; il ne peut ni écrire en base, ni envoyer d'email, ni modifier le déploiement. Il ne lance aucune action serveur (pas de `POST`).
+- Le contrôle n'a aucun droit : requêtes publiques, sans session, sans secret ; il ne peut ni écrire en base, ni envoyer d'email, ni modifier le déploiement. Il ne lance aucune action serveur. Ses seuls `POST` (page `inscription`, 1.1) n'ont ni corps ni `Origin` : refusés avant Better Auth s'ils atteignaient un point ouvert.
 - Le workflow n'a que `contents: read` et n'interpole aucune donnée de l'événement dans une commande (injection par un nom de branche ou d'environnement).
 - Matrice des droits : aucune ligne concernée. Tables : aucune.
 - Le script ne s'exécute jamais depuis le poste de l'assistant contre la production ni contre une prévisualisation : seulement contre `localhost` et un serveur factice.
@@ -183,7 +187,7 @@ Dans `e2e/controle-deploiement.spec.ts`, projet `ordinateur-1280` : le serveur f
 
 ### Au jalon 1
 
-- Quand `/api/auth` sera exposé (1.1), ajouter au contrôle les points d'entrée natifs fermés du module organisation (`/api/auth/organization/*` : réponse d'adresse inexistante, T-55), en `GET` seulement.
+- Fait en 1.1 : pages `auth` (`/api/auth/organization/*`, T-55, en `GET`) et `inscription` (quatre `POST` sans corps, inscription fermée en production), section 1.
 
 ## Limites connues
 

@@ -26,6 +26,15 @@ vi.mock("../env", () => ({
   // 8.3 : la route de la tâche quotidienne charge server/taches/, qui lit
   // le secret de la tâche ; aucun appel n'est fait.
   secretTache: { secret: null },
+  // 1.1 : la route de /api/auth charge server/auth/gestionnaire.ts, qui lit
+  // la production dans la configuration d'envoi ; aucun appel n'est fait.
+  configurationEmail: {
+    transport: "memoire",
+    dossier: null,
+    destinatairesAutorises: [],
+    estProduction: false,
+    gmail: null,
+  },
 }));
 
 const APP = fileURLToPath(new URL("../../app/", import.meta.url));
@@ -422,5 +431,43 @@ describe("route de la tâche quotidienne", () => {
 
     expect(Object.keys(route)).toEqual(["GET"]);
     expect(route.GET).toBe(traiterTache);
+  });
+});
+
+// Forme exacte de la route de /api/auth : un import, GET et POST égaux à
+// traiterRequeteAuth. Tout le contrôle vit dans src/server/auth/
+// (gestionnaire.ts lie points-entree.ts à Better Auth) : liste fermée,
+// origine, validation, réponses normalisées. Fiche :
+// docs/features/inscription.md, section 2.2.
+const ROUTE_AUTH = join(APP, "api", "auth", "[...all]", "route.ts");
+const FORME_ROUTE_AUTH = [
+  'import { traiterRequeteAuth } from "@/server/auth/gestionnaire";',
+  "export const GET = traiterRequeteAuth;",
+  "export const POST = traiterRequeteAuth;",
+];
+
+describe("route de /api/auth", () => {
+  test("src/app/api/auth/[...all]/route.ts est parcourue par l'inventaire", async () => {
+    const { parcourus } = await inventorier(APP, REGISTRE);
+
+    expect(parcourus).toContain("api/auth/[...all]/route.ts");
+  });
+
+  test("forme exacte : un import, GET et POST = traiterRequeteAuth, commentaires mis à part", () => {
+    const lignes = readFileSync(ROUTE_AUTH, "utf8")
+      .split("\n")
+      .map((ligne) => ligne.trim())
+      .filter((ligne) => ligne !== "" && !ligne.startsWith("//"));
+
+    expect(lignes).toEqual(FORME_ROUTE_AUTH);
+  });
+
+  test("le module n'exporte que GET et POST, égaux à traiterRequeteAuth", async () => {
+    const route = (await import(pathToFileURL(ROUTE_AUTH).href)) as Record<string, unknown>;
+    const { traiterRequeteAuth } = await import("../auth/gestionnaire");
+
+    expect(Object.keys(route).sort()).toEqual(["GET", "POST"]);
+    expect(route.GET).toBe(traiterRequeteAuth);
+    expect(route.POST).toBe(traiterRequeteAuth);
   });
 });

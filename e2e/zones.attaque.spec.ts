@@ -185,13 +185,21 @@ test.describe("zone application, sans session valide", () => {
 // /api/auth n'est pas exposé avant la 1.1 (CLAUDE.md, règle 11) : une
 // adresse sans route, comme une autre.
 test.describe("points d'entrée non exposés", () => {
-  test("/api/auth n'est pas exposé : même document qu'une adresse inexistante", async ({
+  // 1.1 (modifié, signalé) : /api/auth est exposé, avec une liste fermée de
+  // trois points d'entrée (docs/features/inscription.md, section 2). Un point
+  // fermé reçoit la réponse d'un chemin inexistant sous /api/auth (404, corps
+  // vide), comme la tâche quotidienne sous /api/taches (S-02, portée « sous
+  // une même route ») ; le détail, point par point, est dans
+  // e2e/auth.attaque.spec.ts.
+  test("/api/auth/get-session est fermé : même réponse qu'un chemin inexistant de /api/auth", async ({
     request,
   }) => {
     const auth = await request.get("/api/auth/get-session");
-    const inexistante = await request.get("/adresse-inexistante");
+    const inexistante = await request.get("/api/auth/n-existe-pas");
 
     expect(auth.status()).toBe(404);
-    expect(documentServi(await auth.text())).toBe(documentServi(await inexistante.text()));
+    expect(inexistante.status()).toBe(404);
+    expect(await auth.text()).toBe("");
+    expect(await auth.text()).toBe(await inexistante.text());
   });
 });

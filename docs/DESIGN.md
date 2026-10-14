@@ -466,14 +466,13 @@ sequenceDiagram
 
     U->>N: Saisit email et mot de passe
     N->>S: Demande de connexion
-    S->>B: Verifie le compteur de tentatives
+    S->>B: Incremente le compteur de tentatives
     alt Trop de tentatives
         S-->>N: Message generique, blocage temporaire
     else Autorise
         S->>A: Verifie les identifiants
         A->>B: Lit l'utilisateur, compare le hachage
         alt Identifiants incorrects
-            S->>B: Incremente le compteur
             S-->>N: Email ou mot de passe incorrect
         else Corrects, second facteur actif
             S-->>N: Demande le code temporaire
@@ -486,7 +485,7 @@ sequenceDiagram
     end
 ```
 
-**Explication.** La limitation de débit intervient avant toute vérification, pour qu'un attaquant ne puisse pas enchaîner les essais (T-01). Le message d'échec est identique, que l'email existe ou non (T-07). Aucune session n'est créée avant la validation du second facteur : un mot de passe volé seul ne donne accès à rien (T-02). Le cookie de session est inaccessible aux scripts de la page (S-82).
+**Explication.** La limitation de débit intervient avant toute vérification, pour qu'un attaquant ne puisse pas enchaîner les essais (T-01). Chaque tentative compte, réussie ou non : c'est le fonctionnement de la limitation de Better Auth, plus simple et plus strict qu'un compteur des seuls échecs (corrigé à la 1.1, `docs/features/inscription.md`, section 3.5 ; la 1.2 fixe la limite de connexion sur cette base). Le message d'échec est identique, que l'email existe ou non (T-07). Aucune session n'est créée avant la validation du second facteur : un mot de passe volé seul ne donne accès à rien (T-02). Le cookie de session est inaccessible aux scripts de la page (S-82).
 
 ### 3.2 Requête métier : la chaîne de contrôles
 

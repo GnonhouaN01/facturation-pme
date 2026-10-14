@@ -1,9 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { defineConfig, devices } from "@playwright/test";
 
+import { ADRESSES_E2E } from "./e2e/comptes-e2e";
 import { ADRESSE_PANNE, CONFIGURATION_PANNE, PORT_PANNE } from "./e2e/serveur-panne";
 
 // Les tests tournent sur le site construit, en CI comme en local : lancer
@@ -32,24 +34,49 @@ const EMAILS_E2E = {
 process.env.CRON_SECRET_E2E ??= randomBytes(32).toString("base64url");
 const TACHE_E2E = { CRON_SECRET: process.env.CRON_SECRET_E2E };
 
+// Inscription (1.1). Have I Been Pwned : chaque serveur précharge
+// e2e/simuler-hibp.mjs, qui répond à la place du service ; aucun appel réel.
+// Adresses : la porte d'envoi ne remet qu'aux adresses autorisées, tirées
+// pour cette exécution (e2e/comptes-e2e.ts). Fiche :
+// docs/features/inscription.md, sections 5.2 et « Tests à écrire ».
+const PRECHARGEMENT_HIBP = `--import=${pathToFileURL(resolve("e2e/simuler-hibp.mjs")).href}`;
+const INSCRIPTION_E2E = {
+  NODE_OPTIONS: [process.env.NODE_OPTIONS, PRECHARGEMENT_HIBP].filter(Boolean).join(" "),
+  EMAIL_DESTINATAIRES_AUTORISES: ADRESSES_E2E.join(","),
+};
+
+// Journal du serveur en panne, relu par le test T-39 (e2e/erreurs.attaque.spec.ts) :
+// un fichier par exécution, partagé par les processus comme CRON_SECRET_E2E.
+// Fiche : docs/features/inscription.md, section 1.3, test 2.
+process.env.JOURNAL_PANNE_E2E ??= join(
+  tmpdir(),
+  `facturation-pme-e2e-panne-${randomBytes(6).toString("hex")}.log`,
+);
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   reporter: "list",
+  // Comptes créés par les tests de l'inscription, supprimés à la fin.
+  globalTeardown: "./e2e/nettoyer-comptes.ts",
   use: {
     baseURL: ADRESSE,
     trace: "on-first-retry",
   },
   // Deux largeurs (NF-03, NF-04), décision 31. L'affichage (accueil,
-  // affichage) tourne dans les deux ; les en-têtes et les attaques, qui ne
+  // affichage) et le parcours d'inscription (1.1) tournent dans les deux ; les en-têtes et les attaques, qui ne
   // dépendent pas de la largeur, dans ordinateur-1280 seul ; 360 px
   // (affichage-360) dans mobile-390 seul. Aucun test sauté. Fiche : section 12.
   projects: [
     {
       name: "mobile-390",
-      testMatch: [/(^|\W)accueil\.spec\.ts$/, /(^|\W)affichage(-360)?\.spec\.ts$/],
+      testMatch: [
+        /(^|\W)accueil\.spec\.ts$/,
+        /(^|\W)affichage(-360)?\.spec\.ts$/,
+        /(^|\W)inscription\.spec\.ts$/,
+      ],
       use: { ...devices["Desktop Chrome"], viewport: { width: 390, height: 844 } },
     },
     {
@@ -64,17 +91,20 @@ export default defineConfig({
       url: ADRESSE,
       reuseExistingServer: false,
       timeout: 120_000,
-      env: { ...EMAILS_E2E, ...TACHE_E2E },
+      // BETTER_AUTH_URL imposée : l'origine acceptée par /api/auth est celle
+      // des tests, quelle que soit la valeur de .env.local.
+      env: { ...EMAILS_E2E, ...TACHE_E2E, ...INSCRIPTION_E2E, BETTER_AUTH_URL: ADRESSE },
     },
     // Second serveur : configuration valide, base injoignable (section 4.3,
     // décision 17). Les variables passées ici l'emportent sur .env.local et
     // sur l'environnement du job de CI.
     {
-      command: `npm run start -- -p ${PORT_PANNE}`,
+      // Sortie écrite dans JOURNAL_PANNE_E2E (test T-39).
+      command: `node e2e/lancer-serveur-panne.mjs ${PORT_PANNE} "${process.env.JOURNAL_PANNE_E2E}"`,
       url: ADRESSE_PANNE,
       reuseExistingServer: false,
       timeout: 120_000,
-      env: { ...CONFIGURATION_PANNE, ...EMAILS_E2E },
+      env: { ...CONFIGURATION_PANNE, ...EMAILS_E2E, ...INSCRIPTION_E2E },
     },
   ],
 });
