@@ -54,3 +54,6 @@ next-env.d.ts
 
 # Envoi d emails : fichiers des messages interceptes en local (docs/features/envoi-emails.md)
 /.emails/
+
+# Tests de bout en bout : sortie des serveurs de chaque execution (docs/features/e2e-base-jetable.md)
+/.e2e-journaux/

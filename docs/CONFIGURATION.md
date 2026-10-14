@@ -279,6 +279,14 @@ npm pkg set scripts.test:e2e="playwright test"
 
 Vitest exécute les fichiers `src/**/*.test.ts`, Playwright ceux du dossier `e2e/`.
 
+**Docker, prérequis de `npm run test:e2e` et de `npm run verifier`** (depuis le 2026-10-14, `docs/features/e2e-base-jetable.md`). Hors CI, `npm run test:e2e` lance `scripts/e2e-base-jetable.mjs`, qui crée un PostgreSQL 18 jetable dans Docker (image épinglée par son empreinte, port publié sur `127.0.0.1` seulement), le prépare comme la CI, lance Playwright puis supprime le conteneur, même après un échec ou un Ctrl+C. Les serveurs de bout en bout n'écrivent donc plus dans `dev`.
+
+1. Installer Docker Desktop (docker.com), moteur WSL 2 ; le démarrer et attendre « Engine running ».
+2. Vérifier : `docker info --format '{{.ServerVersion}}'` affiche une version.
+3. La première exécution tire l'image `postgres:18` (environ 160 Mo) ; les suivantes ajoutent une dizaine de secondes (préparation et suppression).
+
+Docker arrêté : `npm run test:e2e` s'arrête aussitôt sur « Docker est requis par npm run test:e2e hors CI… ». Sortie de secours, sur `dev` comme avant : `E2E_BASE=dev npm run test:e2e`. La sortie des deux serveurs de chaque exécution est gardée dans `.e2e-journaux/` (ignoré par git, dix dernières exécutions). Un conteneur laissé par une exécution tuée (fenêtre fermée de force) est supprimé par l'exécution suivante ; pour le faire à la main : `docker ps -a --filter label=facturation-pme.e2e-base-jetable`, puis `docker rm -f -v <nom>`.
+
 Depuis la fonctionnalité 0.2, Vitest a deux projets : `unitaires` (`npm test`, sans base, tous les `*.test.ts` sauf `*.integration.test.ts`) et `integration` (`npm run test:integration`, les `*.integration.test.ts`, avec les variables de `.env.local`, le garde-fou de l'étape 7f et un délai de 60 s par test).
 
 **Erreurs rencontrées.**
@@ -383,6 +391,9 @@ Les deux workflows n'ont que le droit de lire le code. Les mots de passe écrits
 |---|---|
 | Lancer l'application | `npm run dev` |
 | Tout vérifier avant une PR | `npm run format:check`, `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:integration`, `npm run test:e2e`, `npm run build` |
+| Tout vérifier, d'un trait (Docker démarré, ports 3000 et 3101 libres) | `npm run verifier` |
+| Tests de bout en bout sur une base jetable (Docker démarré) | `npm run test:e2e` |
+| Tests de bout en bout sur `dev`, sans Docker (secours) | `E2E_BASE=dev npm run test:e2e` |
 | Tests sans base | `npm test` |
 | Tests avec base (`dev` marquée) | `npm run test:integration` |
 | Vérifier les connexions | `node scripts/verifier-connexion.mjs` |

@@ -1,6 +1,6 @@
 # Fonctionnalité : base jetable pour les tests de bout en bout
 
-Statut : en cours. Décisions du développeur le 2026-10-14, à la suite de la proposition faite pendant la PR 2 de la 1.1.
+Statut : en cours (PR ouverte). Décisions du développeur le 2026-10-14, à la suite de la proposition faite pendant la PR 2 de la 1.1.
 
 Outillage, hors jalon. Taille S. Aucune exigence fonctionnelle ; règle 1 de `CLAUDE.md` (secrets), risque « Tests sur la branche `dev` » de `docs/PLAN.md`, section 7.
 
@@ -87,13 +87,13 @@ Inscrit dans `docs/CONFIGURATION.md` (étape 9 et commandes de référence). Ima
 
 ## Critères d'acceptation
 
-- [ ] Hors CI, `npm run test:e2e` crée le conteneur, le prépare, lance la suite et le supprime ; aucun conteneur étiqueté ne reste après une exécution réussie, échouée ou interrompue.
-- [ ] En CI, aucune commande `docker` ; le workflow est inchangé.
-- [ ] `E2E_BASE=dev` lance la suite sur `dev` sans Docker.
-- [ ] Docker arrêté : le message de la section 2, code 1.
-- [ ] `.e2e-journaux/` contient la sortie des deux serveurs de la dernière exécution.
-- [ ] La dette « `email.compte` partagée sur `dev` » est retirée de `PLAN.md`.
-- [ ] `npm run verifier` vert deux fois de suite, puis `npm run test:integration` sur `dev`.
+- [x] Hors CI, `npm run test:e2e` crée le conteneur, le prépare, lance la suite et le supprime ; aucun conteneur étiqueté ne reste après une exécution réussie, échouée ou interrompue.
+- [x] En CI, aucune commande `docker` ; le workflow est inchangé.
+- [x] `E2E_BASE=dev` lance la suite sur `dev` sans Docker.
+- [x] Docker arrêté : le message de la section 2, code 1.
+- [x] `.e2e-journaux/` contient la sortie des deux serveurs de la dernière exécution.
+- [x] La dette « `email.compte` partagée sur `dev` » est retirée de `PLAN.md`.
+- [x] `npm run verifier` vert deux fois de suite, puis `npm run test:integration` sur `dev`.
 
 ## Tests à écrire
 
@@ -118,3 +118,22 @@ Inscrit dans `docs/CONFIGURATION.md` (étape 9 et commandes de référence). Ima
 | `e2e/base-jetable.spec.ts`, `e2e/journaux.spec.ts` | Nouveaux tests |
 | `.gitignore` | `/.e2e-journaux/` |
 | `docs/CONFIGURATION.md`, `docs/PLAN.md`, `CLAUDE.md` | Prérequis Docker, dette retirée, commande décrite |
+
+## Notes de réalisation (2026-10-14)
+
+**Phase rouge** (commit `test:`) : code 1, les deux fichiers refusés au chargement (`scripts/e2e-base-jetable.mjs` et `e2e/journaux.ts` absents), aucun des 15 tests exécuté.
+
+**Test modifié pendant l'implémentation, sans changer ce qu'il prouve** : restes étiquetés, identifiants factices `aaa111` remplacés par des identifiants de 12 caractères hexadécimaux ; le script ne garde que les identifiants de 12 à 64 caractères hexadécimaux, pour qu'aucune sortie inattendue de `docker ps` ne devienne un argument. Un identifiant non hexadécimal est ajouté au cas, et ignoré.
+
+**Vérifié en réel, en plus des tests** :
+
+- port publié : `127.0.0.1:<port>` seul (`docker port`), `PortBindings` sur `127.0.0.1`, aucun volume (`Mounts` vide) ;
+- Docker injoignable (`DOCKER_HOST=tcp://127.0.0.1:1`) : message de la section 2, code 1 ; `E2E_BASE=prod` et `VERCEL_ENV=preview` refusés ;
+- exécution tuée par `taskkill /T /F` après la préparation : conteneur resté (9 migrations, 11 tables, marque `environnement:test`, donc les migrations visaient bien le conteneur), puis supprimé par l'exécution suivante (« Suppression de 1 conteneur(s) ») ;
+- « Comptes de bout en bout supprimés : 8 » en fin de suite : le nettoyage, qui lit la même `DATABASE_URL` que le serveur, a trouvé les comptes dans le conteneur.
+
+**Non vérifié en réel** : un vrai Ctrl+C. Sous Windows, un signal envoyé par un autre processus termine le processus sans passer par son gestionnaire ; le chemin est couvert par le test 2 (signal émis pendant Playwright), et le reste d'une interruption non gérée l'est par la suppression des restes étiquetés.
+
+**Durée ajoutée par exécution** : préparation 7,9 à 8,8 s (conteneur, rôle, migrations), suppression 0,7 à 0,8 s, soit environ 9 à 10 s ; plus le tirage unique de l'image (162 Mo) à la première exécution.
+
+**Vérifications** : `npm run verifier` vert deux fois de suite (217 s puis 195 s : format, lint, typecheck, 57 fichiers et 1 841 tests unitaires, construction, 303 tests de bout en bout, ports libres), aucun conteneur restant ; `npm run test:integration` sur `dev` : 21 fichiers, 185 réussis et 1 échec attendu (déjà présent).

@@ -196,13 +196,13 @@ test.describe("base jetable des tests de bout en bout", () => {
   });
 
   test("2. les restes étiquetés d'une exécution tuée sont supprimés avant le run", async () => {
-    const f = faux({ restes: "aaa111\nbbb222\n" });
+    const f = faux({ restes: "aaa111aaa111\nbbb222bbb222\nnon-hexadecimal\n" });
     expect(await lancerJetable(f)).toBe(0);
     const commandes = f.docker.map((c) => c.args);
     expect(commandes.slice(0, 4)).toEqual([
       ["info", "--format", "{{.ServerVersion}}"],
       ["ps", "-aq", "--filter", `label=${ETIQUETTE}`],
-      ["rm", "-f", "-v", "aaa111", "bbb222"],
+      ["rm", "-f", "-v", "aaa111aaa111", "bbb222bbb222"],
       expect.arrayContaining(["run"]),
     ]);
   });
