@@ -102,6 +102,24 @@ export function adresseBase({ utilisateur, motDePasse, hote, port }) {
   return `postgresql://${identite}@${HOTE}:${port}/${BASE}`;
 }
 
+// Vérifié juste avant drizzle-kit : DATABASE_URL_MIGRATION définie dans
+// l'environnement transmis, hôte 127.0.0.1 et port du conteneur. Le message
+// ne cite ni l'adresse refusée ni son mot de passe.
+export function verifierAdresseMigration(env, port) {
+  const refus = `${PREFIXE} Migrations refusées : DATABASE_URL_MIGRATION doit viser le conteneur (127.0.0.1:${port}).`;
+  const valeur = env.DATABASE_URL_MIGRATION;
+  if (typeof valeur !== "string" || valeur === "") throw new Error(`${refus} Variable absente.`);
+  let adresse;
+  try {
+    adresse = new URL(valeur);
+  } catch {
+    throw new Error(`${refus} Adresse illisible.`);
+  }
+  if (adresse.hostname !== HOTE || adresse.port !== String(port)) {
+    throw new Error(`${refus} Hôte ou port différent.`);
+  }
+}
+
 function secondes(millisecondes) {
   return (millisecondes / 1000).toFixed(1).replace(".", ",");
 }
@@ -110,6 +128,8 @@ class Interruption extends Error {}
 
 export async function executer({ env, arguments: args, outils }) {
   const { commande, lancer, ecrire } = outils;
+  // Point d'essai : les tests y simulent une évolution fautive du script.
+  outils = { envMigrations: (envTransmis) => envTransmis, ...outils };
   let mode;
   try {
     mode = choisirMode(env);
@@ -214,14 +234,17 @@ export async function executer({ env, arguments: args, outils }) {
         DATABASE_URL_MIGRATION: migration,
         DATABASE_URL: application,
       };
-      const etapes = [
-        ["Préparation de la base", [PREPARATION]],
-        ["Migrations", [DRIZZLE, "migrate"]],
-      ];
-      for (const [libelle, argumentsEtape] of etapes) {
-        const resultat = await suivre(process.execPath, argumentsEtape, envPreparation);
-        if (resultat !== 0) throw new Error(`${PREFIXE} ${libelle} en échec (code ${resultat}).`);
+      const preparation = await suivre(process.execPath, [PREPARATION], envPreparation);
+      if (preparation !== 0) {
+        throw new Error(`${PREFIXE} Préparation de la base en échec (code ${preparation}).`);
       }
+      // Verrou : drizzle.config.ts charge le fichier local des variables sans
+      // écraser DATABASE_URL_MIGRATION. Absente de l'environnement transmis,
+      // les migrations partiraient sur dev avec le rôle propriétaire.
+      const envMigrations = outils.envMigrations(envPreparation);
+      verifierAdresseMigration(envMigrations, port);
+      const migrations = await suivre(process.execPath, [DRIZZLE, "migrate"], envMigrations);
+      if (migrations !== 0) throw new Error(`${PREFIXE} Migrations en échec (code ${migrations}).`);
       ecrire(
         `${PREFIXE} PostgreSQL 18 prêt sur ${HOTE}:${port} en ${secondes(outils.maintenant() - debut)} s ` +
           "(conteneur, rôle, migrations).",
@@ -322,6 +345,7 @@ if (basename(process.argv[1] ?? "") === "e2e-base-jetable.mjs") {
       ecrire: (texte) => console.error(texte),
       maintenant: () => Date.now(),
       delaiArret: DELAI_ARRET,
+      envMigrations: (env) => env,
     },
   }).then((code) => {
     process.exitCode = code;

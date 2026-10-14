@@ -40,6 +40,9 @@ function faux(
     baseJamaisPrete?: boolean;
     codes?: Partial<Record<"preparation" | "migrations" | "playwright", number>>;
     signalPendantPlaywright?: "SIGINT" | "SIGTERM" | "SIGHUP";
+    // Simule une évolution fautive du script : environnement transmis à
+    // drizzle-kit modifié juste avant son lancement.
+    envMigrations?: (env: Env) => Env;
   } = {},
 ) {
   const docker: { args: string[]; env: Env }[] = [];
@@ -93,6 +96,7 @@ function faux(
     ecrire: (texte: string) => messages.push(texte),
     maintenant: () => 0,
     delaiArret: 0,
+    ...(options.envMigrations ? { envMigrations: options.envMigrations } : {}),
   };
 
   const nom = () => {
@@ -296,6 +300,51 @@ test.describe("base jetable des tests de bout en bout", () => {
       expect(f.lancements[0]!.quoi).toBe("playwright");
       expect(f.lancements[0]!.args.slice(1)).toEqual(["test", "e2e/accueil.spec.ts", "--headed"]);
       expect(f.lancements[0]!.env).toEqual(env);
+    }
+  });
+
+  test("7. verrou : DATABASE_URL_MIGRATION absente de l'environnement transmis, drizzle-kit jamais lancé", async () => {
+    const retraits: ((env: Env) => Env)[] = [
+      (env) => {
+        const copie = { ...env };
+        delete copie.DATABASE_URL_MIGRATION;
+        return copie;
+      },
+      (env) => ({ ...env, DATABASE_URL_MIGRATION: "" }),
+      (env) => ({ ...env, DATABASE_URL_MIGRATION: undefined }),
+      (env) => ({ ...env, DATABASE_URL_MIGRATION: "pas une adresse" }),
+    ];
+    for (const envMigrations of retraits) {
+      const f = faux({ envMigrations });
+      expect(await lancerJetable(f)).toBe(1);
+      expect(f.lancements.map((l) => l.quoi)).toEqual(["preparation"]);
+      verifierSuppression(f);
+      expect(f.messages.join("\n")).toContain("DATABASE_URL_MIGRATION");
+    }
+  });
+
+  test("7. verrou : DATABASE_URL_MIGRATION vers un autre hôte ou un autre port, drizzle-kit jamais lancé", async () => {
+    const adresses = [
+      "postgresql://neondb_owner:secret-reel@ep-exemple.eu-central-1.aws.neon.tech/neondb",
+      "postgresql://postgres:secret-reel@localhost:35059/facturation_test",
+      "postgresql://postgres:secret-reel@0.0.0.0:35059/facturation_test",
+      "postgresql://postgres:secret-reel@[::1]:35059/facturation_test",
+      "postgresql://postgres:secret-reel@127.0.0.1:5432/facturation_test",
+      "postgresql://postgres:secret-reel@127.0.0.1/facturation_test",
+      "postgresql://postgres:secret-reel@127.0.0.1.exemple.com:35059/facturation_test",
+    ];
+    for (const adresse of adresses) {
+      const f = faux({ envMigrations: (env) => ({ ...env, DATABASE_URL_MIGRATION: adresse }) });
+      expect(await lancerJetable(f), adresse).toBe(1);
+      expect(
+        f.lancements.map((l) => l.quoi),
+        adresse,
+      ).toEqual(["preparation"]);
+      verifierSuppression(f);
+      const messages = f.messages.join("\n");
+      expect(messages).toContain("DATABASE_URL_MIGRATION");
+      // Ni le mot de passe ni l'adresse refusée ne sont affichés.
+      expect(messages).not.toContain("secret-reel");
     }
   });
 

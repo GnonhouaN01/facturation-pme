@@ -58,6 +58,7 @@ Durées affichées à chaque exécution : préparation (étapes 3 à 6) et suppr
 - Refus si l'hôte d'une adresse de base construite n'est pas `127.0.0.1` (ni `localhost`, ni `0.0.0.0`, ni un hôte distant), ou si le port publié n'est pas sur `127.0.0.1`.
 - Le script ne lit jamais `.env.local` : ni `dotenv`, ni `node:fs`. Seuls `next start` (pour `BETTER_AUTH_SECRET`) et `drizzle.config.ts` le chargent, comme avant ; `drizzle.config.ts` n'écrase pas `DATABASE_URL_MIGRATION` déjà posée par le script, qui vise donc le conteneur.
 - `DATABASE_URL_MIGRATION` n'apparaît que dans ce script (hors `src/`, règle 2), n'est construite que vers le conteneur et n'est transmise qu'à la préparation et aux migrations.
+- **Verrou avant drizzle-kit** (ajouté le 2026-10-14, avant le push) : `drizzle.config.ts` charge `.env.local` sans écraser `DATABASE_URL_MIGRATION` ; si le script lançait un jour drizzle-kit sans l'avoir posée, les migrations partiraient sur `dev` avec le rôle propriétaire. Juste avant le lancement, `verifierAdresseMigration` exige que la variable soit définie dans l'environnement transmis, d'hôte `127.0.0.1` et du port du conteneur ; sinon refus, conteneur supprimé, code 1, drizzle-kit jamais lancé. Le message ne cite ni l'adresse refusée ni son mot de passe.
 - Les mots de passe du conteneur sont tirés à chaque exécution, jamais affichés ni écrits.
 
 ### 4. Sortie des serveurs conservée
@@ -105,6 +106,7 @@ Inscrit dans `docs/CONFIGURATION.md` (étape 9 et commandes de référence). Ima
 4. **Refus si `VERCEL_ENV`** : `production`, `preview`, `development` et la chaîne vide, dans les trois modes : code 1, aucune commande.
 5. **Aucune lecture de `.env.local`** : le source du script ne cite ni `.env.local`, ni `dotenv`, ni `node:fs`.
 6. Compléments : Docker arrêté (message, aucun `run`) ; `E2E_BASE` inconnue refusée ; modes CI et secours sans `docker`, arguments transmis ; restes étiquetés supprimés avant le `run`.
+7. **Verrou de l'adresse de migration** : variable absente (supprimée, vide, `undefined`, illisible) ; hôte ou port différent (Neon, `localhost`, `0.0.0.0`, `[::1]`, port 5432, port absent, `127.0.0.1.exemple.com`). Chaque fois : code 1, seule la préparation lancée, conteneur supprimé, mot de passe non affiché. L'évolution fautive est simulée par un point d'essai (`outils.envMigrations`, identité par défaut).
 
 `e2e/journaux.spec.ts` : deux chemins neufs par exécution dans le dossier, dix exécutions gardées au plus.
 
