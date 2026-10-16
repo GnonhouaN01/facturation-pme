@@ -16,7 +16,10 @@ import {
 // docs/features/inscription.md, sections 2 et 4.3. Connexion et déconnexion
 // (1.2) : réponse unique pour les trois échecs (T-07), corps de Better Auth
 // jamais transmis (S-82), limite par compte, comptes fermés en production.
-// Fiche : docs/features/connexion.md, tests 1 à 6.
+// Fiche : docs/features/connexion.md, tests 1 à 6. Mot de passe oublié
+// (1.3) : deux points de plus, GET /reset-password/:token toujours fermé,
+// réponse unique de la demande (T-07), entrée falsifiée, limite par adresse
+// email. Fiche : docs/features/mot-de-passe.md, tests 1 à 5.
 
 // config.ts charge env.ts : valeurs factices, base sur un port fermé (aucune
 // connexion n'est ouverte : seul auth.api est lu).
@@ -50,6 +53,9 @@ const CORPS_VALIDES: Readonly<Record<string, unknown>> = {
   "/verify-email": { jeton: JETON },
   "/sign-in/email": { email: "awa@exemple.invalid", motDePasse: "une-phrase-de-passe-solide" },
   "/sign-out": {},
+  // 1.3 (docs/features/mot-de-passe.md, section 2).
+  "/request-password-reset": { email: "awa@exemple.invalid" },
+  "/reset-password": { jeton: "aB3dE5fG7hJ9kL1mN2pQ4rS6", motDePasse: "une-phrase-de-passe-neuve" },
 };
 
 const COOKIE_SESSION = "better-auth.session_token=jeton.signature; Path=/; HttpOnly; SameSite=Lax";
@@ -73,6 +79,7 @@ function traitement(
     reponse?: () => Response;
     limite?: () => Promise<boolean>;
     sessionLisible?: () => Promise<boolean>;
+    limiteReinitialisation?: () => Promise<boolean>;
   } = {},
 ) {
   const traiter = espion(options.reponse);
@@ -84,6 +91,13 @@ function traitement(
   );
   // Correctif de la 1.2 : révocation de l'ancienne session à la connexion.
   const revoquerSession = vi.fn<(entetes: Headers) => Promise<void>>(async () => {});
+  // 1.3 : limite par adresse email de la demande, contrôles de la
+  // réinitialisation avant la consommation du jeton.
+  const limiterReinitialisation = vi.fn<(adresse: string) => Promise<boolean>>(
+    options.limiteReinitialisation ?? (async () => true),
+  );
+  const jetonReinitialisationValide = vi.fn<(jeton: string) => Promise<boolean>>(async () => true);
+  const motDePasseCompromis = vi.fn<(motDePasse: string) => Promise<boolean>>(async () => false);
   const gerer = creerTraitementAuth({
     traiter,
     origine: ORIGINE,
@@ -91,9 +105,21 @@ function traitement(
     limiterCompte,
     sessionEncoreLisible,
     revoquerSession,
+    limiterReinitialisation,
+    jetonReinitialisationValide,
+    motDePasseCompromis,
     horloge: { maintenant: () => 0, attendre: async () => {} },
   });
-  return { traiter, gerer, limiterCompte, sessionEncoreLisible, revoquerSession };
+  return {
+    traiter,
+    gerer,
+    limiterCompte,
+    sessionEncoreLisible,
+    revoquerSession,
+    limiterReinitialisation,
+    jetonReinitialisationValide,
+    motDePasseCompromis,
+  };
 }
 
 function requete(
@@ -143,8 +169,12 @@ function cheminsDeclares(): string[] {
 const OUVERTS = Object.keys(POINTS_ENTREE_OUVERTS).sort();
 
 describe("T-55 : liste fermée des points d'entrée", () => {
-  test("les points d'entrée ouverts sont exactement les cinq des fiches 1.1 et 1.2, en POST", () => {
+  // Modifié en 1.3 : sept points au lieu de cinq (docs/features/mot-de-passe.md,
+  // section 2.1).
+  test("les points d'entrée ouverts sont exactement les sept des fiches 1.1 à 1.3, en POST", () => {
     expect(OUVERTS).toEqual([
+      "/request-password-reset",
+      "/reset-password",
       "/send-verification-email",
       "/sign-in/email",
       "/sign-out",
@@ -169,7 +199,7 @@ describe("T-55 : liste fermée des points d'entrée", () => {
     ).toBeGreaterThan(10);
   });
 
-  test("chaque point d'entrée déclaré, en GET et en POST, hors des cinq ouverts : réponse inexistante, Better Auth jamais appelé", async () => {
+  test("chaque point d'entrée déclaré, en GET et en POST, hors des sept ouverts : réponse inexistante, Better Auth jamais appelé", async () => {
     const attendue = await inexistante();
     const { traiter, gerer } = traitement();
     const fautifs: string[] = [];
@@ -809,5 +839,365 @@ describe("révocation de l'ancienne session : jamais hors d'une connexion réuss
       }),
     );
     expect(revoquerSession).not.toHaveBeenCalled();
+  });
+});
+// Fonctionnalité 1.3 : mot de passe oublié. Fiche :
+// docs/features/mot-de-passe.md, sections 2, 3 et 5, tests 1 à 5.
+
+const JETON_REINITIALISATION = "aB3dE5fG7hJ9kL1mN2pQ4rS6";
+const DEMANDE = CORPS_VALIDES["/request-password-reset"] as Record<string, unknown>;
+const REINITIALISATION = CORPS_VALIDES["/reset-password"] as Record<string, unknown>;
+
+describe("T-55 (1.3) : ce qui reste fermé autour de la réinitialisation", () => {
+  test.each([
+    [
+      "lien de Better Auth, jeton dans le chemin",
+      "GET",
+      `/reset-password/${JETON_REINITIALISATION}`,
+    ],
+    [
+      "lien de Better Auth avec callbackURL",
+      "GET",
+      `/reset-password/${JETON_REINITIALISATION}?callbackURL=%2F`,
+    ],
+    ["GET de la réinitialisation", "GET", "/reset-password"],
+    ["GET de la demande", "GET", "/request-password-reset"],
+    ["POST sur le chemin du lien", "POST", `/reset-password/${JETON_REINITIALISATION}`],
+    ["vérification du mot de passe (serveur)", "POST", "/verify-password"],
+    ["changement du mot de passe", "POST", "/change-password"],
+    ["ancien chemin de la demande", "POST", "/forget-password"],
+  ] as const)("%s : réponse inexistante, rien n'est appelé", async (_nom, methode, chemin) => {
+    const attendue = await inexistante();
+    const outils = traitement();
+    const recue =
+      methode === "POST"
+        ? await outils.gerer(post(chemin, REINITIALISATION))
+        : await outils.gerer(requete("GET", chemin));
+    expect(await empreinte(recue)).toEqual(attendue);
+    expect(outils.traiter).not.toHaveBeenCalled();
+    expect(outils.limiterReinitialisation).not.toHaveBeenCalled();
+    expect(outils.jetonReinitialisationValide).not.toHaveBeenCalled();
+    expect(outils.motDePasseCompromis).not.toHaveBeenCalled();
+  });
+});
+
+describe("S-81 et entrée falsifiée (1.3) : refusées avant tout appel", () => {
+  test.each([
+    ["Origin absente", { "content-type": "application/json" }],
+    [
+      "Origin étrangère",
+      {
+        "content-type": "application/json",
+        origin: "https://attaquant.exemple",
+      },
+    ],
+    ["Origin null", { "content-type": "application/json", origin: "null" }],
+    [
+      "Sec-Fetch-Site cross-site",
+      {
+        "content-type": "application/json",
+        origin: ORIGINE,
+        "sec-fetch-site": "cross-site",
+      },
+    ],
+  ] as const)("%s : 403 sur les deux points, rien n'est appelé", async (_nom, entetes) => {
+    for (const [chemin, corps] of [
+      ["/request-password-reset", DEMANDE],
+      ["/reset-password", REINITIALISATION],
+    ] as const) {
+      const outils = traitement();
+      const reponse = await outils.gerer(post(chemin, corps, { ...entetes }));
+      expect(reponse.status, chemin).toBe(403);
+      expect(await reponse.json()).toEqual({ ok: false, raison: "refuse" });
+      expect(outils.traiter).not.toHaveBeenCalled();
+      expect(outils.limiterReinitialisation).not.toHaveBeenCalled();
+      expect(outils.jetonReinitialisationValide).not.toHaveBeenCalled();
+      expect(outils.motDePasseCompromis).not.toHaveBeenCalled();
+    }
+  });
+
+  test.each([
+    [
+      "demande : redirectTo",
+      "/request-password-reset",
+      { ...DEMANDE, redirectTo: "https://attaquant.exemple" },
+    ],
+    ["demande : callbackURL", "/request-password-reset", { ...DEMANDE, callbackURL: "/" }],
+    ["demande : champ inconnu", "/request-password-reset", { ...DEMANDE, role: "proprietaire" }],
+    [
+      "demande : adresse hors de la règle de la porte",
+      "/request-password-reset",
+      { email: "Awa <awa@exemple.invalid>" },
+    ],
+    [
+      "demande : deux adresses",
+      "/request-password-reset",
+      { email: "a@exemple.invalid,b@exemple.invalid" },
+    ],
+    ["demande : adresse absente", "/request-password-reset", {}],
+    [
+      "réinitialisation : noms de Better Auth",
+      "/reset-password",
+      {
+        token: JETON_REINITIALISATION,
+        newPassword: "une-phrase-de-passe-neuve",
+      },
+    ],
+    [
+      "réinitialisation : champ inconnu",
+      "/reset-password",
+      { ...REINITIALISATION, email: "awa@exemple.invalid" },
+    ],
+    [
+      "réinitialisation : callbackURL",
+      "/reset-password",
+      { ...REINITIALISATION, callbackURL: "/" },
+    ],
+    [
+      "réinitialisation : jeton de 23 caractères",
+      "/reset-password",
+      { ...REINITIALISATION, jeton: JETON_REINITIALISATION.slice(1) },
+    ],
+    [
+      "réinitialisation : jeton de 25 caractères",
+      "/reset-password",
+      { ...REINITIALISATION, jeton: `${JETON_REINITIALISATION}a` },
+    ],
+    [
+      "réinitialisation : jeton avec un tiret",
+      "/reset-password",
+      { ...REINITIALISATION, jeton: `${JETON_REINITIALISATION.slice(1)}-` },
+    ],
+    [
+      "réinitialisation : jeton avec un souligné",
+      "/reset-password",
+      { ...REINITIALISATION, jeton: `${JETON_REINITIALISATION.slice(1)}_` },
+    ],
+    // L'empreinte stockée en base (SHA-256 en base64url, 43 caractères)
+    // présentée comme jeton (section 3.2).
+    [
+      "réinitialisation : empreinte présentée comme jeton",
+      "/reset-password",
+      {
+        ...REINITIALISATION,
+        jeton: "Qm9uam91ci1sZS1tb25kZS1lbXByZWludGUtZmFjdGljZQ",
+      },
+    ],
+    [
+      "réinitialisation : jeton préfixé comme en base",
+      "/reset-password",
+      {
+        ...REINITIALISATION,
+        jeton: `reinitialisation:${JETON_REINITIALISATION}`,
+      },
+    ],
+    [
+      "réinitialisation : jeton de vérification (JWT)",
+      "/reset-password",
+      { ...REINITIALISATION, jeton: JETON },
+    ],
+    [
+      "réinitialisation : mot de passe de 129 caractères",
+      "/reset-password",
+      { ...REINITIALISATION, motDePasse: "a".repeat(129) },
+    ],
+    [
+      "réinitialisation : mot de passe non textuel",
+      "/reset-password",
+      { ...REINITIALISATION, motDePasse: 123456789012 },
+    ],
+    [
+      "réinitialisation : jeton absent",
+      "/reset-password",
+      { motDePasse: "une-phrase-de-passe-neuve" },
+    ],
+  ] as const)("%s : 400 invalide, rien n'est appelé", async (_nom, chemin, corps) => {
+    const outils = traitement();
+    const reponse = await outils.gerer(post(chemin, corps));
+    expect(reponse.status).toBe(400);
+    expect(await reponse.json()).toEqual({ ok: false, raison: "invalide" });
+    expect(outils.traiter).not.toHaveBeenCalled();
+    expect(outils.limiterReinitialisation).not.toHaveBeenCalled();
+    expect(outils.limiterCompte).not.toHaveBeenCalled();
+    expect(outils.jetonReinitialisationValide).not.toHaveBeenCalled();
+    expect(outils.motDePasseCompromis).not.toHaveBeenCalled();
+  });
+
+  test.each(["/request-password-reset", "/reset-password"])(
+    "%s : données dans l'adresse, autre type que JSON, ou corps de plus de 4 Kio : refusés",
+    async (chemin) => {
+      const outils = traitement();
+      const corps = JSON.stringify(CORPS_VALIDES[chemin]);
+      const lourd = `${corps.slice(0, -1)}${" ".repeat(4097 - Buffer.byteLength(corps))}}`;
+      for (const recue of [
+        await outils.gerer(
+          requete("POST", `${chemin}?token=${JETON_REINITIALISATION}`, {
+            corps,
+          }),
+        ),
+        await outils.gerer(
+          requete("POST", chemin, {
+            corps,
+            entetes: { "content-type": "text/plain", origin: ORIGINE },
+          }),
+        ),
+        await outils.gerer(requete("POST", chemin, { corps: lourd })),
+      ]) {
+        expect(recue.status).toBe(400);
+      }
+      expect(outils.traiter).not.toHaveBeenCalled();
+      expect(outils.jetonReinitialisationValide).not.toHaveBeenCalled();
+    },
+  );
+
+  test("demande : seule l'adresse validée parvient à Better Auth, sans cookie ni redirectTo", async () => {
+    const outils = traitement();
+    await outils.gerer(
+      post("/request-password-reset", DEMANDE, {
+        "content-type": "application/json",
+        origin: ORIGINE,
+        cookie: "better-auth.session_token=ancienne",
+        "x-forwarded-for": "203.0.113.9",
+      }),
+    );
+    const interne = outils.traiter.mock.calls[0]?.[0];
+    if (!interne) throw new Error("Better Auth non appelé");
+    expect(interne.method).toBe("POST");
+    expect(new URL(interne.url).pathname).toBe("/api/auth/request-password-reset");
+    expect(new URL(interne.url).search).toBe("");
+    expect(await interne.json()).toEqual({ email: "awa@exemple.invalid" });
+    expect(interne.headers.get("cookie")).toBeNull();
+    expect(interne.headers.get("x-forwarded-for")).toBe("203.0.113.9");
+  });
+
+  test("réinitialisation : le jeton et le mot de passe parviennent à Better Auth dans le corps, sous ses noms", async () => {
+    const outils = traitement();
+    await outils.gerer(
+      post("/reset-password", REINITIALISATION, {
+        "content-type": "application/json",
+        origin: ORIGINE,
+        cookie: "better-auth.session_token=ancienne",
+      }),
+    );
+    const interne = outils.traiter.mock.calls[0]?.[0];
+    if (!interne) throw new Error("Better Auth non appelé");
+    expect(interne.method).toBe("POST");
+    expect(new URL(interne.url).pathname).toBe("/api/auth/reset-password");
+    expect(new URL(interne.url).search).toBe("");
+    expect(await interne.json()).toEqual({
+      token: JETON_REINITIALISATION,
+      newPassword: "une-phrase-de-passe-neuve",
+    });
+    expect(interne.headers.get("cookie")).toBeNull();
+  });
+});
+
+describe("T-07 (1.3) : une seule réponse pour toute demande", () => {
+  test("compte trouvé ou non (corps de Better Auth différents) : même statut, mêmes en-têtes, mêmes octets, { ok: true }", async () => {
+    const empreintes = [];
+    for (const corps of [
+      {
+        status: true,
+        message: "If this email exists in our system, check your email for the reset link",
+      },
+      { status: true },
+      { status: true, message: "autre", user: { id: "u1" } },
+    ]) {
+      const { gerer } = traitement({
+        // Un Set-Cookie de Better Auth n'est jamais transmis.
+        reponse: reponseBetterAuth(200, corps, [COOKIE_SESSION]),
+      });
+      const reponse = await gerer(post("/request-password-reset", DEMANDE));
+      expect(reponse.headers.getSetCookie()).toEqual([]);
+      empreintes.push(await empreinte(reponse));
+    }
+    expect(empreintes[0]?.statut).toBe(200);
+    expect(Buffer.from(empreintes[0]?.corps ?? "", "hex").toString()).toBe(
+      JSON.stringify({ ok: true }),
+    );
+    for (const recue of empreintes) expect(recue).toEqual(empreintes[0]);
+  });
+
+  test("réinitialisation réussie : { ok: true }, aucun cookie, rien du corps de Better Auth", async () => {
+    const { gerer } = traitement({
+      reponse: reponseBetterAuth(200, { status: true, user: { id: "u1" } }, [COOKIE_SESSION]),
+    });
+    const reponse = await gerer(post("/reset-password", REINITIALISATION));
+    expect(reponse.status).toBe(200);
+    expect(await reponse.text()).toBe(JSON.stringify({ ok: true }));
+    expect(reponse.headers.getSetCookie()).toEqual([]);
+  });
+});
+
+describe("comptes fermés en production (1.3) : les deux nouveaux POST", () => {
+  test.each(["/request-password-reset", "/reset-password"])(
+    "production, %s : réponse inexistante, octet pour octet, rien n'est appelé",
+    async (chemin) => {
+      const attendue = await inexistante();
+      const outils = traitement({ estProduction: true });
+      const recue = await outils.gerer(post(chemin, CORPS_VALIDES[chemin]));
+      expect(await empreinte(recue)).toEqual(attendue);
+      expect(outils.traiter).not.toHaveBeenCalled();
+      expect(outils.limiterReinitialisation).not.toHaveBeenCalled();
+      expect(outils.jetonReinitialisationValide).not.toHaveBeenCalled();
+      expect(outils.motDePasseCompromis).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("limite par adresse email de la demande (S-11, T-43) : auth.reinitialisation_compte", () => {
+  test("appelée une fois avec l'adresse validée, avant Better Auth ; la limite de connexion jamais", async () => {
+    const outils = traitement();
+    await outils.gerer(post("/request-password-reset", DEMANDE));
+    expect(outils.limiterReinitialisation).toHaveBeenCalledTimes(1);
+    expect(outils.limiterReinitialisation).toHaveBeenCalledWith("awa@exemple.invalid");
+    expect(outils.limiterCompte).not.toHaveBeenCalled();
+    expect(outils.traiter).toHaveBeenCalledTimes(1);
+    expect(outils.limiterReinitialisation.mock.invocationCallOrder[0]).toBeLessThan(
+      outils.traiter.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  test("limite atteinte : 429 trop_de_requetes, Better Auth jamais appelé", async () => {
+    const outils = traitement({ limiteReinitialisation: async () => false });
+    const reponse = await outils.gerer(post("/request-password-reset", DEMANDE));
+    expect(reponse.status).toBe(429);
+    expect(await reponse.text()).toBe(JSON.stringify({ ok: false, raison: "trop_de_requetes" }));
+    expect(outils.traiter).not.toHaveBeenCalled();
+  });
+
+  test("compteur en panne : erreur avec incident, Better Auth jamais appelé", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const outils = traitement({
+      limiteReinitialisation: async () => {
+        throw new Error("base en panne");
+      },
+    });
+    const reponse = await outils.gerer(post("/request-password-reset", DEMANDE));
+    expect(reponse.status).toBe(500);
+    const corps = (await reponse.json()) as Record<string, unknown>;
+    expect(corps.raison).toBe("erreur");
+    expect(corps.incident).toMatch(UUID);
+    expect(outils.traiter).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  test("la connexion compte toujours sa propre limite, jamais celle de la demande", async () => {
+    const outils = traitement();
+    await outils.gerer(post("/sign-in/email", CONNEXION));
+    expect(outils.limiterCompte).toHaveBeenCalledTimes(1);
+    expect(outils.limiterReinitialisation).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    "/reset-password",
+    "/sign-up/email",
+    "/send-verification-email",
+    "/verify-email",
+    "/sign-out",
+  ])("%s : la limite de la demande n'est jamais comptée", async (chemin) => {
+    const outils = traitement();
+    await outils.gerer(post(chemin, CORPS_VALIDES[chemin]));
+    expect(outils.limiterReinitialisation).not.toHaveBeenCalled();
   });
 });

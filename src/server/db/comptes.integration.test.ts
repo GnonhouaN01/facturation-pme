@@ -7,8 +7,13 @@ import { ETAPES, executerEtapes } from "../taches/etapes";
 import { creerTraitementTache } from "../taches/quotidienne";
 
 import { db } from "./client";
-import { purgerComptesNonVerifies, purgerSessionsExpirees } from "./comptes";
-import { account, session, user } from "./schema/auth";
+import {
+  creerPurgeJetons,
+  purgerComptesNonVerifies,
+  purgerJetonsExpires,
+  purgerSessionsExpirees,
+} from "./comptes";
+import { account, session, user, verification } from "./schema/auth";
 import { compteurDebit } from "./schema/technique";
 
 // Purge des comptes non vérifiés de plus de 7 jours (THREATS.md 7.2) : leurs
@@ -99,6 +104,61 @@ describe("purgerSessionsExpirees", () => {
     expect(restantes.map((s) => s.id)).not.toContain(expiree);
     expect(restantes).toHaveLength(1);
     expect(await existe(id)).toBe(true);
+  });
+});
+
+// Purge des jetons expirés (S-63, 1.3) : Better Auth ne supprime les lignes
+// expirées de verification qu'à l'occasion d'une recherche. Fiche :
+// docs/features/mot-de-passe.md, section 9, test 22. Modifié à
+// l'implémentation : les lignes sont créées et purgées dans une transaction
+// annulée ensuite. Better Auth supprime lui-même toute ligne expirée à chaque
+// recherche de jeton (findVerificationValue) : lancé en parallèle,
+// reinitialisation.integration.test.ts pouvait effacer la ligne expirée avant
+// la purge, qui comptait alors 0 (constaté dans npm run test:integration,
+// jamais sur le fichier seul). Dans la transaction, la ligne est invisible des
+// autres connexions ; ce que le test prouve ne change pas.
+describe("purgerJetonsExpires", () => {
+  test("liée à db : une fonction", () => {
+    expect(typeof purgerJetonsExpires).toBe("function");
+  });
+
+  test("supprime une ligne expirée, garde une ligne valable", async () => {
+    const expiree = randomUUID();
+    const valable = randomUUID();
+    const ANNULATION = new Error("annulation voulue");
+    await expect(
+      db.transaction(async (tx) => {
+        await tx.insert(verification).values([
+          {
+            id: expiree,
+            identifier: `reinitialisation:${randomUUID()}`,
+            value: randomUUID(),
+            expiresAt: new Date(Date.now() - 60_000),
+          },
+          {
+            id: valable,
+            identifier: `reinitialisation:${randomUUID()}`,
+            value: randomUUID(),
+            expiresAt: new Date(Date.now() + 30 * 60_000),
+          },
+        ]);
+        const supprimees = await creerPurgeJetons(tx)();
+        expect(supprimees).toBeGreaterThanOrEqual(1);
+        const restantes = await tx
+          .select({ id: verification.id })
+          .from(verification)
+          .where(inArray(verification.id, [expiree, valable]));
+        expect(restantes.map((r) => r.id)).toEqual([valable]);
+        throw ANNULATION;
+      }),
+    ).rejects.toBe(ANNULATION);
+    // Rien n'a été validé : aucune ligne laissée sur dev.
+    expect(
+      await db
+        .select()
+        .from(verification)
+        .where(inArray(verification.id, [expiree, valable])),
+    ).toEqual([]);
   });
 });
 

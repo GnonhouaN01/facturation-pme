@@ -41,6 +41,11 @@ export const LIMITES_TEST = {
   "auth.connexion": { maximum: 10, fenetreSecondes: 900, par: "adresse_ip" },
   "auth.connexion_compte": { maximum: 5, fenetreSecondes: 900, par: "adresse_email" },
   "auth.deconnexion": { maximum: 20, fenetreSecondes: 60, par: "adresse_ip" },
+  // 1.3 : même raison.
+  "auth.reinitialisation_demande": { maximum: 4, fenetreSecondes: 3_600, par: "adresse_ip" },
+  "auth.reinitialisation_compte": { maximum: 2, fenetreSecondes: 3_600, par: "adresse_email" },
+  "auth.reinitialisation": { maximum: 6, fenetreSecondes: 900, par: "adresse_ip" },
+  "email.reinitialisation": { maximum: 50, fenetreSecondes: 86_400, par: "application" },
 } as const satisfies Record<NomLimite, Limite>;
 
 const NOMS = Object.keys(LIMITES_TEST) as NomLimite[];

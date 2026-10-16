@@ -15,7 +15,7 @@ import { session } from "./schema/auth";
 // vérifiée en base (T-03). Transport en mémoire, Have I Been Pwned simulé.
 // Fiche : docs/features/connexion.md, tests 15 à 17.
 
-const banc = bancInscription({ adresses: 10 });
+const banc = bancInscription({ adresses: 12 });
 const ORIGINE = new URL(env.BETTER_AUTH_URL).origin;
 const MOT_DE_PASSE = "une-phrase-de-passe-solide";
 
@@ -278,5 +278,31 @@ describe("reconnexion : l'ancienne session est révoquée", () => {
     );
     expect(reponse.status).toBe(401);
     expect(await banc.lireSession(entetesCookie(ancien))).not.toBeNull();
+  });
+});
+
+// Report de la 1.2 (docs/features/connexion.md, « Limites connues »), traité
+// en 1.3 : la vérification d'une seconde adresse depuis un navigateur
+// connecté révoque la session précédente. Fiche :
+// docs/features/mot-de-passe.md, section 8, test 21.
+describe("vérification depuis un navigateur connecté (1.3)", () => {
+  test("l'ancienne session est supprimée en base, la nouvelle est lisible", async () => {
+    const premier = await compte({ verifie: true });
+    const ancien = premier.cookieVerification;
+    if (!ancien) throw new Error("aucun cookie de session");
+    const lue = await banc.lireSession(entetesCookie(ancien));
+    if (!lue) throw new Error("session illisible");
+
+    const second = await compte({ verifie: false });
+    const reponse = await banc.traiter(
+      post("/verify-email", { jeton: jetonRecu(second.email) }, { cookie: ancien }),
+    );
+    expect(reponse.status).toBe(200);
+    const nouveau = cookieSession(reponse);
+    if (!nouveau) throw new Error("aucun nouveau cookie");
+
+    expect(await banc.lireSession(entetesCookie(ancien))).toBeNull();
+    expect(await db.select().from(session).where(eq(session.token, lue.jeton))).toEqual([]);
+    expect(await banc.lireSession(entetesCookie(nouveau))).not.toBeNull();
   });
 });

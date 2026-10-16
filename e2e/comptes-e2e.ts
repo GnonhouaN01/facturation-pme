@@ -20,8 +20,10 @@ const PROJETS = ["mobile-390", "ordinateur-1280"] as const;
 // un autre projet, un autre essai ni une autre répétition : un compte, ses
 // emails et ses compteurs de débit laissés par un essai échoué ne faussent
 // pas le suivant. 1.2 : 18 rangs au lieu de 10, pour les comptes de la
-// connexion (rangs 8 à 17, docs/features/connexion.md, section 8.1).
-export const RANGS = 18;
+// connexion (rangs 8 à 17, docs/features/connexion.md, section 8.1). 1.3 :
+// 24 rangs, pour les comptes du mot de passe oublié (rangs 18 à 23,
+// docs/features/mot-de-passe.md).
+export const RANGS = 24;
 export const ESSAIS_MAX = 3;
 export const REPETITIONS_MAX = 5;
 

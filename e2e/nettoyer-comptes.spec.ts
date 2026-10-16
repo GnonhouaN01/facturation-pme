@@ -127,8 +127,9 @@ test.describe("nettoyage des comptes de bout en bout", () => {
   // essais et rangs ; l'assertion reste l'égalité exacte. 1.2 : nombre de
   // rangs lu de comptes-e2e.ts (16 au lieu de 10).
   // Modifié par le correctif de la 1.2 : 18 rangs (redirection, reconnexion).
-  test("RANGS : 18 rangs par projet, essai et répétition (1.2)", () => {
-    expect(RANGS).toBe(18);
+  // Modifié en 1.3 : 24 rangs (comptes du mot de passe oublié, rangs 18 à 23).
+  test("RANGS : 24 rangs par projet, essai et répétition (1.3)", () => {
+    expect(RANGS).toBe(24);
   });
   test("la liste : toutes les adresses que les tests peuvent créer, toutes en .invalid, sans caractère de motif", () => {
     const attendues = ["mobile-390", "ordinateur-1280"].flatMap((projet) =>

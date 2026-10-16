@@ -187,3 +187,48 @@ describe("limites de la connexion (1.2)", () => {
     );
   });
 });
+
+// Fonctionnalité 1.3. Fiche : docs/features/mot-de-passe.md, sections 5 et
+// 6.4, décisions par défaut 7 et 9, test 16.
+describe("limites de la réinitialisation (1.3)", () => {
+  test("valeurs retenues", () => {
+    expect(LIMITES["auth.reinitialisation_demande"]).toStrictEqual({
+      maximum: 4,
+      fenetreSecondes: UNE_HEURE,
+      par: "adresse_ip",
+    });
+    expect(LIMITES["auth.reinitialisation_compte"]).toStrictEqual({
+      maximum: 2,
+      fenetreSecondes: UNE_HEURE,
+      par: "adresse_email",
+    });
+    expect(LIMITES["auth.reinitialisation"]).toStrictEqual({
+      maximum: 6,
+      fenetreSecondes: 15 * 60,
+      par: "adresse_ip",
+    });
+    expect(LIMITES["email.reinitialisation"]).toStrictEqual({
+      maximum: 50,
+      fenetreSecondes: UN_JOUR,
+      par: "application",
+    });
+  });
+
+  test("les deux budgets de compte restent sous celui de l'application (RR-13)", () => {
+    expect(
+      LIMITES["email.compte"].maximum + LIMITES["email.reinitialisation"].maximum,
+    ).toBeLessThanOrEqual(LIMITES["email.application"].maximum);
+  });
+
+  test("la limite par adresse email est plus stricte que la limite par adresse IP", () => {
+    expect(LIMITES["auth.reinitialisation_compte"].maximum).toBeLessThan(
+      LIMITES["auth.reinitialisation_demande"].maximum,
+    );
+  });
+
+  test("deux demandes, puis une notification : sous la limite par heure d'un destinataire", () => {
+    expect(LIMITES["auth.reinitialisation_compte"].maximum + 1).toBeLessThanOrEqual(
+      LIMITES["email.destinataire"].maximum,
+    );
+  });
+});

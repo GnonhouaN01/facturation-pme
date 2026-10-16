@@ -47,9 +47,17 @@ const verifierDebit = vi.fn<(nom: string, valeur: string) => Promise<boolean>>(a
 const findSession = vi.fn<(jeton: string) => Promise<unknown>>(async () => null);
 // Correctif de la 1.2 : l'ancienne session est révoquée par deleteSession.
 const deleteSession = vi.fn<(jeton: string) => Promise<void>>(async () => {});
+// 1.3 : le jeton de réinitialisation est lu, sans être consommé, avant
+// Better Auth (docs/features/mot-de-passe.md, section 3.3).
+const findVerificationValue = vi.fn<(identifiant: string) => Promise<unknown>>(async () => ({
+  id: "v1",
+  identifier: "reinitialisation:empreinte",
+  value: "u1",
+  expiresAt: new Date(Date.now() + 60_000),
+}));
 const contexteAuth = {
   authCookies: { sessionToken: { name: "better-auth.session_token" } },
-  internalAdapter: { findSession, deleteSession },
+  internalAdapter: { findSession, deleteSession, findVerificationValue },
 };
 
 // Le gestionnaire, chargé avec une configuration factice. Better Auth est
@@ -98,6 +106,8 @@ afterEach(() => {
   verifierDebit.mockClear();
   findSession.mockClear();
   deleteSession.mockClear();
+  findVerificationValue.mockClear();
+  vi.unstubAllGlobals();
   vi.doUnmock("../env");
   vi.doUnmock("./config");
   vi.doUnmock("../debit/debit");
@@ -224,5 +234,129 @@ describe("gestionnaire de /api/auth, révocation de l'ancienne session (correcti
     const reponse = await traiterRequeteAuth(connexion());
     expect(reponse.status).toBe(200);
     expect(deleteSession).not.toHaveBeenCalled();
+  }, 10_000);
+});
+
+// Fonctionnalité 1.3. Fiche : docs/features/mot-de-passe.md, sections 3.3 et
+// 5.
+describe("gestionnaire de /api/auth, liaison de la réinitialisation (1.3)", () => {
+  const JETON_REINITIALISATION = "aB3dE5fG7hJ9kL1mN2pQ4rS6";
+  const DEMANDE = { email: "Awa.Kone+essai@Exemple.invalid" };
+  const REINITIALISATION = {
+    jeton: JETON_REINITIALISATION,
+    motDePasse: "une-phrase-de-passe-neuve",
+  };
+
+  // Have I Been Pwned simulé : le mot de passe donné est compromis, tout
+  // autre ne l'est pas. Aucun appel réel (garde réseau).
+  async function simulerHibp(compromis: string | null) {
+    const { createHash } = await import("node:crypto");
+    const appels: string[] = [];
+    vi.stubGlobal("fetch", async (entree: string | URL | Request) => {
+      const url = new URL(entree instanceof Request ? entree.url : entree);
+      appels.push(url.hostname);
+      if (url.hostname !== "api.pwnedpasswords.com") throw new Error("appel inattendu");
+      if (compromis === null) return new Response("0000000000000000000000000000000000A:1");
+      const empreinte = createHash("sha1").update(compromis).digest("hex").toUpperCase();
+      return new Response(`${empreinte.slice(5)}:12`);
+    });
+    return appels;
+  }
+
+  test("en production : les deux POST répondent comme un chemin fermé, rien n'est appelé", async () => {
+    const { traiterRequeteAuth } = await charger(true);
+    const ferme = await forme(await traiterRequeteAuth(post("/n-existe-pas", {})));
+    for (const [chemin, corps] of [
+      ["/request-password-reset", DEMANDE],
+      ["/reset-password", REINITIALISATION],
+    ] as const) {
+      expect(await forme(await traiterRequeteAuth(post(chemin, corps))), chemin).toEqual(ferme);
+    }
+    expect(traiter).not.toHaveBeenCalled();
+    expect(verifierDebit).not.toHaveBeenCalled();
+    expect(findVerificationValue).not.toHaveBeenCalled();
+  }, 10_000);
+
+  test("limite de la demande : verifierDebit(auth.reinitialisation_compte), adresse normalisée comme pour les emails", async () => {
+    const { traiterRequeteAuth } = await charger(false);
+    const reponse = await traiterRequeteAuth(post("/request-password-reset", DEMANDE));
+    expect(reponse.status).toBe(200);
+    expect(verifierDebit).toHaveBeenCalledTimes(1);
+    expect(verifierDebit).toHaveBeenCalledWith(
+      "auth.reinitialisation_compte",
+      "awa.kone@exemple.invalid",
+    );
+  }, 10_000);
+
+  test("jeton lu sans être consommé, sous l'identifiant de Better Auth ; puis Have I Been Pwned ; puis Better Auth", async () => {
+    const { traiterRequeteAuth } = await charger(false);
+    const appels = await simulerHibp(null);
+    const reponse = await traiterRequeteAuth(post("/reset-password", REINITIALISATION));
+    expect(reponse.status).toBe(200);
+    expect(findVerificationValue).toHaveBeenCalledWith(`reset-password:${JETON_REINITIALISATION}`);
+    expect(appels).toEqual(["api.pwnedpasswords.com"]);
+    expect(traiter).toHaveBeenCalledTimes(1);
+  }, 10_000);
+
+  test.each([
+    ["jeton absent", null],
+    [
+      "jeton expiré",
+      {
+        id: "v1",
+        identifier: "reinitialisation:x",
+        value: "u1",
+        expiresAt: new Date(Date.now() - 1_000),
+      },
+    ],
+  ])(
+    "%s : lien_invalide, ni Have I Been Pwned ni Better Auth",
+    async (_nom, ligne) => {
+      const { traiterRequeteAuth } = await charger(false);
+      const appels = await simulerHibp(null);
+      findVerificationValue.mockResolvedValueOnce(ligne);
+      const reponse = await traiterRequeteAuth(post("/reset-password", REINITIALISATION));
+      expect(reponse.status).toBe(400);
+      expect(await reponse.json()).toEqual({ ok: false, raison: "lien_invalide" });
+      expect(appels).toEqual([]);
+      expect(traiter).not.toHaveBeenCalled();
+    },
+    10_000,
+  );
+
+  test("mot de passe compromis : mot_de_passe_compromis, Better Auth jamais appelé", async () => {
+    const { traiterRequeteAuth } = await charger(false);
+    await simulerHibp(REINITIALISATION.motDePasse);
+    const reponse = await traiterRequeteAuth(post("/reset-password", REINITIALISATION));
+    expect(reponse.status).toBe(400);
+    expect(await reponse.json()).toEqual({ ok: false, raison: "mot_de_passe_compromis" });
+    expect(traiter).not.toHaveBeenCalled();
+  }, 10_000);
+
+  test("Have I Been Pwned en panne : erreur, Better Auth jamais appelé", async () => {
+    const { traiterRequeteAuth } = await charger(false);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal("fetch", async () => new Response("", { status: 503 }));
+    const reponse = await traiterRequeteAuth(post("/reset-password", REINITIALISATION));
+    expect(reponse.status).toBe(500);
+    expect(traiter).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  }, 10_000);
+
+  test("vérification réussie avec un cookie : deleteSession avec le jeton de l'ancienne session (report de la 1.2)", async () => {
+    const { traiterRequeteAuth } = await charger(false);
+    const reponse = await traiterRequeteAuth(
+      new Request(`${BASE}/verify-email`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: ORIGINE,
+          cookie: "better-auth.session_token=ancien.signature",
+        },
+        body: JSON.stringify({ jeton: JETON }),
+      }),
+    );
+    expect(reponse.status).toBe(200);
+    expect(deleteSession).toHaveBeenCalledWith("ancien");
   }, 10_000);
 });

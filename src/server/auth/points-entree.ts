@@ -6,7 +6,9 @@ import {
   LONGUEUR_MIN_MOT_DE_PASSE,
   schemaConnexion,
   schemaDeconnexion,
+  schemaDemandeReinitialisation,
   schemaInscription,
+  schemaReinitialisation,
   schemaRenvoiVerification,
   schemaVerification,
 } from "@/schemas/compte";
@@ -25,11 +27,13 @@ import { consignerIncidentAuth } from "./journal";
 // liste fermée (jamais le corps ni le message de Better Auth), durée
 // plancher (T-07). Toute réponse « erreur » porte l'identifiant d'incident
 // de sa ligne de journal (S-85). Fiches : docs/features/inscription.md,
-// section 2 ; docs/features/connexion.md, sections 1 à 4 et 6.
+// section 2 ; docs/features/connexion.md, sections 1 à 4 et 6 ;
+// docs/features/mot-de-passe.md, sections 2, 3.3 et 8 (mot de passe oublié).
 
-// Décision 1 de la 1.1, étendue à la connexion par la 1.2 : comptes fermés en
-// production jusqu'à la 1.3. Une constante du code, jamais une variable
-// d'environnement ; la PR de la 1.3 la retire.
+// Décision 1 de la 1.1, étendue à la connexion par la 1.2 et au mot de passe
+// oublié par la 1.3 : comptes fermés en production. Une constante du code,
+// jamais une variable d'environnement ; la PR 2 de la 1.3 la retire
+// (docs/features/mot-de-passe.md, section 11).
 export const COMPTES_OUVERTS_EN_PRODUCTION = false;
 
 export const DUREE_PLANCHER_MS = 800;
@@ -65,6 +69,17 @@ export type DependancesPointsEntree = {
   // l'ancienne (signInEmail), qui resterait valide jusqu'à son terme.
   // Correctif de la 1.2, docs/features/connexion.md, section 4.3.
   revoquerSession: (entetes: Headers) => Promise<void>;
+  // 1.3 (docs/features/mot-de-passe.md, sections 3.3 et 5). Limite
+  // auth.reinitialisation_compte de la demande, pour l'adresse validée : vrai
+  // si la demande est admise. Comptée pour toute adresse (T-07).
+  limiterReinitialisation: (adresse: string) => Promise<boolean>;
+  // Jeton de réinitialisation connu et non expiré, lu sans être consommé :
+  // Better Auth consomme le jeton avant de vérifier le mot de passe
+  // compromis, qui brûlerait sinon le lien.
+  jetonReinitialisationValide: (jeton: string) => Promise<boolean>;
+  // Mot de passe présent dans Have I Been Pwned ; lève si le service ne
+  // répond pas (refus fermé par défaut, décision 2 de la 1.1).
+  motDePasseCompromis: (motDePasse: string) => Promise<boolean>;
   horloge?: Horloge;
 };
 
@@ -115,9 +130,14 @@ type PointEntree = {
     dependances: DependancesPointsEntree,
   ) => Promise<Request | Raison>;
   traduire: (lue: ReponseLue) => Traduction;
-  // Contrôle après un succès de Better Auth (déconnexion) : faux ou une
+  // Contrôle après un succès de Better Auth (déconnexion, connexion,
+  // vérification), avec les cookies que la réponse va poser : faux ou une
   // exception donnent « erreur », sans cookie.
-  verifier?: (entetes: Headers, dependances: DependancesPointsEntree) => Promise<boolean>;
+  verifier?: (
+    entetes: Headers,
+    dependances: DependancesPointsEntree,
+    cookies: readonly string[],
+  ) => Promise<boolean>;
 };
 
 // En-têtes repris de la requête reçue : l'adresse IP (limite de Better Auth,
@@ -224,6 +244,16 @@ export const POINTS_ENTREE_OUVERTS: Readonly<Record<string, PointEntree>> = Obje
       if (lue.statut >= 200 && lue.statut < 300) return { ok: true, cookies: lue.cookies };
       return { raison: "lien_invalide" };
     },
+    // Report de la 1.2 (docs/features/mot-de-passe.md, section 8) : quand la
+    // vérification ouvre une session, celle du cookie reçu est révoquée avant
+    // que le nouveau cookie parte. Lien déjà utilisé, sans nouveau cookie :
+    // rien n'est révoqué.
+    verifier: async (entetes, dependances, cookies) => {
+      if (cookies.some((cookie) => COOKIE_SESSION.test(cookie))) {
+        await dependances.revoquerSession(entetes);
+      }
+      return true;
+    },
   },
   // UC-02, étapes 1, 2 et 4 (1.2). Limite par compte avant Better Auth ;
   // adresse inconnue, mauvais mot de passe et compte non vérifié reçoivent la
@@ -286,6 +316,63 @@ export const POINTS_ENTREE_OUVERTS: Readonly<Record<string, PointEntree>> = Obje
       return { raison: "invalide" };
     },
     verifier: async (entetes, dependances) => !(await dependances.sessionEncoreLisible(entetes)),
+  },
+  // UC-03, étapes 1 et 2 (1.3). Limite par adresse email avant Better Auth ;
+  // la même réponse pour toute adresse, avec ou sans compte (T-07), en 800 ms
+  // au moins ; ni redirectTo ni callbackURL. Fiche :
+  // docs/features/mot-de-passe.md, sections 2 et 5.
+  "/request-password-reset": {
+    methode: "POST",
+    schema: schemaDemandeReinitialisation,
+    plancher: true,
+    versBetterAuth: async (donnees, entetes, origine, dependances) => {
+      const email = adresseValide(donnees.email);
+      if (email === null) return "invalide";
+      if (!(await dependances.limiterReinitialisation(email))) return "trop_de_requetes";
+      return new Request(`${origine}${BASE}/request-password-reset`, {
+        method: "POST",
+        headers: entetesInternes(entetes, true, origine),
+        body: JSON.stringify({ email }),
+      });
+    },
+    traduire: (lue) => {
+      const commune = traductionCommune(lue);
+      if (commune) return commune;
+      if (lue.statut >= 200 && lue.statut < 300) return { ok: true, cookies: [] };
+      return { raison: "invalide" };
+    },
+  },
+  // UC-03, étapes 3 et 4 (1.3). Le jeton arrive dans le corps (fragment du
+  // lien) ; avant Better Auth, qui le consommerait : longueur, jeton connu,
+  // mot de passe compromis. Aucune session ouverte, aucun cookie. Fiche :
+  // docs/features/mot-de-passe.md, sections 2.3 et 3.3.
+  "/reset-password": {
+    methode: "POST",
+    schema: schemaReinitialisation,
+    plancher: false,
+    versBetterAuth: async (donnees, entetes, origine, dependances) => {
+      const motDePasse = String(donnees.motDePasse);
+      if (motDePasse.length < LONGUEUR_MIN_MOT_DE_PASSE) return "mot_de_passe_trop_court";
+      const jeton = String(donnees.jeton);
+      if (!(await dependances.jetonReinitialisationValide(jeton))) return "lien_invalide";
+      if (await dependances.motDePasseCompromis(motDePasse)) return "mot_de_passe_compromis";
+      return new Request(`${origine}${BASE}/reset-password`, {
+        method: "POST",
+        headers: entetesInternes(entetes, true, origine),
+        body: JSON.stringify({ newPassword: motDePasse, token: jeton }),
+      });
+    },
+    traduire: (lue) => {
+      const commune = traductionCommune(lue);
+      if (commune) return commune;
+      if (lue.statut >= 200 && lue.statut < 300) return { ok: true, cookies: [] };
+      if (lue.code === "INVALID_TOKEN" || lue.code === "USER_NOT_FOUND") {
+        return { raison: "lien_invalide" };
+      }
+      if (lue.code === "PASSWORD_TOO_SHORT") return { raison: "mot_de_passe_trop_court" };
+      if (lue.code === "PASSWORD_COMPROMISED") return { raison: "mot_de_passe_compromis" };
+      return { raison: "invalide" };
+    },
   },
 } satisfies Record<string, PointEntree>);
 
@@ -424,7 +511,9 @@ export function creerTraitementAuth(
       if (!(interne instanceof Request)) return refus(interne);
       traduite = point.traduire(await lireReponse(await dependances.traiter(interne)));
       if (!("raison" in traduite) && point.verifier) {
-        if (!(await point.verifier(requete.headers, dependances))) return refus("erreur");
+        if (!(await point.verifier(requete.headers, dependances, traduite.cookies))) {
+          return refus("erreur");
+        }
       }
     } catch {
       // Panne de base, compteur en échec, ou autre erreur relancée par Better

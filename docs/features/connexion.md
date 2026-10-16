@@ -395,7 +395,7 @@ Dans cet ordre, chacun vu en échec avant le code.
 - **Durée au-delà du plancher** : une base lente rend l'écart mesurable (section 2.2), comme en 1.1.
 - **Reconnexion hebdomadaire** : une session ne dure que 7 jours, même active (décision 3).
 - **Sessions d'autres navigateurs gardées** : se reconnecter révoque la session du navigateur qui se reconnecte (section 4.3), pas celles des autres navigateurs ; visibles et révocables en 1.5.
-- **Vérification d'une autre adresse depuis un navigateur connecté** : la vérification ouvre une nouvelle session sans révoquer celle du cookie reçu (le gestionnaire ne transmet pas le cookie à `/verify-email`). Cas rare (une seconde inscription vérifiée dans le même navigateur), sans élévation de droits ; à traiter avec la 1.5.
+- **Vérification d'une autre adresse depuis un navigateur connecté** : la vérification ouvre une nouvelle session sans révoquer celle du cookie reçu (le gestionnaire ne transmet pas le cookie à `/verify-email`). Cas rare (une seconde inscription vérifiée dans le même navigateur), sans élévation de droits. **Close par la 1.3** : une vérification qui ouvre une session révoque celle du cookie reçu (`docs/features/mot-de-passe.md`, section 8).
 - **Pages inertes en production** jusqu'à la 1.3 : `/connexion` y affiche une erreur à l'envoi (section 1.3).
 - **Ligne `[auth] warn` par échec** : un essai en masse remplit le journal technique d'autant de lignes, bornées par les limites de la section 3.
 

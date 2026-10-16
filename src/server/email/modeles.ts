@@ -2,6 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 
+import { JETON_REINITIALISATION } from "@/schemas/regles-compte";
 import { TEXTES_EMAILS } from "@/textes/emails";
 
 // Les modèles d'email : liste fermée, sur le modèle de journal/actions.ts.
@@ -24,6 +25,9 @@ const JETON = new RegExp(`^[A-Za-z0-9_-]{${LONGUEUR_JETON}}$`, "u");
 export const LONGUEUR_MAX_JETON_VERIFICATION = 1024;
 export const MOTIF_JETON_VERIFICATION = "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$";
 const JETON_VERIFICATION = new RegExp(MOTIF_JETON_VERIFICATION, "u");
+// Jeton de réinitialisation de Better Auth (generateId(24)) : 24 caractères
+// [A-Za-z0-9], sans état lisible (docs/features/mot-de-passe.md, section 3).
+export const MOTIF_JETON_REINITIALISATION = JETON_REINITIALISATION.source;
 // Caractères de contrôle C0, DEL et C1.
 const SANS_CONTROLE = /^[^\u0000-\u001f\u007f-\u009f]*$/u;
 const CONTROLES = /[\u0000-\u001f\u007f-\u009f]+/gu;
@@ -39,6 +43,7 @@ export const briques = {
   jeton: () => z.string().regex(JETON),
   jetonVerification: () =>
     z.string().max(LONGUEUR_MAX_JETON_VERIFICATION).regex(JETON_VERIFICATION),
+  jetonReinitialisation: () => z.string().regex(JETON_REINITIALISATION),
   texteAffichable: (max: number) => z.string().max(max).regex(SANS_CONTROLE),
 };
 
@@ -87,8 +92,9 @@ export const MODELES_EMAIL = {
       };
     },
   },
-  // Inscription avec une adresse qui a déjà un compte (UC-01, 3a) : ni
-  // paramètre, ni lien.
+  // Inscription avec une adresse qui a déjà un compte (UC-01, 3a) : aucun
+  // paramètre ; deux liens de pages fixes, écrits ici (décision A de la 1.3,
+  // docs/features/mot-de-passe.md, section 6.3).
   "compte.existant": {
     parametres: z.strictObject({}),
     construire: (
@@ -96,9 +102,48 @@ export const MODELES_EMAIL = {
       contexte: { origine: string },
     ): Construction => {
       void parametres;
-      void contexte;
       const textes = TEXTES_EMAILS.modeles["compte.existant"];
-      return { sujet: textes.sujet, corps: corpsAvecFin(textes.corps) };
+      const corps = [
+        textes.corps,
+        `${textes.connexion}\n${lienPage(contexte.origine, "connexion")}`,
+        `${textes.oubli}\n${lienPage(contexte.origine, "mot-de-passe-oublie")}`,
+        textes.fin,
+      ].join("\n\n");
+      return { sujet: textes.sujet, corps: corpsAvecFin(corps) };
+    },
+  },
+  // Réinitialisation du mot de passe (UC-03, étape 2) : le lien porte le jeton
+  // dans son fragment, comme la vérification. Fiche :
+  // docs/features/mot-de-passe.md, sections 3.4 et 6.2.
+  "compte.reinitialisation": {
+    parametres: z.strictObject({ jeton: briques.jetonReinitialisation() }),
+    construire: (
+      parametres: Record<string, unknown>,
+      contexte: { origine: string },
+    ): Construction => {
+      const textes = TEXTES_EMAILS.modeles["compte.reinitialisation"];
+      const lien = lienFragment(contexte.origine, "reinitialisation", String(parametres.jeton));
+      return {
+        sujet: textes.sujet,
+        corps: corpsAvecFin(`${textes.corps}\n\n${lien}\n\n${textes.validite}`),
+      };
+    },
+  },
+  // Notification après une réinitialisation (UC-03, étape 4) : aucun
+  // paramètre ; lien fixe vers « mot de passe oublié ».
+  "compte.mot_de_passe_modifie": {
+    parametres: z.strictObject({}),
+    construire: (
+      parametres: Record<string, unknown>,
+      contexte: { origine: string },
+    ): Construction => {
+      void parametres;
+      const textes = TEXTES_EMAILS.modeles["compte.mot_de_passe_modifie"];
+      const lien = lienPage(contexte.origine, "mot-de-passe-oublie");
+      return {
+        sujet: textes.sujet,
+        corps: corpsAvecFin(`${textes.corps}\n\n${textes.oubli}\n${lien}`),
+      };
     },
   },
 } as const satisfies Record<string, DefinitionModele>;
@@ -139,11 +184,43 @@ export function lienPublic(origine: string, type: string, jeton: string): string
 // n'envoie jamais le fragment au serveur, ni dans la requête ni dans Referer
 // (décision 3 de docs/features/inscription.md). Même contrôle que lienPublic
 // (T-65) : l'appelant ne fournit qu'un jeton.
+// 1.3 : chaque type a sa brique de jeton, dans une table fermée ; un type
+// absent de la table, ou un jeton d'une autre forme, est refusé.
+const JETONS_FRAGMENT: Readonly<Record<string, () => z.ZodType>> = Object.freeze({
+  verification: briques.jetonVerification,
+  reinitialisation: briques.jetonReinitialisation,
+});
+
 export function lienFragment(origine: string, type: string, jeton: string): string {
-  if (!TYPE_LIEN.test(type) || !briques.jetonVerification().safeParse(jeton).success) {
+  const brique = Object.hasOwn(JETONS_FRAGMENT, type) ? JETONS_FRAGMENT[type] : undefined;
+  if (!TYPE_LIEN.test(type) || brique === undefined || !brique().safeParse(jeton).success) {
     throw new LienInvalide();
   }
+  return `${origineWeb(origine)}/lien/${type}#${jeton}`;
+}
+
+// Les pages fixes qu'un email peut viser (décision A de la 1.3) : liste
+// fermée, écrite dans la construction d'un modèle, jamais fournie par
+// l'appelant. Toujours sur l'origine de la configuration, sans requête ni
+// fragment (T-65, règle 17). Fiche : docs/features/mot-de-passe.md,
+// section 6.3.
+export const PAGES_LIEN = Object.freeze({
+  connexion: "/connexion",
+  "mot-de-passe-oublie": "/mot-de-passe-oublie",
+} as const);
+
+export type PageLien = keyof typeof PAGES_LIEN;
+
+export function lienPage(origine: string, page: PageLien): string {
+  // Contrôle à l'exécution aussi : le type ne protège pas d'une valeur venue
+  // d'ailleurs, ni des clés héritées (toString, __proto__).
+  if (typeof page !== "string" || !Object.hasOwn(PAGES_LIEN, page)) throw new LienInvalide();
+  return `${origineWeb(origine)}${PAGES_LIEN[page]}`;
+}
+
+// L'origine d'une adresse de configuration en http ou https, sinon refus.
+function origineWeb(origine: string): string {
   const url = new URL(origine);
   if (url.protocol !== "https:" && url.protocol !== "http:") throw new LienInvalide();
-  return `${url.origin}/lien/${type}#${jeton}`;
+  return url.origin;
 }

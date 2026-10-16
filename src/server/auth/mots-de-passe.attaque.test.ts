@@ -67,6 +67,10 @@ function instance() {
     sessionEncoreLisible: async () => false,
     // Correctif de la 1.2 : révocation de l'ancienne session, sans effet ici.
     revoquerSession: async () => {},
+    // 1.3 : dépendances exigées par le type, sans effet sur l'inscription.
+    limiterReinitialisation: async () => true,
+    jetonReinitialisationValide: async () => false,
+    motDePasseCompromis: async () => false,
     horloge: { maintenant: () => 0, attendre: async () => {} },
   });
 }
