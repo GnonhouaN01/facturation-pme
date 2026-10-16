@@ -381,7 +381,7 @@ Dans cet ordre, chacun vu en échec avant le code.
 - **1.6** : `freshAge` et nouvelle authentification.
 - **2.1** : arrivée sur la dernière organisation active ou la liste (UC-02, étape 4) ; création d'organisation dans `(compte)/`.
 - **8.1** : signalement des lignes `[auth] error` et du rythme des `[auth] warn` (essais en masse) au service de suivi.
-- **Prévus pour la 1.2 par `socle-interface.md`, non repris ici** (constaté à l'implémentation) : le nom de l'utilisateur en bas de la barre latérale (section 10 de la 0.6 ; demande une lecture de `user`, RR-8) et le scénario « base injoignable avec une session valide » (section 4.3 de la 0.6) passent au jalon 2. La redirection de `connexion_requise` vers `/connexion` (section 2.2 de la 0.6) : question ouverte, voir « Notes de l'implémentation ».
+- **Prévus pour la 1.2 par `socle-interface.md`, non repris ici** (constaté à l'implémentation) : le nom de l'utilisateur en bas de la barre latérale (section 10 de la 0.6 ; demande une lecture de `user`, RR-8) et le scénario « base injoignable avec une session valide » (section 4.3 de la 0.6) passent au jalon 2. La redirection de `connexion_requise` vers `/connexion` (section 2.2 de la 0.6) passe aussi au jalon 2, par une fiche dédiée (décision du développeur du 2026-10-16). Les trois reports sont inscrits dans `docs/PLAN.md`, jalon 2.
 
 ## Limites connues
 
@@ -446,6 +446,6 @@ Le 2026-10-14, une seule PR (branche `feat/1.2-connexion`) : commits `docs(1.2):
 - **Connexion réussie** : navigation par le routeur (`router.push("/compte")`) plutôt que `window.location.assign`, refusée par la règle de Next.js ; `/compte` n'ayant jamais été visitée, elle est rendue par le serveur avec le nouveau cookie. La déconnexion garde `window.location.replace("/connexion")` : rechargement complet, et l'entrée quittée sort de l'historique.
 - **Test d'intégration** dans `src/server/db/connexion.integration.test.ts` (seul dossier dont les tests importent `db`).
 
-**Point prévu par la 0.6, non repris (question ouverte)** : `socle-interface.md` (section 2.2) prévoyait qu'en 1.2, `connexion_requise` redirige vers `/connexion` avec l'adresse de retour. Non fait : la réponse « introuvable » reste, pour `(app)/` comme pour `(compte)/`, comme décidé dans cette fiche. Les tests de la 0.6 et le contrôle après déploiement reposent sur ce 404. Le nom de l'utilisateur dans la barre latérale et le scénario « base injoignable avec une session valide » passent au jalon 2 (« Reporté »).
+**Point prévu par la 0.6, non repris (reporté au jalon 2, fiche dédiée, décision du 2026-10-16)** : `socle-interface.md` (section 2.2) prévoyait qu'en 1.2, `connexion_requise` redirige vers `/connexion` avec l'adresse de retour. Non fait : la réponse « introuvable » reste, pour `(app)/` comme pour `(compte)/`, comme décidé dans cette fiche. Les tests de la 0.6 et le contrôle après déploiement reposent sur ce 404. Le nom de l'utilisateur dans la barre latérale et le scénario « base injoignable avec une session valide » passent au jalon 2 (« Reporté »).
 
 **Vérifications** : `npm run verifier` vert (format, lint, typecheck, 59 fichiers et 1 968 tests unitaires, construction, 381 tests de bout en bout sur la base jetable, aucun sauté, ports 3000 et 3101 libres) ; `npm run test:integration` sur `dev` : 22 fichiers, 194 réussis et 1 échec attendu (déjà présent).

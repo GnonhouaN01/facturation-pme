@@ -78,6 +78,12 @@ La 1.6 livre le mécanisme qu'attend la chaîne de contrôles : jusque-là, tout
 
 **Tables de Better Auth (RR-8, `THREATS.md` section 8).** `member`, `user`, `session`, `organization` et `invitation` n'ont pas de règle d'isolation. Dans chaque fonctionnalité du jalon 2, toute requête de l'application sur l'une d'elles filtre explicitement sur l'organisation du contexte, et reçoit un test d'attaque qui tente de lire les lignes de l'autre organisation.
 
+**Reports de la 1.2 au jalon 2** (décision du développeur du 2026-10-16, `docs/features/connexion.md`, « Reporté ») :
+
+- **Redirection vers `/connexion`** d'une page de `(app)/` ou de `(compte)/` ouverte sans session (`connexion_requise`), avec l'adresse de retour limitée à un chemin relatif de l'application, prévue par `docs/features/socle-interface.md`, section 2.2. Fiche dédiée : elle change la réponse sans session de toutes ces pages (aujourd'hui « introuvable », 404), donc les tests S-02 et le contrôle après déploiement qui reposent sur ce 404.
+- **Nom de l'utilisateur dans la barre latérale** (`socle-interface.md`, section 10) : demande une lecture de `user`, table de Better Auth (RR-8).
+- **Scénario « base injoignable avec une session valide »** (`socle-interface.md`, section 4.3) : une vraie session dans le navigateur du serveur en panne.
+
 **Démontrable à la fin :** un gérant crée son entreprise, invite un comptable et un vendeur, et un comptable externe bascule entre deux entreprises sans jamais voir les données de l'une dans l'autre.
 
 ### Jalon 3 — Clients et catalogue
