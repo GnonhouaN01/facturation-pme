@@ -3,11 +3,13 @@ import "server-only";
 import { randomBytes, randomUUID } from "node:crypto";
 
 import { betterAuth, type BetterAuthOptions } from "better-auth";
+import { isPasswordCompromised } from "better-auth/plugins";
 import { inArray } from "drizzle-orm";
 
 import { optionsAuth } from "../../auth/config";
 import { creerEmailsCompte } from "../../auth/emails";
 import { creerTraitementAuth, jetonDeSession } from "../../auth/points-entree";
+import { creerApresReinitialisation } from "../../auth/reinitialisation";
 import { creerStockageBetterAuth } from "../../debit/better-auth";
 import { creerVerificateur } from "../../debit/debit";
 import { LIMITES } from "../../debit/limites";
@@ -17,7 +19,8 @@ import { env } from "../../env";
 import { creerTransportMemoire, type TransportMemoire } from "../../modules/email/memoire";
 import { db } from "../client";
 import { creerCompteur, type Compteur } from "../debit";
-import { user } from "../schema/auth";
+import { marquerAdresseVerifiee, supprimerJetonsReinitialisation } from "../reinitialisation";
+import { user, verification } from "../schema/auth";
 import { compteurDebit } from "../schema/technique";
 
 // Banc d'inscription avec la vraie base : instance de Better Auth aux options
@@ -28,7 +31,11 @@ import { compteurDebit } from "../schema/technique";
 // docs/features/inscription.md, « Tests à écrire ». Connexion et déconnexion
 // (1.2) : limite par compte sur le même compteur, déconnexion vérifiée par la
 // session relue avec cette instance, comme gestionnaire.ts. Fiche :
-// docs/features/connexion.md, tests 15 à 17.
+// docs/features/connexion.md, tests 15 à 17. Mot de passe oublié (1.3) :
+// rappels de la réinitialisation et de la notification, rappel d'après
+// réinitialisation sur la vraie base, contrôles avant la consommation du
+// jeton, comme gestionnaire.ts. Fiche : docs/features/mot-de-passe.md,
+// tests 18 à 21.
 
 export type BancInscription = {
   // Le gestionnaire des points d'entrée, lié à cette instance.
@@ -95,6 +102,12 @@ export function bancInscription(options: { adresses: number }): BancInscription 
       ...base.emailAndPassword,
       enabled: true,
       onExistingUserSignUp: emails.emailCompteExistant,
+      sendResetPassword: emails.emailReinitialisation,
+      onPasswordReset: creerApresReinitialisation({
+        planifierNotification: emails.emailMotDePasseModifie,
+        supprimerJetons: supprimerJetonsReinitialisation,
+        marquerVerifiee: marquerAdresseVerifiee,
+      }),
     },
     emailVerification: {
       ...base.emailVerification,
@@ -121,6 +134,17 @@ export function bancInscription(options: { adresses: number }): BancInscription 
         const jeton = jetonDeSession(entetes.get("cookie"), contexte.authCookies.sessionToken.name);
         if (jeton !== null) await contexte.internalAdapter.deleteSession(jeton);
       },
+      // 1.3, comme gestionnaire.ts.
+      limiterReinitialisation: (adresse) =>
+        verificateur.verifierDebit("auth.reinitialisation_compte", adressePourCompteur(adresse)),
+      jetonReinitialisationValide: async (jeton) => {
+        const contexte = await auth.$context;
+        const ligne = await contexte.internalAdapter.findVerificationValue(
+          `reset-password:${jeton}`,
+        );
+        return ligne !== null && ligne.expiresAt > new Date();
+      },
+      motDePasseCompromis: isPasswordCompromised,
     }),
     transport,
     lireSession: async (entetes) => {
@@ -137,6 +161,12 @@ export function bancInscription(options: { adresses: number }): BancInscription 
       return adresse;
     },
     nettoyer: async () => {
+      // 1.3 : les jetons de réinitialisation des comptes du banc (valeur :
+      // l'identifiant de l'utilisateur, sans clé étrangère).
+      const ids = (
+        await db.select({ id: user.id }).from(user).where(inArray(user.email, adresses))
+      ).map((ligne) => ligne.id);
+      if (ids.length > 0) await db.delete(verification).where(inArray(verification.value, ids));
       await db.delete(user).where(inArray(user.email, adresses));
       const liste = [...cles];
       if (liste.length > 0) await db.delete(compteurDebit).where(inArray(compteurDebit.cle, liste));

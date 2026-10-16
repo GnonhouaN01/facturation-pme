@@ -512,8 +512,9 @@ describe("pages de la zone compte (1.2)", () => {
 // appelle redirigerSiConnecte (un utilisateur connecté va sur /compte), sauf
 // « Adresse vérifiée », qui s'adresse justement à l'utilisateur dont la
 // vérification vient d'ouvrir la session. Fiche : docs/features/connexion.md,
-// section 5.2.
-const PAGES_SANS_SESSION = /^\(public\)\/(connexion|inscription)(\/|$)/;
+// section 5.2. Modifié en 1.3 : « mot de passe oublié » rejoint la liste
+// (docs/features/mot-de-passe.md, section 7, test 17).
+const PAGES_SANS_SESSION = /^\(public\)\/(connexion|inscription|mot-de-passe-oublie)(\/|$)/;
 const EXCEPTIONS_REDIRECTION = new Set(["(public)/inscription/verifiee/page.tsx"]);
 const APPEL_REDIRIGER = /\bredirigerSiConnecte\s*\(/;
 
@@ -542,6 +543,7 @@ describe("pages de connexion et d'inscription : utilisateur connecté redirigé 
       "(public)/inscription/envoyee/page.tsx",
       "(public)/inscription/page.tsx",
       "(public)/inscription/verifiee/page.tsx",
+      "(public)/mot-de-passe-oublie/page.tsx",
     ]);
     expect(problemesDeRedirection(sources)).toEqual([]);
   });
@@ -651,5 +653,27 @@ describe("route de /api/auth", () => {
     expect(Object.keys(route).sort()).toEqual(["GET", "POST"]);
     expect(route.GET).toBe(traiterRequeteAuth);
     expect(route.POST).toBe(traiterRequeteAuth);
+  });
+});
+
+// 1.3 : les pages ouvertes par un lien d'email ne lisent jamais la session
+// (zone par lien, docs/features/inscription.md, section 4.3) : ni
+// redirection, ni lecture. Fiche : docs/features/mot-de-passe.md, section 3.4,
+// test 17.
+const LECTURES_DE_SESSION =
+  /\b(redirigerSiConnecte|lireSession|lirePourPage|lireComptePourPage|getSession)\b|next\/headers/;
+
+describe("zone par lien : aucune lecture de session (1.3)", () => {
+  test("lien/verification et lien/reinitialisation existent et ne lisent pas la session", () => {
+    const pages = sourcesDeApp().filter(({ chemin }) =>
+      /^lien\/(verification|reinitialisation)\/page\.tsx$/.test(chemin),
+    );
+    expect(pages.map(({ chemin }) => chemin).sort()).toEqual([
+      "lien/reinitialisation/page.tsx",
+      "lien/verification/page.tsx",
+    ]);
+    for (const { chemin, contenu } of pages) {
+      expect(LECTURES_DE_SESSION.test(sansCommentaires(contenu)), chemin).toBe(false);
+    }
   });
 });

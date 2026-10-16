@@ -124,6 +124,34 @@ export const PAGES: readonly PageLivree[] = [
     },
     premiereAction: (page) => page.getByRole("link", { name: TEXTES_COMMUNS.revenirAccueil }),
   },
+  // 1.3 : mot de passe oublié (docs/features/mot-de-passe.md, section 7).
+  {
+    nom: "mot-de-passe-oublie",
+    ouvrir: async (page) => {
+      await page.goto("/mot-de-passe-oublie");
+      await attendreTitre(page, TEXTES_COMPTE.motDePasseOublie.titre);
+    },
+    premiereAction: (page) =>
+      page.getByRole("textbox", { name: TEXTES_COMPTE.motDePasseOublie.email }),
+  },
+  {
+    // Jeton de forme valable, jamais envoyé : le formulaire seul est vérifié.
+    nom: "lien-reinitialisation",
+    ouvrir: async (page) => {
+      await page.goto("/lien/reinitialisation#aB3dE5fG7hJ9kL1mN2pQ4rS6");
+      await attendreTitre(page, TEXTES_COMPTE.reinitialisation.titre);
+    },
+    premiereAction: (page) => page.getByLabel(TEXTES_COMPTE.reinitialisation.motDePasse),
+  },
+  {
+    nom: "lien-reinitialisation-invalide",
+    ouvrir: async (page) => {
+      await page.goto("/lien/reinitialisation");
+      await attendreTitre(page, TEXTES_COMPTE.reinitialisation.lienInvalide);
+    },
+    premiereAction: (page) =>
+      page.getByRole("link", { name: TEXTES_COMPTE.reinitialisation.nouveauLien }),
+  },
   {
     // Second serveur, base injoignable (e2e/serveur-panne.ts).
     nom: "erreur",

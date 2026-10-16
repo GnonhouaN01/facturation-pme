@@ -5,7 +5,9 @@
 // Connexion, page de compte et déconnexion (1.2) : le message d'échec de la
 // connexion vaut pour une adresse inconnue, un mauvais mot de passe et un
 // compte non vérifié, sans les distinguer. Fiche : docs/features/connexion.md,
-// sections 2.1 et 5.
+// sections 2.1 et 5. Mot de passe oublié (1.3) : la confirmation de la
+// demande est la même pour toute adresse (T-07). Fiche :
+// docs/features/mot-de-passe.md, section 7.
 
 export const TEXTES_COMPTE = {
   inscription: {
@@ -59,7 +61,35 @@ export const TEXTES_COMPTE = {
     aideConfirmation: "Si vous venez de créer votre compte, confirmez d'abord votre adresse.",
     nouveauLien: "Recevoir un nouveau lien de confirmation",
     creerCompte: "Créer un compte",
+    motDePasseOublie: "Mot de passe oublié ?",
     sansJavaScript: "Activez JavaScript dans votre navigateur pour vous connecter.",
+  },
+  motDePasseOublie: {
+    titre: "Mot de passe oublié",
+    introduction:
+      "Saisissez l'adresse email de votre compte : un lien pour choisir un nouveau mot de passe vous sera envoyé.",
+    email: "Adresse email",
+    envoyer: "Recevoir un lien",
+    envoiEnCours: "Envoi en cours",
+    confirmation:
+      "Si un compte existe pour cette adresse, un email vient de partir. Le lien est valable 30 minutes.",
+    sansJavaScript: "Activez JavaScript dans votre navigateur pour recevoir un lien.",
+  },
+  reinitialisation: {
+    titre: "Choisir un nouveau mot de passe",
+    message: "Saisissez votre nouveau mot de passe, puis enregistrez-le.",
+    motDePasse: "Nouveau mot de passe",
+    regleMotDePasse: "12 caractères au moins.",
+    enregistrer: "Enregistrer le mot de passe",
+    enregistrementEnCours: "Enregistrement en cours",
+    // Mot pour mot DESIGN-SYSTEM.md, « Page ouverte par un lien expiré ».
+    lienInvalide: "Ce lien n'est plus valable",
+    nouveauLien: "Demander un nouveau lien",
+    modifie: "Mot de passe modifié",
+    confirmation: "Votre mot de passe a été modifié. Toutes vos sessions ont été fermées.",
+    seConnecter: "Se connecter",
+    sansJavaScript:
+      "Activez JavaScript dans votre navigateur pour choisir un nouveau mot de passe.",
   },
   compte: {
     titre: "Votre compte",

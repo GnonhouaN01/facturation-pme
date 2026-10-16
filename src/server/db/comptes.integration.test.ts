@@ -7,8 +7,8 @@ import { ETAPES, executerEtapes } from "../taches/etapes";
 import { creerTraitementTache } from "../taches/quotidienne";
 
 import { db } from "./client";
-import { purgerComptesNonVerifies, purgerSessionsExpirees } from "./comptes";
-import { account, session, user } from "./schema/auth";
+import { purgerComptesNonVerifies, purgerJetonsExpires, purgerSessionsExpirees } from "./comptes";
+import { account, session, user, verification } from "./schema/auth";
 import { compteurDebit } from "./schema/technique";
 
 // Purge des comptes non vérifiés de plus de 7 jours (THREATS.md 7.2) : leurs
@@ -99,6 +99,41 @@ describe("purgerSessionsExpirees", () => {
     expect(restantes.map((s) => s.id)).not.toContain(expiree);
     expect(restantes).toHaveLength(1);
     expect(await existe(id)).toBe(true);
+  });
+});
+
+// Purge des jetons expirés (S-63, 1.3) : Better Auth ne supprime les lignes
+// expirées de verification qu'à l'occasion d'une recherche. Fiche :
+// docs/features/mot-de-passe.md, section 9, test 22.
+describe("purgerJetonsExpires", () => {
+  test("supprime une ligne expirée, garde une ligne valable", async () => {
+    const expiree = randomUUID();
+    const valable = randomUUID();
+    await db.insert(verification).values([
+      {
+        id: expiree,
+        identifier: `reinitialisation:${randomUUID()}`,
+        value: randomUUID(),
+        expiresAt: new Date(Date.now() - 60_000),
+      },
+      {
+        id: valable,
+        identifier: `reinitialisation:${randomUUID()}`,
+        value: randomUUID(),
+        expiresAt: new Date(Date.now() + 30 * 60_000),
+      },
+    ]);
+    try {
+      const supprimees = await purgerJetonsExpires();
+      expect(supprimees).toBeGreaterThanOrEqual(1);
+      const restantes = await db
+        .select({ id: verification.id })
+        .from(verification)
+        .where(inArray(verification.id, [expiree, valable]));
+      expect(restantes.map((r) => r.id)).toEqual([valable]);
+    } finally {
+      await db.delete(verification).where(inArray(verification.id, [expiree, valable]));
+    }
   });
 });
 

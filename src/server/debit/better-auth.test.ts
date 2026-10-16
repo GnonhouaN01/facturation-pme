@@ -43,14 +43,18 @@ const CLE_BETTER_AUTH = "203.0.113.7|/sign-up/email";
 
 describe("reglesBetterAuth : règles par chemin, tirées de LIMITES", () => {
   // Modifié en 1.2 : cinq chemins ouverts au lieu de trois
-  // (docs/features/connexion.md, section 3, test 11).
-  test("les cinq chemins ouverts, chacun avec sa limite", () => {
+  // (docs/features/connexion.md, section 3, test 11). Modifié en 1.3 : sept,
+  // avec la demande et la réinitialisation (docs/features/mot-de-passe.md,
+  // section 5, test 16).
+  test("les sept chemins ouverts, chacun avec sa limite", () => {
     expect(CHEMINS_LIMITES).toEqual({
       "/sign-up/email": "auth.inscription",
       "/send-verification-email": "auth.renvoi_verification",
       "/verify-email": "auth.verification",
       "/sign-in/email": "auth.connexion",
       "/sign-out": "auth.deconnexion",
+      "/request-password-reset": "auth.reinitialisation_demande",
+      "/reset-password": "auth.reinitialisation",
     });
     expect(reglesBetterAuth()).toEqual({
       "/sign-up/email": regle("auth.inscription"),
@@ -58,6 +62,8 @@ describe("reglesBetterAuth : règles par chemin, tirées de LIMITES", () => {
       "/verify-email": regle("auth.verification"),
       "/sign-in/email": regle("auth.connexion"),
       "/sign-out": regle("auth.deconnexion"),
+      "/request-password-reset": regle("auth.reinitialisation_demande"),
+      "/reset-password": regle("auth.reinitialisation"),
     });
   });
 
@@ -204,4 +210,59 @@ describe("stockage : consume", () => {
 
     await expect(stockage.consume(CLE_BETTER_AUTH, regle("auth.inscription"))).rejects.toThrow();
   });
+});
+
+// 1.3 : la limite par adresse email de la demande n'est jamais une règle de
+// Better Auth. Fiche : docs/features/mot-de-passe.md, section 5, test 16.
+describe("stockage : limites de la réinitialisation (1.3)", () => {
+  test("la règle de auth.reinitialisation_compte (adresse email) est refusée sans compter", async () => {
+    const consommes: string[] = [];
+    const stockage = creerStockageBetterAuth({
+      limites: LIMITES,
+      compteur: {
+        consommer: async (cle) => {
+          consommes.push(cle);
+          return 1;
+        },
+        purger: async () => 0,
+      },
+      secret: new Uint8Array(32),
+    });
+    const limite = LIMITES["auth.reinitialisation_compte"];
+    expect(
+      await stockage.consume("203.0.113.7|/request-password-reset", {
+        window: limite.fenetreSecondes,
+        max: limite.maximum,
+      }),
+    ).toEqual({ allowed: false, retryAfter: null });
+    expect(consommes).toEqual([]);
+  });
+
+  test.each(["auth.reinitialisation_demande", "auth.reinitialisation"] as const)(
+    "la règle de %s est connue et comptée sous son nom",
+    async (nom) => {
+      const consommes: string[] = [];
+      const stockage = creerStockageBetterAuth({
+        limites: LIMITES,
+        compteur: {
+          consommer: async (cle) => {
+            consommes.push(cle);
+            return 1;
+          },
+          purger: async () => 0,
+        },
+        secret: new Uint8Array(32),
+      });
+      const limite = LIMITES[nom];
+      expect(
+        await stockage.consume("203.0.113.7|/reset-password", {
+          window: limite.fenetreSecondes,
+          max: limite.maximum,
+        }),
+      ).toEqual({ allowed: true, retryAfter: null });
+      expect(consommes).toHaveLength(1);
+      expect(consommes[0]?.startsWith(`${nom}:`)).toBe(true);
+      expect(consommes[0]).not.toContain("203.0.113.7");
+    },
+  );
 });

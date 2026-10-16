@@ -116,3 +116,52 @@ export function connecter(
 ): Promise<Response> {
   return poster("/sign-in/email", { email, motDePasse }, entetes);
 }
+
+// Mot de passe oublié (1.3) : rangs 18 à 23 des adresses de l'exécution,
+// lien de réinitialisation lu dans le dossier du transport fichier. Fiche :
+// docs/features/mot-de-passe.md, « Tests de bout en bout ».
+export const RANGS_MOT_DE_PASSE = {
+  parcours: 18,
+  verifieT07: 19,
+  nonVerifieT07: 20,
+  reutilise: 21,
+  redirection: 22,
+  limite: 23,
+} as const;
+
+export function adresseMotDePasse(info: TestInfo, rang: keyof typeof RANGS_MOT_DE_PASSE): string {
+  return adresseE2E(info.project.name, RANGS_MOT_DE_PASSE[rang], info.retry, info.repeatEachIndex);
+}
+
+const LIEN_REINITIALISATION = /\/lien\/reinitialisation#([A-Za-z0-9]{24})$/m;
+
+// Les emails de réinitialisation reçus par une adresse, dans l'ordre.
+export async function liensReinitialisation(adresse: string): Promise<string[]> {
+  return (await messagesPour(adresse))
+    .map((message) => LIEN_REINITIALISATION.exec(message.corps)?.[0])
+    .filter((lien): lien is string => lien !== undefined);
+}
+
+// Attend le n-ième lien de réinitialisation d'une adresse et le rend
+// (chemin et fragment, à ouvrir sur le site).
+export async function attendreLienReinitialisation(adresse: string, rang = 1): Promise<string> {
+  await expect
+    .poll(async () => (await liensReinitialisation(adresse)).length, { timeout: 15_000 })
+    .toBeGreaterThanOrEqual(rang);
+  const lien = (await liensReinitialisation(adresse))[rang - 1];
+  if (!lien) throw new Error("lien de réinitialisation introuvable dans l'email");
+  return lien;
+}
+
+// Sujets des emails reçus par une adresse.
+export async function sujetsPour(adresse: string): Promise<string[]> {
+  return (await messagesPour(adresse)).map((message) => message.sujet);
+}
+
+// Demande de réinitialisation par le point d'entrée, hors navigateur.
+export function demanderReinitialisation(
+  email: string,
+  entetes: Record<string, string> = {},
+): Promise<Response> {
+  return poster("/request-password-reset", { email }, entetes);
+}

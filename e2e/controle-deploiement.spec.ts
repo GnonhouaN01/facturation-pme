@@ -86,15 +86,23 @@ type Defaut =
   | "connexion-500"
   | "compte-200"
   | "compte-distingue"
-  | "gabarit-compte-dans-la-charge";
+  | "gabarit-compte-dans-la-charge"
+  // Mot de passe oublié (1.3).
+  | "demande-ouverte"
+  | "reinitialisation-ouverte"
+  | "lien-reinitialisation-ouvert"
+  | "mot-de-passe-oublie-500"
+  | "lien-reinitialisation-500";
 
-// Les cinq points d'entrée ouverts hors production, en POST (1.1 et 1.2).
+// Les sept points d'entrée ouverts hors production, en POST (1.1 à 1.3).
 const POINTS_COMPTES = [
   "/api/auth/sign-up/email",
   "/api/auth/send-verification-email",
   "/api/auth/verify-email",
   "/api/auth/sign-in/email",
   "/api/auth/sign-out",
+  "/api/auth/request-password-reset",
+  "/api/auth/reset-password",
 ];
 
 type Factice = { adresse: string; requetes: Requete[]; fermer: () => Promise<void> };
@@ -222,10 +230,21 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
         (defaut === "inscription-ouverte" ||
           (defaut === "renvoi-ouvert" && chemin === "/api/auth/send-verification-email") ||
           (defaut === "connexion-ouverte" && chemin === "/api/auth/sign-in/email") ||
-          (defaut === "deconnexion-ouverte" && chemin === "/api/auth/sign-out"))
+          (defaut === "deconnexion-ouverte" && chemin === "/api/auth/sign-out") ||
+          (defaut === "demande-ouverte" && chemin === "/api/auth/request-password-reset") ||
+          (defaut === "reinitialisation-ouverte" && chemin === "/api/auth/reset-password"))
       ) {
         statut = 403;
         json('{"ok":false,"raison":"refuse"}');
+      }
+      // 1.3 : le lien de Better Auth (jeton dans le chemin), s'il était
+      // ouvert, redirigerait vers la callbackURL.
+      if (
+        defaut === "lien-reinitialisation-ouvert" &&
+        chemin.startsWith("/api/auth/reset-password/")
+      ) {
+        statut = 302;
+        auth.Location = "/?token=x";
       }
       if (defaut === "session-ouverte" && chemin === "/api/auth/get-session") {
         statut = 200;
@@ -251,6 +270,9 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
 
     const accueil = chemin === "/";
     const connexion = chemin === "/connexion";
+    // 1.3 : pages publiques du mot de passe oublié.
+    const oubli = chemin === "/mot-de-passe-oublie";
+    const lienReinitialisation = chemin === "/lien/reinitialisation";
     const compte = chemin === "/compte";
     const tableau = chemin === "/tableau-de-bord";
     const lien = chemin.startsWith("/lien/devis/");
@@ -268,6 +290,24 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
     if (defaut === "variable-dans-le-corps" && accueil) charge += " DATABASE_URL absente";
     if (defaut === "gabarit-dans-la-charge" && tableau) charge += " Organisation active";
     if (defaut === "gabarit-compte-dans-la-charge" && compte) charge += " Se déconnecter";
+
+    // 1.3 : demande et choix du mot de passe, 200 comme la connexion.
+    if (oubli || lienReinitialisation) {
+      const enPanne =
+        (oubli && defaut === "mot-de-passe-oublie-500") ||
+        (lienReinitialisation && defaut === "lien-reinitialisation-500");
+      reponse.writeHead(enPanne ? 500 : 200, entetes);
+      reponse.end(
+        page(
+          nonce,
+          "Facturation PME",
+          oubli ? "<h1>Mot de passe oublié</h1>" : "<h1>Choisir un nouveau mot de passe</h1>",
+          charge,
+          defaut,
+        ),
+      );
+      return;
+    }
 
     // Page publique de connexion (1.2) : 200, comme l'accueil.
     if (connexion) {
@@ -324,7 +364,17 @@ function echecs(resultats: readonly Resultat[]): string[] {
     .sort();
 }
 
-const PAGES = ["accueil", "tableau-de-bord", "inexistante", "lien", "connexion", "compte"] as const;
+// 1.3 (modifié) : les deux pages du mot de passe oublié.
+const PAGES = [
+  "accueil",
+  "tableau-de-bord",
+  "inexistante",
+  "lien",
+  "connexion",
+  "compte",
+  "mot-de-passe-oublie",
+  "lien-reinitialisation",
+] as const;
 const surToutes = (controle: string) => PAGES.map((p) => `${p}:${controle}`);
 // Politique et en-têtes : vérifiés aussi sur les pages « tache » (8.3) et
 // « auth » (1.1).
@@ -350,6 +400,10 @@ test.describe("contrôle après déploiement, serveur factice", () => {
   // /api/auth/get-session, de /connexion, de /compte sans cookie et avec le
   // cookie forgé ; deux POST de plus, vers la connexion et la déconnexion
   // (docs/features/connexion.md, section 10).
+  // 1.3 (modifié, signalé) : 28 requêtes par passage. GET de
+  // /mot-de-passe-oublie, de /lien/reinitialisation et du lien de Better
+  // Auth (/api/auth/reset-password/<jeton forgé>) ; deux POST de plus, vers la
+  // demande et la réinitialisation (docs/features/mot-de-passe.md, section 2).
   test("serveur conforme : tout passe, des GET et six POST vides vers /api/auth, sans cookie ni Authorization sauf les valeurs forgées", async () => {
     const factice = await demarrerFactice();
     try {
@@ -360,9 +414,9 @@ test.describe("contrôle après déploiement, serveur factice", () => {
       expect(echecs(second)).toEqual([]);
       expect(premier.length).toBeGreaterThan(10);
 
-      expect(factice.requetes).toHaveLength(46);
+      expect(factice.requetes).toHaveLength(56);
       const posts = factice.requetes.filter((r) => r.methode !== "GET");
-      expect(posts).toHaveLength(12);
+      expect(posts).toHaveLength(16);
       for (const requete of posts) {
         expect(requete.methode).toBe("POST");
         expect(requete.chemin).toMatch(/^\/api\/auth\//);
@@ -419,6 +473,8 @@ test.describe("contrôle après déploiement, serveur factice", () => {
       expect(chemins.filter((c) => c === "/")).toHaveLength(4);
       expect(chemins.filter((c) => c === "/tableau-de-bord")).toHaveLength(4);
       expect(chemins.filter((c) => c === "/connexion")).toHaveLength(2);
+      expect(chemins.filter((c) => c === "/mot-de-passe-oublie")).toHaveLength(2);
+      expect(chemins.filter((c) => c === "/lien/reinitialisation")).toHaveLength(2);
       expect(chemins.filter((c) => c === "/compte")).toHaveLength(4);
       expect(inexistantes).toHaveLength(2);
       expect(inexistantes[0]).not.toBe(inexistantes[1]);
@@ -446,6 +502,13 @@ test.describe("contrôle après déploiement, serveur factice", () => {
         2,
       );
       expect(auth.filter((c) => c === "/api/auth/get-session")).toHaveLength(2);
+      // 1.3 : le lien de Better Auth, jeton forgé de la forme de generateId(24),
+      // tiré à chaque passage.
+      const liensBetterAuth = auth.filter((c) =>
+        /^\/api\/auth\/reset-password\/[A-Za-z0-9]{24}\?callbackURL=%2F$/.test(c),
+      );
+      expect(liensBetterAuth).toHaveLength(2);
+      expect(liensBetterAuth[0]).not.toBe(liensBetterAuth[1]);
       expect(auth.filter((c) => /^\/api\/auth\/[0-9a-f]{16}$/.test(c))).toHaveLength(2);
       expect(
         premier.map((r) => r.nom).filter((n) => /^(auth|inscription|comptes):/.test(n)),
@@ -513,6 +576,12 @@ test.describe("contrôle après déploiement, serveur factice", () => {
     ["compte-200", ["compte:statut"]],
     ["compte-distingue", ["compte:identique"]],
     ["gabarit-compte-dans-la-charge", ["compte:gabarit"]],
+    // 1.3.
+    ["demande-ouverte", ["comptes:identique", "comptes:statut"]],
+    ["reinitialisation-ouverte", ["comptes:identique", "comptes:statut"]],
+    ["lien-reinitialisation-ouvert", ["auth:identique", "auth:statut"]],
+    ["mot-de-passe-oublie-500", ["mot-de-passe-oublie:statut"]],
+    ["lien-reinitialisation-500", ["lien-reinitialisation:statut"]],
   ];
 
   for (const [defaut, attendus] of CAS) {
@@ -572,7 +641,9 @@ test.describe("contrôle après déploiement, serveur factice", () => {
 // corps (docs/features/inscription.md, section 2.3).
 // 1.2 : cinq points d'entrée des comptes au lieu de trois (connexion et
 // déconnexion), mêmes conditions (docs/features/connexion.md, section 10).
-test.describe("contrôle après déploiement, les six POST des comptes", () => {
+// 1.3 : sept, avec la demande et la réinitialisation, mêmes conditions
+// (docs/features/mot-de-passe.md, section 2.2).
+test.describe("contrôle après déploiement, les huit POST des comptes", () => {
   test("reçus par le serveur : aucun octet de corps, ni Origin, ni Cookie, ni Authorization, ni Content-Type", async () => {
     const factice = await demarrerFactice();
     try {

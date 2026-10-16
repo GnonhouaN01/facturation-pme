@@ -66,12 +66,14 @@ function lignesTache(): { niveau: string; objet: Record<string, unknown> }[] {
 
 describe("les étapes de la première version", () => {
   // Modifié en 1.2 : étape sessions_expirees ajoutée (docs/features/connexion.md,
-  // section 4.4, test 18).
-  test("compteurs_debit, comptes_non_verifies puis sessions_expirees, et rien d'autre", () => {
+  // section 4.4, test 18). Modifié en 1.3 : étape jetons_expires
+  // (docs/features/mot-de-passe.md, section 9, test 22).
+  test("compteurs_debit, comptes_non_verifies, sessions_expirees puis jetons_expires, et rien d'autre", () => {
     expect(ETAPES.map((e) => e.nom)).toEqual([
       "compteurs_debit",
       "comptes_non_verifies",
       "sessions_expirees",
+      "jetons_expires",
     ]);
     expect(Object.isFrozen(ETAPES)).toBe(true);
   });

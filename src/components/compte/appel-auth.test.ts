@@ -89,3 +89,29 @@ describe("appelerAuth (1.2)", () => {
     expect(await appelerAuth("/sign-out", {})).toEqual({ ok: false, raison: "erreur" });
   });
 });
+
+// 1.3 : demande et réinitialisation. Fiche : docs/features/mot-de-passe.md,
+// section 7, test 17.
+describe("appelerAuth (1.3)", () => {
+  test("demande et réinitialisation : POST JSON vers leurs chemins", async () => {
+    const appels = repondre({ ok: true });
+    expect(await appelerAuth("/request-password-reset", { email: "a@b.ci" })).toEqual({ ok: true });
+    expect(
+      await appelerAuth("/reset-password", { jeton: "aB3dE5fG7hJ9kL1mN2pQ4rS6", motDePasse: "x" }),
+    ).toEqual({ ok: true });
+    expect(appels.map(({ url }) => url)).toEqual([
+      "/api/auth/request-password-reset",
+      "/api/auth/reset-password",
+    ]);
+  });
+
+  test.each([
+    "lien_invalide",
+    "mot_de_passe_trop_court",
+    "mot_de_passe_compromis",
+    "trop_de_requetes",
+  ])("%s est une raison reconnue de la réinitialisation", async (raison) => {
+    repondre({ ok: false, raison }, 400);
+    expect(await appelerAuth("/reset-password", {})).toEqual({ ok: false, raison });
+  });
+});

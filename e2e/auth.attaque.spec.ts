@@ -21,7 +21,10 @@ import { MOT_DE_PASSE_COMPROMIS_E2E } from "./hibp-simule.mjs";
 // et déconnexion (1.2) : cinq points ouverts ; /get-session reste fermé, même
 // avec un cookie valide ; la sixième tentative sur un compte, depuis six
 // adresses IP, reçoit trop_de_requetes. Fiche : docs/features/connexion.md,
-// test 22.
+// test 22. Mot de passe oublié (1.3) : sept points ouverts ; le lien de
+// Better Auth (jeton dans le chemin) reste fermé ; la troisième demande pour
+// une même adresse, depuis trois adresses IP, reçoit trop_de_requetes.
+// Fiche : docs/features/mot-de-passe.md, « Tests de bout en bout ».
 
 const ADRESSE = "http://localhost:3000";
 const BASE = `${ADRESSE}/api/auth`;
@@ -74,8 +77,12 @@ const CHEMINS_FERMES = [
   "/get-session",
   "/list-sessions",
   "/revoke-sessions",
-  "/request-password-reset",
-  "/reset-password",
+  // 1.3 (modifié) : /request-password-reset et /reset-password sont ouverts
+  // en POST ; leur GET est vérifié avec les autres points ouverts, plus bas.
+  // Le lien de Better Auth, jeton dans le chemin, reste fermé.
+  `/reset-password/${"aB3dE5fG7hJ9kL1mN2pQ4rS6"}`,
+  "/verify-password",
+  "/forget-password",
   "/two-factor/enable",
   "/update-user",
   "/change-password",
@@ -139,14 +146,17 @@ test.describe("T-55 : points d'entrée fermés, indiscernables d'une adresse ine
     }
   });
 
-  // 1.2 (modifié) : cinq points ouverts au lieu de trois.
-  test("GET des cinq points ouverts : fermé (seul POST est admis)", async () => {
+  // 1.2 (modifié) : cinq points ouverts au lieu de trois. 1.3 (modifié) :
+  // sept.
+  test("GET des sept points ouverts : fermé (seul POST est admis)", async () => {
     for (const chemin of [
       "/sign-up/email",
       "/send-verification-email",
       "/verify-email",
       "/sign-in/email",
       "/sign-out",
+      "/request-password-reset",
+      "/reset-password",
     ]) {
       expect(await lire(chemin), chemin).toEqual(await lire(inexistant()));
     }
@@ -319,5 +329,79 @@ test.describe("T-01 et S-82 : connexion", () => {
 
     expect(session).toEqual(reference);
     expect(session.corps).toBe("");
+  });
+});
+
+// Fonctionnalité 1.3 : mot de passe oublié. Fiche :
+// docs/features/mot-de-passe.md, sections 2 et 5.
+test.describe("T-55, S-81 et T-43 : réinitialisation", () => {
+  const ipAuHasard = () => `10.${randomInt(256)}.${randomInt(256)}.${randomInt(1, 255)}`;
+
+  test("GET /reset-password/<jeton> avec callbackURL : identique à un chemin inexistant, aucune redirection", async () => {
+    const jeton = randomBytes(18)
+      .toString("base64")
+      .replaceAll(/[^A-Za-z0-9]/gu, "a")
+      .slice(0, 24);
+    const reponse = await lire(`/reset-password/${jeton}?callbackURL=%2F`);
+    expect(reponse).toEqual(await lire(`${inexistant()}?callbackURL=%2F`));
+    expect(reponse.entetes.map(([nom]) => nom)).not.toContain("location");
+  });
+
+  for (const [nom, entetes] of [
+    ["sans Origin", {}],
+    ["Origin étrangère", { origin: "https://attaquant.exemple" }],
+  ] as const) {
+    for (const [chemin, corps] of [
+      ["/request-password-reset", JSON.stringify({ email: "e2e-x@exemple.invalid" })],
+      [
+        "/reset-password",
+        JSON.stringify({ jeton: "aB3dE5fG7hJ9kL1mN2pQ4rS6", motDePasse: "Phrase de passe 2026" }),
+      ],
+    ] as const) {
+      test(`POST ${chemin}, ${nom} : refusé`, async () => {
+        const reponse = await lire(chemin, {
+          methode: "POST",
+          entetes: { "content-type": "application/json", ...entetes },
+          corps,
+        });
+        expect(reponse.statut).toBe(403);
+        expect(JSON.parse(reponse.corps)).toEqual({ ok: false, raison: "refuse" });
+      });
+    }
+  }
+
+  test("POST /request-password-reset avec redirectTo : invalide", async () => {
+    const reponse = await lire("/request-password-reset", {
+      methode: "POST",
+      entetes: { "content-type": "application/json", origin: ADRESSE },
+      corps: JSON.stringify({
+        email: "e2e-x@exemple.invalid",
+        redirectTo: "https://attaquant.exemple",
+      }),
+    });
+    expect(reponse.statut).toBe(400);
+    expect(JSON.parse(reponse.corps)).toEqual({ ok: false, raison: "invalide" });
+  });
+
+  test("trois demandes pour une même adresse depuis trois adresses IP : la troisième reçoit trop_de_requetes", async () => {
+    const email = `e2e-limite-mdp-${randomBytes(6).toString("hex")}@exemple.invalid`;
+    const statuts = [];
+    for (let rang = 1; rang <= 3; rang += 1) {
+      const reponse = await lire("/request-password-reset", {
+        methode: "POST",
+        entetes: {
+          "content-type": "application/json",
+          origin: ADRESSE,
+          "x-forwarded-for": ipAuHasard(),
+        },
+        corps: JSON.stringify({ email }),
+      });
+      statuts.push([reponse.statut, JSON.parse(reponse.corps)]);
+    }
+    expect(statuts).toEqual([
+      [200, { ok: true }],
+      [200, { ok: true }],
+      [429, { ok: false, raison: "trop_de_requetes" }],
+    ]);
   });
 });

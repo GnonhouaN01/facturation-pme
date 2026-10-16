@@ -9,8 +9,13 @@ import { LIMITES } from "../debit/limites";
 import { reglesBetterAuth, stockageBetterAuth } from "../debit/better-auth";
 
 import { auth, optionsAuth } from "./config";
-import { planifierEmailCompteExistant, planifierEmailVerification } from "./emails";
+import {
+  planifierEmailCompteExistant,
+  planifierEmailReinitialisation,
+  planifierEmailVerification,
+} from "./emails";
 import { consignerAuth } from "./journal";
+import { apresReinitialisation, empreinteJetonReinitialisation } from "./reinitialisation";
 
 // Le module testUtils de Better Auth crée des sessions sans mot de passe : il
 // n'existe que dans l'instance de test (src/server/db/outils-test/), jamais
@@ -187,5 +192,38 @@ describe("1.2 : session", () => {
 
   test("aucun email de vérification à la connexion d'un compte non vérifié (section 2.3)", () => {
     expect(optionsAuth.emailVerification).not.toHaveProperty("sendOnSignIn");
+  });
+});
+
+// Fonctionnalité 1.3 : réinitialisation. Fiche :
+// docs/features/mot-de-passe.md, sections 3 et 4, test 12.
+describe("1.3 : réinitialisation du mot de passe", () => {
+  test("lien envoyé par notre rappel, valable 30 minutes ; toutes les sessions fermées ; rappel d'après réinitialisation", () => {
+    const options = optionsAuth.emailAndPassword;
+    expect(options.sendResetPassword).toBe(planifierEmailReinitialisation);
+    expect(options.resetPasswordTokenExpiresIn).toBe(30 * 60);
+    expect(options.revokeSessionsOnPasswordReset).toBe(true);
+    expect(options.onPasswordReset).toBe(apresReinitialisation);
+  });
+
+  test("jeton stocké haché (S-15) : une seule surcharge, pour reset-password:, par notre empreinte", () => {
+    const stockage = optionsAuth.verification?.storeIdentifier;
+    expect(stockage).toEqual({
+      default: "plain",
+      overrides: { "reset-password:": { hash: empreinteJetonReinitialisation } },
+    });
+  });
+
+  test("Have I Been Pwned couvre /reset-password (chemins par défaut de l'extension)", () => {
+    const extension = (optionsAuth.plugins as readonly { id: string; options?: unknown }[]).find(
+      (plugin) => plugin.id === "have-i-been-pwned",
+    );
+    expect((extension?.options as { paths?: unknown } | undefined)?.paths).toBeUndefined();
+  });
+
+  test("le contexte de Better Auth applique la révocation et la durée", async () => {
+    const contexte = await auth.$context;
+    expect(contexte.options.emailAndPassword?.revokeSessionsOnPasswordReset).toBe(true);
+    expect(contexte.options.emailAndPassword?.resetPasswordTokenExpiresIn).toBe(1800);
   });
 });

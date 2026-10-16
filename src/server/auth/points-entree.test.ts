@@ -41,9 +41,16 @@ function avec(
     limite?: () => Promise<boolean>;
     sessionLisible?: (entetes: Headers) => Promise<boolean>;
     revoquer?: (entetes: Headers) => Promise<void>;
+    // 1.3 (docs/features/mot-de-passe.md, sections 3.3 et 5).
+    limiteReinitialisation?: (adresse: string) => Promise<boolean>;
+    jetonValide?: (jeton: string) => Promise<boolean>;
+    compromis?: (motDePasse: string) => Promise<boolean>;
+    traiter?: (requete: Request) => Promise<Response>;
   } = {},
 ) {
-  const traiter = vi.fn(async () => (typeof reponse === "function" ? reponse() : reponse.clone()));
+  const traiter =
+    options.traiter ??
+    vi.fn(async () => (typeof reponse === "function" ? reponse() : reponse.clone()));
   return creerTraitementAuth({
     traiter,
     origine: ORIGINE,
@@ -51,6 +58,9 @@ function avec(
     limiterCompte: options.limite ?? (async () => true),
     sessionEncoreLisible: options.sessionLisible ?? (async () => false),
     revoquerSession: options.revoquer ?? (async () => {}),
+    limiterReinitialisation: options.limiteReinitialisation ?? (async () => true),
+    jetonReinitialisationValide: options.jetonValide ?? (async () => true),
+    motDePasseCompromis: options.compromis ?? (async () => false),
     horloge,
   });
 }
@@ -350,6 +360,9 @@ describe("déconnexion vérifiée côté serveur (T-03)", () => {
       limiterCompte: async () => true,
       sessionEncoreLisible: async () => false,
       revoquerSession: async () => {},
+      limiterReinitialisation: async () => true,
+      jetonReinitialisationValide: async () => true,
+      motDePasseCompromis: async () => false,
       horloge: IMMEDIATE,
     });
     const cookie = { cookie: "better-auth.session_token=jeton.signature" };
@@ -560,7 +573,10 @@ describe("connexion réussie : l'ancienne session est révoquée", () => {
     expect(reponse.headers.getSetCookie()).toEqual([]);
   });
 
-  test.each(["/sign-up/email", "/send-verification-email", "/verify-email", "/sign-out"])(
+  // Modifié en 1.3 : /verify-email sort de la liste. Une vérification qui pose
+  // un cookie de session révoque désormais l'ancienne session (report de la
+  // 1.2, docs/features/mot-de-passe.md, section 8, test 9 plus bas).
+  test.each(["/sign-up/email", "/send-verification-email", "/sign-out"])(
     "%s : la révocation de la connexion n'est jamais appelée",
     async (chemin) => {
       const revoquer = vi.fn(async () => {});
@@ -576,6 +592,337 @@ describe("connexion réussie : l'ancienne session est révoquée", () => {
         revoquer,
       });
       await gerer(postAvec(chemin, corps, { cookie: ANCIEN }));
+      expect(revoquer).not.toHaveBeenCalled();
+    },
+  );
+});
+// Fonctionnalité 1.3 : mot de passe oublié. Fiche :
+// docs/features/mot-de-passe.md, sections 2.3, 3.3 et 8, tests 6 à 9.
+
+const JETON_REINITIALISATION = "aB3dE5fG7hJ9kL1mN2pQ4rS6";
+const DEMANDE = { email: "awa@exemple.invalid" };
+const REINITIALISATION = {
+  jeton: JETON_REINITIALISATION,
+  motDePasse: "une-phrase-de-passe-neuve",
+};
+
+describe("réinitialisation : contrôles avant la consommation du jeton (section 3.3)", () => {
+  function espions(options: { jetonValide?: boolean; compromis?: boolean | Error } = {}) {
+    const ordre: string[] = [];
+    const jetonValide = vi.fn(async (jeton: string) => {
+      ordre.push(`jeton:${jeton}`);
+      return options.jetonValide ?? true;
+    });
+    const compromis = vi.fn(async (motDePasse: string) => {
+      ordre.push(`compromis:${motDePasse}`);
+      if (options.compromis instanceof Error) throw options.compromis;
+      return options.compromis ?? false;
+    });
+    const traiter = vi.fn(async () => {
+      ordre.push("better-auth");
+      return Response.json({ status: true });
+    });
+    return { ordre, jetonValide, compromis, traiter };
+  }
+
+  test("ordre : jeton connu, mot de passe compromis, puis Better Auth", async () => {
+    const e = espions();
+    const gerer = avec(Response.json({}), IMMEDIATE, {
+      jetonValide: e.jetonValide,
+      compromis: e.compromis,
+      traiter: e.traiter,
+    });
+    const reponse = await gerer(post("/reset-password", REINITIALISATION));
+    expect(reponse.status).toBe(200);
+    expect(await reponse.json()).toEqual({ ok: true });
+    expect(e.ordre).toEqual([
+      `jeton:${JETON_REINITIALISATION}`,
+      "compromis:une-phrase-de-passe-neuve",
+      "better-auth",
+    ]);
+  });
+
+  test("mot de passe de 11 caractères : mot_de_passe_trop_court, rien d'autre n'est appelé (jeton intact)", async () => {
+    const e = espions();
+    const gerer = avec(Response.json({}), IMMEDIATE, {
+      jetonValide: e.jetonValide,
+      compromis: e.compromis,
+      traiter: e.traiter,
+    });
+    const reponse = await gerer(
+      post("/reset-password", {
+        ...REINITIALISATION,
+        motDePasse: "a".repeat(11),
+      }),
+    );
+    expect(reponse.status).toBe(400);
+    expect(await reponse.json()).toEqual({
+      ok: false,
+      raison: "mot_de_passe_trop_court",
+    });
+    expect(e.ordre).toEqual([]);
+  });
+
+  test("jeton inconnu ou expiré : lien_invalide, Have I Been Pwned et Better Auth jamais appelés", async () => {
+    const e = espions({ jetonValide: false });
+    const gerer = avec(Response.json({}), IMMEDIATE, {
+      jetonValide: e.jetonValide,
+      compromis: e.compromis,
+      traiter: e.traiter,
+    });
+    const reponse = await gerer(post("/reset-password", REINITIALISATION));
+    expect(reponse.status).toBe(400);
+    expect(await reponse.json()).toEqual({
+      ok: false,
+      raison: "lien_invalide",
+    });
+    expect(e.compromis).not.toHaveBeenCalled();
+    expect(e.traiter).not.toHaveBeenCalled();
+  });
+
+  test("mot de passe compromis : mot_de_passe_compromis, Better Auth jamais appelé (jeton intact)", async () => {
+    const e = espions({ compromis: true });
+    const gerer = avec(Response.json({}), IMMEDIATE, {
+      jetonValide: e.jetonValide,
+      compromis: e.compromis,
+      traiter: e.traiter,
+    });
+    const reponse = await gerer(post("/reset-password", REINITIALISATION));
+    expect(reponse.status).toBe(400);
+    expect(await reponse.json()).toEqual({
+      ok: false,
+      raison: "mot_de_passe_compromis",
+    });
+    expect(e.traiter).not.toHaveBeenCalled();
+  });
+
+  test("Have I Been Pwned en panne : erreur avec incident, Better Auth jamais appelé (jeton intact)", async () => {
+    const lignes: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...valeurs: unknown[]) => {
+      lignes.push(valeurs.map(String).join(" "));
+    });
+    const e = espions({
+      compromis: new Error("Failed to check password. Status: 503"),
+    });
+    const gerer = avec(Response.json({}), IMMEDIATE, {
+      jetonValide: e.jetonValide,
+      compromis: e.compromis,
+      traiter: e.traiter,
+    });
+    const reponse = await gerer(post("/reset-password", REINITIALISATION));
+    expect(reponse.status).toBe(500);
+    const corps = (await reponse.json()) as Record<string, unknown>;
+    expect(corps.raison).toBe("erreur");
+    expect(corps.incident).toMatch(UUID);
+    expect(e.traiter).not.toHaveBeenCalled();
+    expect(lignes.join("\n")).not.toContain("Failed to check");
+    expect(lignes.join("\n")).not.toContain(REINITIALISATION.motDePasse);
+  });
+
+  test("lecture du jeton en panne : erreur avec incident, sans le jeton au journal", async () => {
+    const lignes: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...valeurs: unknown[]) => {
+      lignes.push(valeurs.map(String).join(" "));
+    });
+    const traiter = vi.fn(async () => Response.json({ status: true }));
+    const gerer = avec(Response.json({}), IMMEDIATE, {
+      jetonValide: async () => {
+        throw new Error(
+          `Failed query: select ... params: reset-password:${JETON_REINITIALISATION}`,
+        );
+      },
+      traiter,
+    });
+    const reponse = await gerer(post("/reset-password", REINITIALISATION));
+    expect(reponse.status).toBe(500);
+    expect(traiter).not.toHaveBeenCalled();
+    expect(lignes.join("\n")).not.toContain(JETON_REINITIALISATION);
+  });
+
+  test("la demande n'appelle ni la lecture du jeton ni Have I Been Pwned", async () => {
+    const e = espions();
+    const gerer = avec(Response.json({ status: true }), IMMEDIATE, {
+      jetonValide: e.jetonValide,
+      compromis: e.compromis,
+    });
+    // Témoin : la demande atteint bien Better Auth.
+    expect((await gerer(post("/request-password-reset", DEMANDE))).status).toBe(200);
+    expect(e.jetonValide).not.toHaveBeenCalled();
+    expect(e.compromis).not.toHaveBeenCalled();
+  });
+});
+
+describe("réinitialisation : traduction des réponses de Better Auth (section 2.3)", () => {
+  test("200 : { ok: true }, sans cookie", async () => {
+    const gerer = avec(avecCookies(200, { status: true }, [COOKIE_SESSION]));
+    const reponse = await gerer(post("/reset-password", REINITIALISATION));
+    expect(reponse.status).toBe(200);
+    expect(await reponse.text()).toBe(JSON.stringify({ ok: true }));
+    expect(reponse.headers.getSetCookie()).toEqual([]);
+  });
+
+  test.each([
+    [400, "INVALID_TOKEN", 400, "lien_invalide"],
+    [400, "USER_NOT_FOUND", 400, "lien_invalide"],
+    [400, "PASSWORD_TOO_SHORT", 400, "mot_de_passe_trop_court"],
+    [400, "PASSWORD_COMPROMISED", 400, "mot_de_passe_compromis"],
+    [400, "PASSWORD_TOO_LONG", 400, "invalide"],
+  ] as const)(
+    "Better Auth %s %s : %s %s, sans son message",
+    async (statut, code, attendu, raison) => {
+      const gerer = avec(erreurBetterAuth(statut, code));
+      const reponse = await gerer(post("/reset-password", REINITIALISATION));
+      expect(reponse.status).toBe(attendu);
+      const texte = await reponse.text();
+      expect(texte).toBe(JSON.stringify({ ok: false, raison }));
+      expect(texte).not.toContain("Message de Better Auth");
+    },
+  );
+
+  test("429 : trop_de_requetes, sans X-Retry-After", async () => {
+    const gerer = avec(new Response("{}", { status: 429, headers: { "X-Retry-After": "900" } }));
+    const reponse = await gerer(post("/reset-password", REINITIALISATION));
+    expect(reponse.status).toBe(429);
+    expect(await reponse.json()).toEqual({
+      ok: false,
+      raison: "trop_de_requetes",
+    });
+    expect(reponse.headers.get("x-retry-after")).toBeNull();
+  });
+
+  test.each([500, 503])("%s : erreur avec incident", async (statut) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const gerer = avec(Response.json({ code: "INTERNAL_SERVER_ERROR" }, { status: statut }));
+    const reponse = await gerer(post("/reset-password", REINITIALISATION));
+    expect(reponse.status).toBe(500);
+    const corps = (await reponse.json()) as Record<string, unknown>;
+    expect(corps.raison).toBe("erreur");
+    expect(corps.incident).toMatch(UUID);
+  });
+
+  test.each([
+    [200, { status: true }, 200, { ok: true }],
+    [429, {}, 429, { ok: false, raison: "trop_de_requetes" }],
+    [400, { code: "INVALID_EMAIL" }, 400, { ok: false, raison: "invalide" }],
+  ] as const)("demande, Better Auth %s : %s", async (statut, corps, attendu, reponseAttendue) => {
+    const gerer = avec(avecCookies(statut, corps, []));
+    const reponse = await gerer(post("/request-password-reset", DEMANDE));
+    expect(reponse.status).toBe(attendu);
+    expect(await reponse.json()).toEqual(reponseAttendue);
+  });
+});
+
+describe("durée plancher de la demande (T-07)", () => {
+  function horloge(instants: number[]) {
+    const attentes: number[] = [];
+    let i = 0;
+    const h: Horloge = {
+      maintenant: () => instants[Math.min(i++, instants.length - 1)] ?? 0,
+      attendre: async (ms) => {
+        attentes.push(ms);
+      },
+    };
+    return { h, attentes };
+  }
+
+  test.each([
+    ["succès", Response.json({ status: true }), DEMANDE, {}],
+    ["entrée invalide", Response.json({}), { ...DEMANDE, redirectTo: "/" }, {}],
+    [
+      "limite par adresse email atteinte",
+      Response.json({}),
+      DEMANDE,
+      { limiteReinitialisation: async () => false },
+    ],
+    ["limite de Better Auth", avecCookies(429, {}, []), DEMANDE, {}],
+  ] as const)("%s, en 100 ms : retenue 700 ms de plus", async (_nom, reponse, corps, options) => {
+    const { h, attentes } = horloge([1_000, 1_100]);
+    const gerer = avec(reponse, h, options);
+    await gerer(post("/request-password-reset", corps));
+    expect(attentes).toEqual([700]);
+  });
+
+  test("réinitialisation : aucune durée plancher (aucune existence de compte à cacher)", async () => {
+    const { h, attentes } = horloge([1_000, 1_010]);
+    const gerer = avec(Response.json({ status: true }), h);
+    expect((await gerer(post("/reset-password", REINITIALISATION))).status).toBe(200);
+    expect(attentes.filter((ms) => ms > 0)).toEqual([]);
+  });
+});
+
+// Report de la 1.2 (docs/features/connexion.md, « Limites connues ») :
+// une vérification d'adresse qui ouvre une session révoque celle du cookie
+// reçu. Fiche : docs/features/mot-de-passe.md, section 8, test 9.
+describe("vérification réussie : l'ancienne session est révoquée", () => {
+  const ANCIEN = "better-auth.session_token=ancien.signature";
+
+  test("nouveau cookie de session : révoquée avec les en-têtes reçus, après Better Auth", async () => {
+    const ordre: string[] = [];
+    const recues: Headers[] = [];
+    const gerer = avec(
+      async () => {
+        ordre.push("better-auth");
+        return avecCookies(200, { status: true }, [COOKIE_SESSION]);
+      },
+      IMMEDIATE,
+      {
+        revoquer: async (entetes) => {
+          ordre.push("revocation");
+          recues.push(entetes);
+        },
+      },
+    );
+    const reponse = await gerer(postAvec("/verify-email", { jeton: JETON }, { cookie: ANCIEN }));
+    expect(reponse.status).toBe(200);
+    expect(reponse.headers.getSetCookie()).toEqual([COOKIE_SESSION]);
+    expect(ordre).toEqual(["better-auth", "revocation"]);
+    expect(recues[0]?.get("cookie")).toBe(ANCIEN);
+  });
+
+  test.each([
+    ["lien déjà utilisé, aucun nouveau cookie", avecCookies(200, { status: true }, [])],
+    [
+      "seul un autre cookie",
+      avecCookies(200, { status: true }, ["better-auth.dont_remember=x; Path=/"]),
+    ],
+    ["lien refusé", avecCookies(401, { code: "TOKEN_EXPIRED" }, [])],
+    ["limite de Better Auth", avecCookies(429, {}, [])],
+  ] as const)("%s : rien n'est révoqué", async (_nom, reponse) => {
+    const revoquer = vi.fn(async () => {});
+    const gerer = avec(reponse, IMMEDIATE, { revoquer });
+    await gerer(postAvec("/verify-email", { jeton: JETON }, { cookie: ANCIEN }));
+    expect(revoquer).not.toHaveBeenCalled();
+  });
+
+  test("révocation en échec : erreur avec incident, aucun cookie transmis", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const gerer = avec(avecCookies(200, { status: true }, [COOKIE_SESSION]), IMMEDIATE, {
+      revoquer: async () => {
+        throw new Error("base en panne");
+      },
+    });
+    const reponse = await gerer(postAvec("/verify-email", { jeton: JETON }, { cookie: ANCIEN }));
+    expect(reponse.status).toBe(500);
+    const corps = (await reponse.json()) as Record<string, unknown>;
+    expect(corps.raison).toBe("erreur");
+    expect(corps.incident).toMatch(UUID);
+    expect(reponse.headers.getSetCookie()).toEqual([]);
+  });
+
+  test.each(["/request-password-reset", "/reset-password"])(
+    "%s : aucune révocation",
+    async (chemin) => {
+      const revoquer = vi.fn(async () => {});
+      const gerer = avec(avecCookies(200, { status: true }, [COOKIE_SESSION]), IMMEDIATE, {
+        revoquer,
+      });
+      const reponse = await gerer(
+        postAvec(chemin, chemin === "/reset-password" ? REINITIALISATION : DEMANDE, {
+          cookie: ANCIEN,
+        }),
+      );
+      // Témoin : le point est ouvert et réussit.
+      expect(reponse.status).toBe(200);
       expect(revoquer).not.toHaveBeenCalled();
     },
   );

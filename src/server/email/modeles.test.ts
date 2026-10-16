@@ -11,10 +11,13 @@ import {
   LONGUEUR_MAX_CORPS,
   ligneEnTete,
   lienFragment,
+  lienPage,
   lienPublic,
   LONGUEUR_MAX_JETON_VERIFICATION,
   MODELES_EMAIL,
+  MOTIF_JETON_REINITIALISATION,
   MOTIF_JETON_VERIFICATION,
+  PAGES_LIEN,
   type ModeleEmail,
 } from "./modeles";
 
@@ -33,6 +36,9 @@ const EXEMPLES = {
       "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6ImF3YUBleGVtcGxlLmludmFsaWQifQ.c2lnbmF0dXJlLWZhY3RpY2U",
   },
   "compte.existant": {},
+  // 1.3 (docs/features/mot-de-passe.md, section 6.2).
+  "compte.reinitialisation": { jeton: "aB3dE5fG7hJ9kL1mN2pQ4rS6" },
+  "compte.mot_de_passe_modifie": {},
 } as const satisfies Record<ModeleEmail, Record<string, unknown>>;
 
 const NOMS = Object.keys(MODELES_EMAIL) as ModeleEmail[];
@@ -53,8 +59,16 @@ function jeton(): string {
 describe("la liste fermée", () => {
   // 0.7 : un seul modèle. 1.1 : les deux emails de compte
   // (docs/features/inscription.md, section 4.5).
-  test("1.1 : trois modèles, l'essai et les deux emails de compte", () => {
-    expect(NOMS).toEqual(["essai.verification_envoi", "compte.verification", "compte.existant"]);
+  // Modifié en 1.3 : deux modèles de plus, la réinitialisation et la
+  // notification (docs/features/mot-de-passe.md, section 6.2).
+  test("1.3 : cinq modèles, l'essai et les quatre emails de compte", () => {
+    expect(NOMS).toEqual([
+      "essai.verification_envoi",
+      "compte.verification",
+      "compte.existant",
+      "compte.reinitialisation",
+      "compte.mot_de_passe_modifie",
+    ]);
   });
 
   test.each(NOMS)("%s : nom au format domaine.action", (nom) => {
@@ -80,6 +94,10 @@ describe("paramètres : schéma strict, briques admises seulement", () => {
       propriete.maxLength === LONGUEUR_MAX_JETON_VERIFICATION
     ) {
       return "jetonVerification";
+    }
+    // 1.3 : jeton de réinitialisation de Better Auth, 24 caractères [A-Za-z0-9].
+    if (propriete.type === "string" && propriete.pattern === MOTIF_JETON_REINITIALISATION) {
+      return "jetonReinitialisation";
     }
     if (
       propriete.type === "string" &&
@@ -137,6 +155,7 @@ describe("paramètres : schéma strict, briques admises seulement", () => {
       booleen: briques.booleen(),
       jeton: briques.jeton(),
       jetonVerification: briques.jetonVerification(),
+      jetonReinitialisation: briques.jetonReinitialisation(),
       texte: briques.texteAffichable(80),
     };
     for (const [nom, schema] of Object.entries(admises)) {
@@ -369,26 +388,193 @@ describe("modèles de compte (1.1)", () => {
     );
   });
 
-  test("compte.existant : aucun paramètre, aucun lien", () => {
+  // Modifié en 1.3 (décision A) : aucun paramètre, mais deux liens de pages
+  // fixes, écrits dans le modèle (docs/features/mot-de-passe.md, section 6.3).
+  test("compte.existant : aucun paramètre ; seuls liens, les deux pages fixes sur l'origine", () => {
     const { corps } = MODELES_EMAIL["compte.existant"].construire({}, { origine: ORIGINE });
-    expect(corps).not.toMatch(/https?:/u);
+    expect(corps.match(/https?:\/\/\S+/gu)).toEqual([
+      `${ORIGINE}/connexion`,
+      `${ORIGINE}/mot-de-passe-oublie`,
+    ]);
     expect(MODELES_EMAIL["compte.existant"].parametres.safeParse({ jeton: JWT }).success).toBe(
       false,
     );
   });
 
-  // Dette de la 1.1 : le texte vaut pour un compte vérifié ou non, et renvoie
-  // à la page de connexion (1.2), sans lien (règle 17 ; liens en 1.3). Fiche :
-  // docs/features/connexion.md, section 7, test 13.
-  test("compte.existant : texte de la 1.2, pour un compte vérifié ou non", () => {
+  // Modifié en 1.3 : le texte de la 1.2, sans lien, laisse place à celui de
+  // la décision A, avec les liens vers la connexion et « mot de passe
+  // oublié » (docs/features/mot-de-passe.md, section 6.2). Il vaut toujours
+  // pour un compte vérifié ou non.
+  test("compte.existant : texte de la 1.3, pour un compte vérifié ou non", () => {
     const texte = TEXTES_EMAILS.modeles["compte.existant"];
     expect(texte.sujet).toBe("Tentative d'inscription avec votre adresse");
-    expect(texte.corps).toBe(
-      "Quelqu'un a tenté de créer un compte sur Facturation PME avec votre adresse email, qui a déjà un compte. Si c'est vous, connectez-vous depuis la page de connexion de Facturation PME avec votre mot de passe. Si vous n'avez pas encore confirmé votre adresse, demandez un nouveau lien de confirmation depuis cette même page. Sinon, ignorez cet email : votre compte n'a pas été modifié.",
-    );
     const { corps } = MODELES_EMAIL["compte.existant"].construire({}, { origine: ORIGINE });
-    expect(corps).toContain(texte.corps);
-    expect(corps).not.toMatch(/https?:|\/connexion/u);
-    expect(corps.toLowerCase()).not.toContain("mot de passe oublié");
+    expect(corps).toBe(
+      [
+        "Quelqu'un a tenté de créer un compte sur Facturation PME avec votre adresse email, qui a déjà un compte.",
+        "",
+        "Si c'est vous, connectez-vous depuis cette page :",
+        `${ORIGINE}/connexion`,
+        "",
+        "Si vous avez oublié votre mot de passe, choisissez-en un nouveau depuis cette page :",
+        `${ORIGINE}/mot-de-passe-oublie`,
+        "",
+        "Si vous n'avez pas encore confirmé votre adresse, demandez un nouveau lien de confirmation depuis la page de connexion. Sinon, ignorez cet email : votre compte n'a pas été modifié.",
+        "",
+        TEXTES_EMAILS.neRepondezPas,
+        "",
+      ].join("\n"),
+    );
+  });
+});
+
+// Fonctionnalité 1.3 : jeton de réinitialisation, lien en fragment par type,
+// pages fixes (décision A), deux modèles. Fiche :
+// docs/features/mot-de-passe.md, sections 3.4, 6.2 et 6.3, test 15.
+const JETON_REINITIALISATION = "aB3dE5fG7hJ9kL1mN2pQ4rS6";
+
+describe("jetonReinitialisation : 24 caractères [A-Za-z0-9]", () => {
+  test("forme admise", () => {
+    expect(briques.jetonReinitialisation().safeParse(JETON_REINITIALISATION).success).toBe(true);
+    expect(MOTIF_JETON_REINITIALISATION).toBe("^[A-Za-z0-9]{24}$");
+  });
+
+  test.each([
+    ["23 caractères", JETON_REINITIALISATION.slice(1)],
+    ["25 caractères", `${JETON_REINITIALISATION}a`],
+    ["tiret", `${JETON_REINITIALISATION.slice(1)}-`],
+    ["souligné", `${JETON_REINITIALISATION.slice(1)}_`],
+    ["retour à la ligne", `${JETON_REINITIALISATION.slice(1)}\n`],
+    ["empreinte de 43 caractères", jeton()],
+    ["JWT", JWT],
+    ["adresse", "https://attaquant.invalid/abcdefghijklmnopq"],
+  ])("refusé : %s", (_nom, valeur) => {
+    expect(briques.jetonReinitialisation().safeParse(valeur).success).toBe(false);
+  });
+});
+
+describe("lienFragment par type : chaque type a sa brique (1.3)", () => {
+  test("reinitialisation : <origine>/lien/reinitialisation#<jeton>", () => {
+    const lien = new URL(lienFragment(ORIGINE, "reinitialisation", JETON_REINITIALISATION));
+    expect(lien.href).toBe(`${ORIGINE}/lien/reinitialisation#${JETON_REINITIALISATION}`);
+    expect(`${lien.origin}${lien.pathname}${lien.search}`).not.toContain(JETON_REINITIALISATION);
+  });
+
+  test.each([
+    ["jeton de vérification pour la réinitialisation", "reinitialisation", JWT],
+    ["jeton de réinitialisation pour la vérification", "verification", JETON_REINITIALISATION],
+    ["type inconnu", "devis", JETON_REINITIALISATION],
+    ["type inconnu, jeton de vérification", "invitation", JWT],
+  ])("refusé : %s", (_nom, type, valeur) => {
+    // Témoin : chaque type accepte sa propre brique.
+    expect(lienFragment(ORIGINE, "reinitialisation", JETON_REINITIALISATION)).toBe(
+      `${ORIGINE}/lien/reinitialisation#${JETON_REINITIALISATION}`,
+    );
+    expect(() => lienFragment(ORIGINE, type, valeur)).toThrow();
+  });
+});
+
+describe("lienPage (T-65, décision A) : une page fixe d'une liste fermée", () => {
+  test("liste fermée : exactement deux pages", () => {
+    expect(PAGES_LIEN).toEqual({
+      connexion: "/connexion",
+      "mot-de-passe-oublie": "/mot-de-passe-oublie",
+    });
+    expect(Object.isFrozen(PAGES_LIEN)).toBe(true);
+  });
+
+  test.each([
+    ["connexion", `${ORIGINE}/connexion`],
+    ["mot-de-passe-oublie", `${ORIGINE}/mot-de-passe-oublie`],
+  ] as const)(
+    "%s : sur l'origine de la configuration, sans requête ni fragment",
+    (page, attendu) => {
+      const lien = new URL(lienPage(ORIGINE, page));
+      expect(lien.href).toBe(attendu);
+      expect(lien.origin).toBe(ORIGINE);
+      expect(lien.search).toBe("");
+      expect(lien.hash).toBe("");
+    },
+  );
+
+  test("seule l'origine de l'adresse de configuration est gardée", () => {
+    expect(lienPage(`${ORIGINE}/un/chemin?x=1#y`, "connexion")).toBe(`${ORIGINE}/connexion`);
+  });
+
+  test.each([
+    "connexion/",
+    "Connexion",
+    "../connexion",
+    "/connexion",
+    "mot-de-passe-oublie?x=1",
+    "mot-de-passe-oublie#x",
+    "https://attaquant.invalid/connexion",
+    "//attaquant.invalid",
+    "inscription",
+    "",
+    "toString",
+    "__proto__",
+    "constructor",
+  ])("page hors de la liste refusée : %j", (page) => {
+    // Témoin : une page de la liste est acceptée (sinon le refus ne prouve rien).
+    expect(lienPage(ORIGINE, "connexion")).toBe(`${ORIGINE}/connexion`);
+    expect(() => lienPage(ORIGINE, page as never)).toThrow();
+  });
+
+  test("origine non web refusée", () => {
+    expect(lienPage(ORIGINE, "connexion")).toBe(`${ORIGINE}/connexion`);
+    expect(() => lienPage("javascript:alert(1)", "connexion")).toThrow();
+  });
+});
+
+describe("modèles de la réinitialisation (1.3)", () => {
+  test("compte.reinitialisation : lien en fragment, construit depuis le jeton seul ; textes de la fiche", () => {
+    const textes = TEXTES_EMAILS.modeles["compte.reinitialisation"];
+    expect(textes.sujet).toBe("Réinitialisation de votre mot de passe");
+    const { corps } = MODELES_EMAIL["compte.reinitialisation"].construire(
+      { jeton: JETON_REINITIALISATION },
+      { origine: ORIGINE },
+    );
+    expect(corps.match(/https?:\/\/\S+/gu)).toEqual([
+      `${ORIGINE}/lien/reinitialisation#${JETON_REINITIALISATION}`,
+    ]);
+    expect(corps).toContain("30 minutes");
+    expect(corps).not.toContain("/api/auth");
+    expect(corps).not.toContain("token=");
+    expect(corps).not.toContain("callbackURL");
+  });
+
+  test("compte.reinitialisation : jeton hors format refusé par le schéma", () => {
+    expect(
+      MODELES_EMAIL["compte.reinitialisation"].parametres.safeParse({ jeton: JWT }).success,
+    ).toBe(false);
+  });
+
+  test("compte.mot_de_passe_modifie : aucun paramètre ; seul lien, « mot de passe oublié » ; ni date ni adresse IP", () => {
+    const textes = TEXTES_EMAILS.modeles["compte.mot_de_passe_modifie"];
+    expect(textes.sujet).toBe("Votre mot de passe a été modifié");
+    const { corps } = MODELES_EMAIL["compte.mot_de_passe_modifie"].construire(
+      {},
+      { origine: ORIGINE },
+    );
+    expect(corps.match(/https?:\/\/\S+/gu)).toEqual([`${ORIGINE}/mot-de-passe-oublie`]);
+    expect(corps).toContain("toutes vos sessions ont été fermées");
+    expect(corps).not.toMatch(/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/u);
+    expect(corps).not.toMatch(/\d{4}-\d{2}-\d{2}/u);
+    expect(
+      MODELES_EMAIL["compte.mot_de_passe_modifie"].parametres.safeParse({ page: "connexion" })
+        .success,
+    ).toBe(false);
+  });
+
+  // Décision A : aucun modèle ne reçoit de lien, de page ni d'adresse de
+  // l'appelant ; seuls les jetons sont des paramètres.
+  test.each(NOMS)("%s : aucun paramètre de lien ou de page", (nom) => {
+    const schema = z.toJSONSchema(MODELES_EMAIL[nom].parametres) as {
+      properties?: Record<string, unknown>;
+    };
+    for (const cle of Object.keys(schema.properties ?? {})) {
+      expect(cle).toMatch(/^jeton$/u);
+    }
   });
 });
