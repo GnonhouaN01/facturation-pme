@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 
 import { type Page, type Response, expect, test } from "@playwright/test";
 
@@ -8,18 +8,23 @@ import { TEXTES_ERREURS } from "../src/textes/erreurs";
 import {
   ADRESSE,
   adresseConnexion,
+  connecter,
   creerCompteVerifie,
   inscrire,
   ipAuHasard,
   MOT_DE_PASSE,
   NOM_COOKIE,
+  valeurCookieSession,
 } from "./compte-verifie";
-import { observerViolations, violations } from "./outils";
+import { documentServi, observerViolations, violations } from "./outils";
 
 // Connexion et déconnexion sur le site construit, aux deux largeurs (UC-02,
 // T-07, T-03, S-82). Comptes créés par le parcours de la 1.1
 // (e2e/compte-verifie.ts) ; chaque page pose son propre X-Forwarded-For.
-// Fiche : docs/features/connexion.md, tests 19 à 21.
+// Fiche : docs/features/connexion.md, tests 19 à 21. Correctif de la 1.2
+// (constat sur la prévisualisation) : un utilisateur connecté qui ouvre une
+// page de connexion ou d'inscription va sur /compte ; une reconnexion révoque
+// l'ancienne session. Tests 27 et 28.
 
 const SEPT_JOURS = 7 * 24 * 60 * 60;
 const TEXTES = TEXTES_COMPTE.connexion;
@@ -206,5 +211,120 @@ test.describe("T-03 : session fermée côté serveur", () => {
     await page.goBack();
 
     await expect(page.getByText(TEXTES_COMPTE.compte.connecte)).toHaveCount(0);
+  });
+});
+
+// Correctif de la 1.2, test 27. « Adresse vérifiée » et /lien/verification
+// ne redirigent pas : la première s'adresse à l'utilisateur dont la
+// vérification vient d'ouvrir la session, la seconde est la zone par lien.
+const PAGES_REDIRIGEES = [
+  "/connexion",
+  "/connexion/nouveau-lien",
+  "/inscription",
+  "/inscription/envoyee",
+] as const;
+
+// Signature au bon format, calculée avec un secret qui n'est pas celui du
+// serveur : une session invalide, comme e2e/zones.attaque.spec.ts.
+function cookieForge(): string {
+  const jeton = randomBytes(24).toString("base64url");
+  const signature = createHmac("sha256", randomBytes(32)).update(jeton).digest("base64");
+  return encodeURIComponent(`${jeton}.${signature}`);
+}
+
+test.describe("utilisateur connecté : pages de connexion et d'inscription", () => {
+  test("dans le navigateur, chaque page mène à /compte ; « Adresse vérifiée » et le lien restent", async ({
+    page,
+  }, info) => {
+    const email = adresseConnexion(info, "redirection");
+    await creerCompteVerifie(email);
+    await adresseIpPropre(page);
+    await seConnecter(page, email);
+    await expect(page).toHaveURL(`${ADRESSE}/compte`);
+
+    for (const chemin of PAGES_REDIRIGEES) {
+      await page.goto(chemin);
+      await expect(page, chemin).toHaveURL(`${ADRESSE}/compte`);
+      await expect(page.getByRole("heading", { level: 1 }), chemin).toHaveText(
+        TEXTES_COMPTE.compte.titre,
+      );
+    }
+    await page.goto("/inscription/verifiee");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(TEXTES_COMPTE.verifiee.titre);
+    await page.goto("/lien/verification#a.b.c");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      TEXTES_COMPTE.verification.titre,
+    );
+  });
+
+  test("côté serveur : redirection 307 vers /compte avec une session valide ; sans session ou session invalide, la même page", async ({
+    request,
+  }, info) => {
+    const valeur = await creerCompteVerifie(adresseConnexion(info, "redirectionServeur"));
+    const servi = async (chemin: string, cookie?: string) => {
+      const reponse = await request.get(chemin, {
+        maxRedirects: 0,
+        headers: cookie === undefined ? {} : { cookie: `${NOM_COOKIE}=${cookie}` },
+      });
+      return {
+        statut: reponse.status(),
+        lieu: reponse.headers().location,
+        document: documentServi(await reponse.text()),
+      };
+    };
+
+    for (const chemin of PAGES_REDIRIGEES) {
+      const connecte = await servi(chemin, valeur);
+      expect(connecte.statut, chemin).toBe(307);
+      expect(connecte.lieu, chemin).toBe("/compte");
+
+      const sans = await servi(chemin);
+      expect(sans.statut, chemin).toBe(200);
+      expect(sans.lieu, chemin).toBeUndefined();
+      for (const cookie of [cookieForge(), randomBytes(32).toString("base64url"), ""]) {
+        expect(await servi(chemin, cookie), chemin).toEqual(sans);
+      }
+    }
+  });
+});
+
+test.describe("reconnexion depuis un navigateur connecté (correctif 1.2, test 28)", () => {
+  test("nouvelle connexion avec le cookie d'une session valide : l'ancien cookie rejoué est refusé", async ({
+    page,
+    context,
+    browser,
+  }, info) => {
+    const email = adresseConnexion(info, "reconnexion");
+    await creerCompteVerifie(email);
+    await adresseIpPropre(page);
+    await seConnecter(page, email);
+    await expect(page).toHaveURL(`${ADRESSE}/compte`);
+    const ancien = (await context.cookies()).find((c) => c.name === NOM_COOKIE);
+    if (!ancien) throw new Error("aucun cookie de session");
+
+    // La page de connexion n'est plus joignable connecté : la reconnexion
+    // passe par le point d'entrée, avec le cookie du navigateur.
+    const reponse = await connecter(email, MOT_DE_PASSE, {
+      cookie: `${NOM_COOKIE}=${ancien.value}`,
+    });
+    expect(reponse.status).toBe(200);
+    const nouveau = valeurCookieSession(reponse);
+    if (!nouveau) throw new Error("aucun nouveau cookie");
+    expect(nouveau).not.toBe(ancien.value);
+
+    for (const [nom, valeur, titre] of [
+      ["ancien cookie", ancien.value, TEXTES_ERREURS.introuvable],
+      ["nouveau cookie", nouveau, TEXTES_COMPTE.compte.titre],
+    ] as const) {
+      const autre = await browser.newContext();
+      try {
+        await autre.addCookies([{ ...ancien, value: valeur }]);
+        const p = await autre.newPage();
+        await p.goto(`${ADRESSE}/compte`);
+        await expect(p.getByRole("heading", { level: 1 }), nom).toHaveText(titre);
+      } finally {
+        await autre.close();
+      }
+    }
   });
 });

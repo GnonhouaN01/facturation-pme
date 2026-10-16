@@ -40,6 +40,7 @@ function avec(
   options: {
     limite?: () => Promise<boolean>;
     sessionLisible?: (entetes: Headers) => Promise<boolean>;
+    revoquer?: (entetes: Headers) => Promise<void>;
   } = {},
 ) {
   const traiter = vi.fn(async () => (typeof reponse === "function" ? reponse() : reponse.clone()));
@@ -49,6 +50,7 @@ function avec(
     estProduction: false,
     limiterCompte: options.limite ?? (async () => true),
     sessionEncoreLisible: options.sessionLisible ?? (async () => false),
+    revoquerSession: options.revoquer ?? (async () => {}),
     horloge,
   });
 }
@@ -347,6 +349,7 @@ describe("déconnexion vérifiée côté serveur (T-03)", () => {
       estProduction: false,
       limiterCompte: async () => true,
       sessionEncoreLisible: async () => false,
+      revoquerSession: async () => {},
       horloge: IMMEDIATE,
     });
     const cookie = { cookie: "better-auth.session_token=jeton.signature" };
@@ -483,4 +486,97 @@ describe("jetonDeSession", () => {
   test("aucun en-tête Cookie : null", () => {
     expect(jetonDeSession(null, "better-auth.session_token")).toBeNull();
   });
+});
+
+// Correctif de la 1.2 (constat sur la prévisualisation) : une connexion
+// réussie révoque en base la session du cookie reçu ; Better Auth 1.7.7 ne le
+// fait pas (signInEmail crée une session sans lire l'ancienne). Fiche :
+// docs/features/connexion.md, section 4.3.
+describe("connexion réussie : l'ancienne session est révoquée", () => {
+  const ANCIEN = "better-auth.session_token=ancien.signature";
+
+  test("révoquée avec les en-têtes reçus, après Better Auth, avant la réponse", async () => {
+    const ordre: string[] = [];
+    const recues: Headers[] = [];
+    const gerer = avec(
+      async () => {
+        ordre.push("better-auth");
+        return avecCookies(200, { token: "t" }, [COOKIE_SESSION]);
+      },
+      IMMEDIATE,
+      {
+        revoquer: async (entetes) => {
+          ordre.push("revocation");
+          recues.push(entetes);
+        },
+      },
+    );
+    const reponse = await gerer(postAvec("/sign-in/email", CONNEXION, { cookie: ANCIEN }));
+    expect(reponse.status).toBe(200);
+    expect(reponse.headers.getSetCookie()).toEqual([COOKIE_SESSION]);
+    expect(ordre).toEqual(["better-auth", "revocation"]);
+    expect(recues[0]?.get("cookie")).toBe(ANCIEN);
+  });
+
+  test.each([
+    ["identifiants incorrects", avecCookies(401, { code: "INVALID_EMAIL_OR_PASSWORD" }, [])],
+    ["compte non vérifié", avecCookies(403, { code: "EMAIL_NOT_VERIFIED" }, [])],
+    ["limite de Better Auth", avecCookies(429, {}, [])],
+    ["200 sans cookie de session", avecCookies(200, { token: "t" }, [])],
+  ] as const)("échec (%s) : rien n'est révoqué", async (_nom, reponse) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const revoquer = vi.fn(async () => {});
+    const gerer = avec(reponse, IMMEDIATE, { revoquer });
+    await gerer(postAvec("/sign-in/email", CONNEXION, { cookie: ANCIEN }));
+    expect(revoquer).not.toHaveBeenCalled();
+  });
+
+  test("limite par compte atteinte, entrée invalide : rien n'est révoqué", async () => {
+    const revoquer = vi.fn(async () => {});
+    const limitee = avec(avecCookies(200, {}, [COOKIE_SESSION]), IMMEDIATE, {
+      limite: async () => false,
+      revoquer,
+    });
+    await limitee(postAvec("/sign-in/email", CONNEXION, { cookie: ANCIEN }));
+    const invalide = avec(avecCookies(200, {}, [COOKIE_SESSION]), IMMEDIATE, { revoquer });
+    await invalide(
+      postAvec("/sign-in/email", { ...CONNEXION, rememberMe: true }, { cookie: ANCIEN }),
+    );
+    expect(revoquer).not.toHaveBeenCalled();
+  });
+
+  test("révocation en échec : erreur avec incident, aucun cookie transmis", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const gerer = avec(avecCookies(200, { token: "t" }, [COOKIE_SESSION]), IMMEDIATE, {
+      revoquer: async () => {
+        throw new Error("base en panne");
+      },
+    });
+    const reponse = await gerer(postAvec("/sign-in/email", CONNEXION, { cookie: ANCIEN }));
+    expect(reponse.status).toBe(500);
+    const corps = (await reponse.json()) as Record<string, unknown>;
+    expect(corps.raison).toBe("erreur");
+    expect(corps.incident).toMatch(UUID);
+    expect(reponse.headers.getSetCookie()).toEqual([]);
+  });
+
+  test.each(["/sign-up/email", "/send-verification-email", "/verify-email", "/sign-out"])(
+    "%s : la révocation de la connexion n'est jamais appelée",
+    async (chemin) => {
+      const revoquer = vi.fn(async () => {});
+      const corps =
+        chemin === "/sign-up/email"
+          ? INSCRIPTION
+          : chemin === "/send-verification-email"
+            ? { email: INSCRIPTION.email }
+            : chemin === "/verify-email"
+              ? { jeton: JETON }
+              : {};
+      const gerer = avec(avecCookies(200, { status: true }, [COOKIE_SESSION]), IMMEDIATE, {
+        revoquer,
+      });
+      await gerer(postAvec(chemin, corps, { cookie: ANCIEN }));
+      expect(revoquer).not.toHaveBeenCalled();
+    },
+  );
 });

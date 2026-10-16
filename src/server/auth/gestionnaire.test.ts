@@ -45,9 +45,11 @@ const verifierDebit = vi.fn<(nom: string, valeur: string) => Promise<boolean>>(a
 // l'adaptateur interne (findSession), et non plus par auth.api.getSession,
 // qui faisait écrire un Set-Cookie d'effacement par nextCookies.
 const findSession = vi.fn<(jeton: string) => Promise<unknown>>(async () => null);
+// Correctif de la 1.2 : l'ancienne session est révoquée par deleteSession.
+const deleteSession = vi.fn<(jeton: string) => Promise<void>>(async () => {});
 const contexteAuth = {
   authCookies: { sessionToken: { name: "better-auth.session_token" } },
-  internalAdapter: { findSession },
+  internalAdapter: { findSession, deleteSession },
 };
 
 // Le gestionnaire, chargé avec une configuration factice. Better Auth est
@@ -95,6 +97,7 @@ afterEach(() => {
   traiter.mockClear();
   verifierDebit.mockClear();
   findSession.mockClear();
+  deleteSession.mockClear();
   vi.doUnmock("../env");
   vi.doUnmock("./config");
   vi.doUnmock("../debit/debit");
@@ -190,5 +193,36 @@ describe("gestionnaire de /api/auth, liaison de la connexion (1.2)", () => {
     );
     expect(reponse.status).toBe(500);
     vi.restoreAllMocks();
+  }, 10_000);
+});
+
+describe("gestionnaire de /api/auth, révocation de l'ancienne session (correctif 1.2)", () => {
+  function connexion(cookie?: string): Request {
+    return new Request(`${BASE}/sign-in/email`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: ORIGINE,
+        ...(cookie ? { cookie } : {}),
+      },
+      body: JSON.stringify(POINTS[3]?.[1]),
+    });
+  }
+
+  test("connexion réussie avec un cookie : deleteSession avec le jeton de l'ancienne session", async () => {
+    const { traiterRequeteAuth } = await charger(false);
+    const reponse = await traiterRequeteAuth(
+      connexion("better-auth.session_token=ancien.signature"),
+    );
+    expect(reponse.status).toBe(200);
+    expect(deleteSession).toHaveBeenCalledTimes(1);
+    expect(deleteSession).toHaveBeenCalledWith("ancien");
+  }, 10_000);
+
+  test("connexion réussie sans cookie : rien à révoquer", async () => {
+    const { traiterRequeteAuth } = await charger(false);
+    const reponse = await traiterRequeteAuth(connexion());
+    expect(reponse.status).toBe(200);
+    expect(deleteSession).not.toHaveBeenCalled();
   }, 10_000);
 });

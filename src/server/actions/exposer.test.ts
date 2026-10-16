@@ -11,6 +11,7 @@ import {
   ErreurPage,
   exposer,
   lireComptePourPage,
+  redirigerSiConnecte,
   traduireLecture,
 } from "./exposer";
 import type { Resultat } from "./refus";
@@ -354,5 +355,60 @@ describe("lireComptePourPage", () => {
     expect((erreur as Error).cause).toBeUndefined();
     expect(lire).not.toHaveBeenCalled();
     vi.restoreAllMocks();
+  });
+});
+
+// Correctif de la 1.2 (constat sur la prévisualisation) : les pages de
+// connexion et d'inscription redirigent un utilisateur connecté vers
+// /compte, par une lecture de session côté serveur. Sans session, ou avec
+// une session illisible, rien ne change. Fiche : docs/features/connexion.md,
+// section 5.2.
+describe("redirigerSiConnecte", () => {
+  const session = vi.mocked(lireSession);
+
+  async function issue(): Promise<unknown> {
+    try {
+      await redirigerSiConnecte();
+      return "affichee";
+    } catch (erreur) {
+      return erreur;
+    }
+  }
+
+  function digestRedirection(): unknown {
+    try {
+      redirect("/compte");
+    } catch (erreur) {
+      return (erreur as { digest?: unknown }).digest;
+    }
+    return undefined;
+  }
+
+  beforeEach(() => {
+    session.mockReset();
+  });
+
+  test("session valide : redirection vers /compte", async () => {
+    session.mockResolvedValue({ utilisateurId: "u", organisationActiveId: null });
+    const erreur = await issue();
+    expect((erreur as { digest?: unknown }).digest).toBe(digestRedirection());
+  });
+
+  test("sans session (absente, invalide, adresse non vérifiée) : la page s'affiche", async () => {
+    session.mockResolvedValue(null);
+    expect(await issue()).toBe("affichee");
+  });
+
+  test("lecture de la session en échec : la page s'affiche, sans erreur ni cause", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    session.mockRejectedValue(new Error("Failed query: select ... params: jeton"));
+    expect(await issue()).toBe("affichee");
+    vi.restoreAllMocks();
+  });
+
+  test("la session est lue avec les en-têtes de la requête", async () => {
+    session.mockResolvedValue(null);
+    await issue();
+    expect(session.mock.calls[0]?.[0].get("cookie")).toBe("jeton=valeur");
   });
 });

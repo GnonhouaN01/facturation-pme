@@ -178,6 +178,8 @@ describe("T-39 : inscription pendant une panne de la base", { timeout: 30_000 },
       // 1.2 : dépendances exigées par le type, sans effet sur l'inscription.
       limiterCompte: async () => true,
       sessionEncoreLisible: async () => false,
+      // Correctif de la 1.2 : révocation de l'ancienne session, sans effet ici.
+      revoquerSession: async () => {},
       horloge: { maintenant: () => 0, attendre: async () => {} },
     });
     const email = `victime-${randomUUID()}@exemple.invalid`;

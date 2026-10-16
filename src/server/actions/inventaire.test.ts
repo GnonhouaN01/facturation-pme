@@ -508,6 +508,79 @@ describe("pages de la zone compte (1.2)", () => {
   });
 });
 
+// Correctif de la 1.2 : chaque page de la connexion et de l'inscription
+// appelle redirigerSiConnecte (un utilisateur connecté va sur /compte), sauf
+// « Adresse vérifiée », qui s'adresse justement à l'utilisateur dont la
+// vérification vient d'ouvrir la session. Fiche : docs/features/connexion.md,
+// section 5.2.
+const PAGES_SANS_SESSION = /^\(public\)\/(connexion|inscription)(\/|$)/;
+const EXCEPTIONS_REDIRECTION = new Set(["(public)/inscription/verifiee/page.tsx"]);
+const APPEL_REDIRIGER = /\bredirigerSiConnecte\s*\(/;
+
+function problemesDeRedirection(sources: readonly Source[]): string[] {
+  return sources
+    .filter(({ chemin }) => PAGES_SANS_SESSION.test(chemin))
+    .filter(({ chemin }) => PAGE.test(chemin.split("/").at(-1) ?? ""))
+    .filter(({ chemin }) => !EXCEPTIONS_REDIRECTION.has(chemin))
+    .filter(({ contenu }) => !APPEL_REDIRIGER.test(sansCommentaires(contenu)))
+    .map(({ chemin }) => `${chemin} : page sans redirigerSiConnecte`);
+}
+
+describe("pages de connexion et d'inscription : utilisateur connecté redirigé (correctif 1.2)", () => {
+  test("dépôt : chaque page concernée appelle redirigerSiConnecte", () => {
+    const sources = sourcesDeApp();
+    const concernees = sources
+      .map(({ chemin }) => chemin)
+      .filter(
+        (chemin) => PAGES_SANS_SESSION.test(chemin) && PAGE.test(chemin.split("/").at(-1) ?? ""),
+      )
+      .sort();
+
+    expect(concernees).toEqual([
+      "(public)/connexion/nouveau-lien/page.tsx",
+      "(public)/connexion/page.tsx",
+      "(public)/inscription/envoyee/page.tsx",
+      "(public)/inscription/page.tsx",
+      "(public)/inscription/verifiee/page.tsx",
+    ]);
+    expect(problemesDeRedirection(sources)).toEqual([]);
+  });
+
+  test.each<[string, Source[], string[]]>([
+    [
+      "page qui appelle redirigerSiConnecte",
+      [{ chemin: "(public)/connexion/page.tsx", contenu: "await redirigerSiConnecte();" }],
+      [],
+    ],
+    [
+      "page sans l'appel",
+      [
+        {
+          chemin: "(public)/inscription/envoyee/page.tsx",
+          contenu: "export default function P() {}",
+        },
+      ],
+      ["(public)/inscription/envoyee/page.tsx : page sans redirigerSiConnecte"],
+    ],
+    [
+      "appel seulement dans un commentaire",
+      [{ chemin: "(public)/connexion/page.tsx", contenu: "// redirigerSiConnecte()" }],
+      ["(public)/connexion/page.tsx : page sans redirigerSiConnecte"],
+    ],
+    [
+      "« Adresse vérifiée », l'accueil et la zone par lien : non concernés",
+      [
+        { chemin: "(public)/inscription/verifiee/page.tsx", contenu: "" },
+        { chemin: "(public)/page.tsx", contenu: "" },
+        { chemin: "lien/verification/page.tsx", contenu: "" },
+      ],
+      [],
+    ],
+  ])("démonstration, %s", (_nom, sources, attendus) => {
+    expect(problemesDeRedirection(sources)).toEqual(attendus);
+  });
+});
+
 // Forme exacte de la route de la tâche quotidienne : un import, un seul
 // export GET, égal à traiterTache. Tout le contrôle vit dans
 // src/server/taches/quotidienne.ts (secret, liste fermée, réponses). Fiche :

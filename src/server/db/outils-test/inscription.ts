@@ -115,6 +115,12 @@ export function bancInscription(options: { adresses: number }): BancInscription 
         const jeton = jetonDeSession(entetes.get("cookie"), contexte.authCookies.sessionToken.name);
         return jeton !== null && (await contexte.internalAdapter.findSession(jeton)) !== null;
       },
+      // Correctif de la 1.2, comme gestionnaire.ts.
+      revoquerSession: async (entetes) => {
+        const contexte = await auth.$context;
+        const jeton = jetonDeSession(entetes.get("cookie"), contexte.authCookies.sessionToken.name);
+        if (jeton !== null) await contexte.internalAdapter.deleteSession(jeton);
+      },
     }),
     transport,
     lireSession: async (entetes) => {

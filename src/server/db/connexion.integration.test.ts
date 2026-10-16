@@ -243,3 +243,40 @@ describe("session sans prolongation (décision 3)", () => {
     expect(apres?.expiresAt.getTime()).toBe(avant?.expiresAt.getTime());
   });
 });
+
+// Correctif de la 1.2 : une nouvelle connexion réussie depuis un navigateur
+// déjà connecté révoque l'ancienne session en base. Fiche :
+// docs/features/connexion.md, section 4.3.
+describe("reconnexion : l'ancienne session est révoquée", () => {
+  test("connexion avec un cookie valide : ancienne session supprimée, nouvelle lisible", async () => {
+    const { email } = await compte({ verifie: true });
+    const ancien = cookieSession(await connecter(email));
+    if (!ancien) throw new Error("aucun cookie de session");
+    const lue = await banc.lireSession(entetesCookie(ancien));
+    if (!lue) throw new Error("session illisible");
+
+    const reponse = await banc.traiter(
+      post("/sign-in/email", { email, motDePasse: MOT_DE_PASSE }, { cookie: ancien }),
+    );
+    expect(reponse.status).toBe(200);
+    const nouveau = cookieSession(reponse);
+    if (!nouveau) throw new Error("aucun nouveau cookie");
+
+    expect(nouveau).not.toBe(ancien);
+    expect(await banc.lireSession(entetesCookie(ancien))).toBeNull();
+    expect(await db.select().from(session).where(eq(session.token, lue.jeton))).toEqual([]);
+    expect(await banc.lireSession(entetesCookie(nouveau))).not.toBeNull();
+  });
+
+  test("connexion échouée avec un cookie valide : l'ancienne session reste", async () => {
+    const { email } = await compte({ verifie: true });
+    const ancien = cookieSession(await connecter(email));
+    if (!ancien) throw new Error("aucun cookie de session");
+
+    const reponse = await banc.traiter(
+      post("/sign-in/email", { email, motDePasse: "un-mauvais-mot-de-passe" }, { cookie: ancien }),
+    );
+    expect(reponse.status).toBe(401);
+    expect(await banc.lireSession(entetesCookie(ancien))).not.toBeNull();
+  });
+});

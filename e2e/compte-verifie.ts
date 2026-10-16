@@ -28,7 +28,10 @@ export const RANGS_CONNEXION = {
   gabarit: 12,
   session: 13,
   deconnexion: 14,
-  limite: 15,
+  // Correctif de la 1.2 (le rang 15, « limite », n'avait pas servi).
+  redirection: 15,
+  reconnexion: 16,
+  redirectionServeur: 17,
 } as const;
 
 export function adresseConnexion(info: TestInfo, rang: keyof typeof RANGS_CONNEXION): string {

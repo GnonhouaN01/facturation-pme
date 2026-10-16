@@ -82,15 +82,18 @@ function traitement(
   const sessionEncoreLisible = vi.fn<(entetes: Headers) => Promise<boolean>>(
     options.sessionLisible ?? (async () => false),
   );
+  // Correctif de la 1.2 : révocation de l'ancienne session à la connexion.
+  const revoquerSession = vi.fn<(entetes: Headers) => Promise<void>>(async () => {});
   const gerer = creerTraitementAuth({
     traiter,
     origine: ORIGINE,
     estProduction: options.estProduction ?? false,
     limiterCompte,
     sessionEncoreLisible,
+    revoquerSession,
     horloge: { maintenant: () => 0, attendre: async () => {} },
   });
-  return { traiter, gerer, limiterCompte, sessionEncoreLisible };
+  return { traiter, gerer, limiterCompte, sessionEncoreLisible, revoquerSession };
 }
 
 function requete(
@@ -779,4 +782,32 @@ describe("limite par compte (S-11, T-01) : auth.connexion_compte", () => {
       expect(limiterCompte).not.toHaveBeenCalled();
     },
   );
+});
+
+// Correctif de la 1.2 : la révocation ne dépend que du succès de la connexion,
+// jamais de l'existence d'un compte. Production : rien n'est appelé.
+describe("révocation de l'ancienne session : jamais hors d'une connexion réussie", () => {
+  test("production : connexion fermée, aucune révocation", async () => {
+    const { gerer, revoquerSession } = traitement({ estProduction: true });
+    await gerer(
+      post("/sign-in/email", CONNEXION, {
+        "content-type": "application/json",
+        origin: ORIGINE,
+        cookie: "better-auth.session_token=ancien.signature",
+      }),
+    );
+    expect(revoquerSession).not.toHaveBeenCalled();
+  });
+
+  test("origine refusée : aucune révocation (une page tierce ne déconnecte personne)", async () => {
+    const { gerer, revoquerSession } = traitement();
+    await gerer(
+      post("/sign-in/email", CONNEXION, {
+        "content-type": "application/json",
+        origin: "https://attaquant.exemple",
+        cookie: "better-auth.session_token=ancien.signature",
+      }),
+    );
+    expect(revoquerSession).not.toHaveBeenCalled();
+  });
 });
