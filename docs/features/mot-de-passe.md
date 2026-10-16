@@ -1,6 +1,6 @@
 # Fonctionnalité : mot de passe oublié, puis ouverture des comptes en production
 
-Statut : validée le 2026-10-16. Fiche rédigée le 2026-10-16 ; les trois vrais choix tranchés par le développeur le même jour (section « Décisions »), les autres points selon la recommandation de l'assistant (section « Décisions par défaut »).
+Statut : validée le 2026-10-16 ; PR 1 implémentée le 2026-10-16 (« Notes de l'implémentation »), preuve sur la prévisualisation à faire par le développeur (section 13) ; PR 2 à venir. Fiche rédigée le 2026-10-16 ; les trois vrais choix tranchés par le développeur le même jour (section « Décisions »), les autres points selon la recommandation de l'assistant (section « Décisions par défaut »).
 
 Jalon 1, fonctionnalité 1.3 de `docs/PLAN.md`. Taille M. Cas d'utilisation : UC-03. Exigences : F-002 (réinitialisation), S-10, S-11, S-15, S-17, S-54, S-55, S-63, S-81, S-85. Menaces : T-04, T-07, T-39, T-41, T-43, T-55, T-65.
 
@@ -394,21 +394,22 @@ Aucune. `verification.identifier` est déjà du texte ; l'empreinte change sa va
 
 ### PR 1
 
-- [ ] Les seuls points d'entrée ouverts de `/api/auth` sont les sept de la section 2, vérifié pour chaque point déclaré par l'instance ; `GET /reset-password/<jeton valide>` répond comme une adresse inexistante.
-- [ ] Demande pour un compte vérifié, un compte non vérifié et une adresse inconnue : même statut, mêmes en-têtes, même corps, 800 ms au moins ; un email `compte.reinitialisation` pour les deux comptes, aucun pour l'adresse inconnue.
-- [ ] La troisième demande en une heure pour une même adresse, connue ou non, depuis des adresses IP différentes : `trop_de_requetes` ; la cinquième depuis une même adresse IP, pour des adresses email différentes, aussi ; aucune adresse en clair dans `compteur_debit`.
-- [ ] Le lien a la forme `<origine>/lien/reinitialisation#<jeton>` ; la table `verification` ne contient ni le jeton ni `reset-password:<jeton>`, mais `reinitialisation:<empreinte>`.
-- [ ] Réinitialisation réussie : ancien mot de passe refusé, nouveau accepté ; toutes les sessions du compte supprimées ; notification `compte.mot_de_passe_modifie` envoyée ; autres jetons du compte supprimés ; aucun cookie posé.
-- [ ] Le même jeton une seconde fois, un jeton expiré (horloge ou date reculée en base), un jeton modifié, l'empreinte stockée présentée comme jeton : `lien_invalide`.
-- [ ] Deux réinitialisations simultanées avec le même jeton : une seule réussit.
-- [ ] Mot de passe de 11 caractères, compromis, ou Have I Been Pwned en panne : refusé, et le jeton sert encore ensuite.
-- [ ] Compte non vérifié réinitialisé : `emailVerified` vrai, connexion possible avec le nouveau mot de passe.
-- [ ] `redirectTo`, un champ inconnu, un jeton dans la requête, un jeton hors forme, sans `Origin` ou d'une autre origine : refusés, Better Auth jamais appelé, limite par compte jamais comptée.
-- [ ] En production, les sept `POST` répondent comme un chemin inexistant, octet pour octet.
-- [ ] Vérification d'adresse depuis un navigateur connecté : l'ancienne session est révoquée ; un vieux lien sans nouveau cookie ne déconnecte pas (section 8).
-- [ ] `compte.existant` et `compte.mot_de_passe_modifie` portent les liens de pages fixes ; aucun modèle n'accepte de lien de l'appelant (décision A).
-- [ ] La tâche quotidienne supprime les jetons expirés et garde les autres.
-- [ ] `npm run verifier` et `npm run test:integration` verts, sorties montrées ; preuve de la section 13 faite et notée.
+- [x] Les seuls points d'entrée ouverts de `/api/auth` sont les sept de la section 2, vérifié pour chaque point déclaré par l'instance ; `GET /reset-password/<jeton valide>` répond comme une adresse inexistante.
+- [x] Demande pour un compte vérifié, un compte non vérifié et une adresse inconnue : même statut, mêmes en-têtes, même corps, 800 ms au moins ; un email `compte.reinitialisation` pour les deux comptes, aucun pour l'adresse inconnue.
+- [x] La troisième demande en une heure pour une même adresse, connue ou non, depuis des adresses IP différentes : `trop_de_requetes` ; la cinquième depuis une même adresse IP, pour des adresses email différentes, aussi ; aucune adresse en clair dans `compteur_debit`.
+- [x] Le lien a la forme `<origine>/lien/reinitialisation#<jeton>` ; la table `verification` ne contient ni le jeton ni `reset-password:<jeton>`, mais `reinitialisation:<empreinte>`.
+- [x] Réinitialisation réussie : ancien mot de passe refusé, nouveau accepté ; toutes les sessions du compte supprimées ; notification `compte.mot_de_passe_modifie` envoyée ; autres jetons du compte supprimés ; aucun cookie posé.
+- [x] Le même jeton une seconde fois, un jeton expiré (horloge ou date reculée en base), un jeton modifié, l'empreinte stockée présentée comme jeton : `lien_invalide`.
+- [x] Deux réinitialisations simultanées avec le même jeton : une seule réussit.
+- [x] Mot de passe de 11 caractères, compromis, ou Have I Been Pwned en panne : refusé, et le jeton sert encore ensuite.
+- [x] Compte non vérifié réinitialisé : `emailVerified` vrai, connexion possible avec le nouveau mot de passe.
+- [x] `redirectTo`, un champ inconnu, un jeton dans la requête, un jeton hors forme, sans `Origin` ou d'une autre origine : refusés, Better Auth jamais appelé, limite par compte jamais comptée.
+- [x] En production, les sept `POST` répondent comme un chemin inexistant, octet pour octet.
+- [x] Vérification d'adresse depuis un navigateur connecté : l'ancienne session est révoquée ; un vieux lien sans nouveau cookie ne déconnecte pas (section 8).
+- [x] `compte.existant` et `compte.mot_de_passe_modifie` portent les liens de pages fixes ; aucun modèle n'accepte de lien de l'appelant (décision A).
+- [x] La tâche quotidienne supprime les jetons expirés et garde les autres.
+- [x] `npm run verifier` et `npm run test:integration` verts, sorties montrées.
+- [ ] Preuve de la section 13 faite et notée (développeur).
 
 ### PR 2
 
@@ -422,39 +423,39 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 22 relèven
 
 ### Tests d'attaque, puis unitaires (PR 1)
 
-1. [ ] **T-55, liste fermée** — `src/server/auth/points-entree.attaque.test.ts` : inventaire à sept points ouverts ; `GET /reset-password/<jeton valide>`, `GET /reset-password`, `POST /verify-password`, `POST /change-password` : `reponseInexistante()` octet pour octet, Better Auth jamais appelé.
-2. [ ] **S-81 et entrée falsifiée** — même fichier, deux nouveaux `POST` : `Origin` absente, étrangère, `null`, `Sec-Fetch-Site: cross-site` ; `redirectTo`, `callbackURL`, champ inconnu, jeton dans la requête (`?token=`), jeton de 23 ou 25 caractères, jeton avec `-` ou `_`, empreinte de 43 caractères, mot de passe de 129 caractères, corps de 4 Kio + 1, autre type que JSON. Refus ; Better Auth, `limiterCompte`, `jetonReinitialisationValide` et `motDePasseCompromis` jamais appelés.
-3. [ ] **T-07, demande** — même fichier, Better Auth simulé : réponse « compte trouvé » et « compte inconnu » donnent le même statut, les mêmes en-têtes et le même corps `{ ok: true }` ; un `Set-Cookie` de Better Auth n'est pas transmis.
-4. [ ] **Comptes fermés en production** — même fichier : avec `estProduction` vrai, les sept `POST` reçoivent `reponseInexistante()` ; témoin hors production.
-5. [ ] **Limite par adresse email** — même fichier : `limiterCompte("auth.reinitialisation_compte", <adresse normalisée>)` appelé avant Better Auth, pour toute adresse valide ; refus : `trop_de_requetes`, Better Auth jamais appelé ; en échec : `erreur` avec incident ; la connexion appelle toujours `auth.connexion_compte`.
-6. [ ] **Contrôles avant consommation** — `points-entree.test.ts` : ordre longueur, jeton connu, mot de passe compromis, Better Auth ; jeton inconnu : `lien_invalide` sans appel à `motDePasseCompromis` ; compromis : `mot_de_passe_compromis`, Better Auth jamais appelé ; `motDePasseCompromis` qui lève : `erreur` avec incident ; trop court : rien d'autre appelé.
-7. [ ] **Traduction de `/reset-password`** — même fichier : `200` → `{ ok: true }` sans cookie ; `400 INVALID_TOKEN` et `USER_NOT_FOUND` → `lien_invalide` ; `PASSWORD_TOO_SHORT`, `PASSWORD_COMPROMISED` → leurs raisons ; `429`, `5xx`.
-8. [ ] **Durée plancher** — même fichier, horloge simulée : la demande retenue jusqu'à 800 ms pour un succès, une limite atteinte et une entrée invalide ; `/reset-password` sans plancher.
-9. [ ] **Report de la 1.2, vérification** — `points-entree.test.ts` : réponse de `/verify-email` avec cookie de session : `revoquerSession` appelé avant l'envoi du nouveau cookie ; sans nouveau cookie ou refus : jamais appelé ; révocation en échec : `erreur`, aucun cookie.
-10. [ ] **Empreinte du jeton** — `src/server/auth/reinitialisation.test.ts` : `empreinteJetonReinitialisation("reset-password:<jeton>")` commence par `reinitialisation:`, ne contient pas le jeton, est stable, et diffère pour deux jetons.
-11. [ ] **Rappel d'après réinitialisation** — même fichier, dépendances simulées : notification planifiée, jetons supprimés, adresse marquée vérifiée seulement si `emailVerified` est faux ; chaque dépendance qui lève : aucune exception, une ligne `[auth]` sans identifiant ni adresse, les autres étapes faites.
-12. [ ] **Configuration** — `config.test.ts`, ajouts : `sendResetPassword` est `planifierEmailReinitialisation` ; `resetPasswordTokenExpiresIn` 1 800 ; `revokeSessionsOnPasswordReset` vrai ; `onPasswordReset` est `apresReinitialisation` ; `verification.storeIdentifier` : `default` `"plain"`, une seule surcharge, `reset-password:` ; `haveIBeenPwned` couvre `/reset-password`.
-13. [ ] **Forme du jeton de Better Auth** — `src/server/auth/jeton-reinitialisation-better-auth.test.ts` : `generateId(24)` de la version installée rend 24 caractères `[A-Za-z0-9]` (comme le test de l'adresse IP de la 1.1 : une mise à jour qui le change fait échouer la suite).
-14. [ ] **Emails** — `emails.test.ts` : `planifierEmailReinitialisation` rend la main sans envoyer, ignore `url` même vers un autre site, ne lève jamais ; ordre des limites de la section 6.4 pour les deux nouveaux modèles ; la notification ne vérifie pas les limites par destinataire ; une limite atteinte écrit une ligne `[email]` qui nomme la limite, sans adresse ni jeton.
-15. [ ] **Modèles et liens** — `modeles.test.ts` : brique `jetonReinitialisation` ; `lienFragment` par table type → brique (un jeton de vérification refusé pour `reinitialisation`, et l'inverse) ; `lienPage` : liste fermée, toute page hors liste refusée (dont `connexion/`, `Connexion`, `../connexion`, `mot-de-passe-oublie?x=1`, une adresse complète), adresse toujours sur l'origine de la configuration, aucune requête ni fragment ; textes des trois modèles ; aucun modèle n'a de paramètre de lien.
-16. [ ] **Limites** — `limites.test.ts` : trois limites `auth.reinitialisation*` et `email.reinitialisation`, sous 24 h ; aucune règle partagée entre deux limites `auth.*` ; `reglesBetterAuth()` couvre exactement les chemins ouverts qui passent par Better Auth ; somme `email.compte` + `email.reinitialisation` sous `email.application`.
-17. [ ] **Pages** — `inventaire.test.ts` : `/mot-de-passe-oublie` appelle `redirigerSiConnecte` ; `/lien/reinitialisation` ne lit pas la session. `appel-auth.test.ts` : raisons de la réinitialisation reconnues.
+1. [x] **T-55, liste fermée** — `src/server/auth/points-entree.attaque.test.ts` : inventaire à sept points ouverts ; `GET /reset-password/<jeton valide>`, `GET /reset-password`, `POST /verify-password`, `POST /change-password` : `reponseInexistante()` octet pour octet, Better Auth jamais appelé.
+2. [x] **S-81 et entrée falsifiée** — même fichier, deux nouveaux `POST` : `Origin` absente, étrangère, `null`, `Sec-Fetch-Site: cross-site` ; `redirectTo`, `callbackURL`, champ inconnu, jeton dans la requête (`?token=`), jeton de 23 ou 25 caractères, jeton avec `-` ou `_`, empreinte de 43 caractères, mot de passe de 129 caractères, corps de 4 Kio + 1, autre type que JSON. Refus ; Better Auth, `limiterCompte`, `jetonReinitialisationValide` et `motDePasseCompromis` jamais appelés.
+3. [x] **T-07, demande** — même fichier, Better Auth simulé : réponse « compte trouvé » et « compte inconnu » donnent le même statut, les mêmes en-têtes et le même corps `{ ok: true }` ; un `Set-Cookie` de Better Auth n'est pas transmis.
+4. [x] **Comptes fermés en production** — même fichier : avec `estProduction` vrai, les sept `POST` reçoivent `reponseInexistante()` ; témoin hors production.
+5. [x] **Limite par adresse email** — même fichier : `limiterCompte("auth.reinitialisation_compte", <adresse normalisée>)` appelé avant Better Auth, pour toute adresse valide ; refus : `trop_de_requetes`, Better Auth jamais appelé ; en échec : `erreur` avec incident ; la connexion appelle toujours `auth.connexion_compte`.
+6. [x] **Contrôles avant consommation** — `points-entree.test.ts` : ordre longueur, jeton connu, mot de passe compromis, Better Auth ; jeton inconnu : `lien_invalide` sans appel à `motDePasseCompromis` ; compromis : `mot_de_passe_compromis`, Better Auth jamais appelé ; `motDePasseCompromis` qui lève : `erreur` avec incident ; trop court : rien d'autre appelé.
+7. [x] **Traduction de `/reset-password`** — même fichier : `200` → `{ ok: true }` sans cookie ; `400 INVALID_TOKEN` et `USER_NOT_FOUND` → `lien_invalide` ; `PASSWORD_TOO_SHORT`, `PASSWORD_COMPROMISED` → leurs raisons ; `429`, `5xx`.
+8. [x] **Durée plancher** — même fichier, horloge simulée : la demande retenue jusqu'à 800 ms pour un succès, une limite atteinte et une entrée invalide ; `/reset-password` sans plancher.
+9. [x] **Report de la 1.2, vérification** — `points-entree.test.ts` : réponse de `/verify-email` avec cookie de session : `revoquerSession` appelé avant l'envoi du nouveau cookie ; sans nouveau cookie ou refus : jamais appelé ; révocation en échec : `erreur`, aucun cookie.
+10. [x] **Empreinte du jeton** — `src/server/auth/reinitialisation.test.ts` : `empreinteJetonReinitialisation("reset-password:<jeton>")` commence par `reinitialisation:`, ne contient pas le jeton, est stable, et diffère pour deux jetons.
+11. [x] **Rappel d'après réinitialisation** — même fichier, dépendances simulées : notification planifiée, jetons supprimés, adresse marquée vérifiée seulement si `emailVerified` est faux ; chaque dépendance qui lève : aucune exception, une ligne `[auth]` sans identifiant ni adresse, les autres étapes faites.
+12. [x] **Configuration** — `config.test.ts`, ajouts : `sendResetPassword` est `planifierEmailReinitialisation` ; `resetPasswordTokenExpiresIn` 1 800 ; `revokeSessionsOnPasswordReset` vrai ; `onPasswordReset` est `apresReinitialisation` ; `verification.storeIdentifier` : `default` `"plain"`, une seule surcharge, `reset-password:` ; `haveIBeenPwned` couvre `/reset-password`.
+13. [x] **Forme du jeton de Better Auth** — `src/server/auth/jeton-reinitialisation-better-auth.test.ts` : `generateId(24)` de la version installée rend 24 caractères `[A-Za-z0-9]` (comme le test de l'adresse IP de la 1.1 : une mise à jour qui le change fait échouer la suite).
+14. [x] **Emails** — `emails.test.ts` : `planifierEmailReinitialisation` rend la main sans envoyer, ignore `url` même vers un autre site, ne lève jamais ; ordre des limites de la section 6.4 pour les deux nouveaux modèles ; la notification ne vérifie pas les limites par destinataire ; une limite atteinte écrit une ligne `[email]` qui nomme la limite, sans adresse ni jeton.
+15. [x] **Modèles et liens** — `modeles.test.ts` : brique `jetonReinitialisation` ; `lienFragment` par table type → brique (un jeton de vérification refusé pour `reinitialisation`, et l'inverse) ; `lienPage` : liste fermée, toute page hors liste refusée (dont `connexion/`, `Connexion`, `../connexion`, `mot-de-passe-oublie?x=1`, une adresse complète), adresse toujours sur l'origine de la configuration, aucune requête ni fragment ; textes des trois modèles ; aucun modèle n'a de paramètre de lien.
+16. [x] **Limites** — `limites.test.ts` : trois limites `auth.reinitialisation*` et `email.reinitialisation`, sous 24 h ; aucune règle partagée entre deux limites `auth.*` ; `reglesBetterAuth()` couvre exactement les chemins ouverts qui passent par Better Auth ; somme `email.compte` + `email.reinitialisation` sous `email.application`.
+17. [x] **Pages** — `inventaire.test.ts` : `/mot-de-passe-oublie` appelle `redirigerSiConnecte` ; `/lien/reinitialisation` ne lit pas la session. `appel-auth.test.ts` : raisons de la réinitialisation reconnues.
 
 ### Tests d'intégration, avec base (PR 1)
 
-18. [ ] `src/server/db/reinitialisation.integration.test.ts` (par `traiterRequeteAuth`, vraie instance, transport `memoire`, planificateur synchrone, Have I Been Pwned simulé) : compte vérifié, compte non vérifié, adresse inconnue : réponses identiques, 800 ms au moins, emails attendus ; ligne `verification` à l'empreinte, sans le jeton ; réinitialisation : mot de passe changé, **toutes** les sessions supprimées (deux sessions ouvertes avant), notification, autres jetons supprimés, compte non vérifié devenu vérifié ; second usage : `lien_invalide` ; jeton expiré (`expires_at` reculé) : `lien_invalide` ; empreinte présentée comme jeton : refusée ; mot de passe compromis puis valable avec le même jeton : succès.
-19. [ ] Même fichier, **concurrence** : deux `POST /reset-password` simultanés avec le même jeton et deux mots de passe : une seule réussite, le mot de passe en base est celui de la réussite.
-20. [ ] Même fichier, **limites** : trois demandes pour une même adresse depuis trois adresses IP, la troisième refusée, pour une adresse connue et une inconnue ; `compteur_debit` sans valeur en clair.
-21. [ ] `src/server/db/connexion.integration.test.ts`, ajout : vérification d'une seconde adresse depuis un navigateur connecté : ancienne session supprimée, nouvelle lisible.
-22. [ ] `src/server/db/comptes.integration.test.ts` : `purgerJetonsExpires` supprime une ligne expirée, garde une ligne valable ; `supprimerJetonsReinitialisation` ne supprime que les lignes `reinitialisation:` du compte visé ; `marquerAdresseVerifiee` ; nouvelle étape dans `etapes.test.ts`.
+18. [x] `src/server/db/reinitialisation.integration.test.ts` (par `traiterRequeteAuth`, vraie instance, transport `memoire`, planificateur synchrone, Have I Been Pwned simulé) : compte vérifié, compte non vérifié, adresse inconnue : réponses identiques, 800 ms au moins, emails attendus ; ligne `verification` à l'empreinte, sans le jeton ; réinitialisation : mot de passe changé, **toutes** les sessions supprimées (deux sessions ouvertes avant), notification, autres jetons supprimés, compte non vérifié devenu vérifié ; second usage : `lien_invalide` ; jeton expiré (`expires_at` reculé) : `lien_invalide` ; empreinte présentée comme jeton : refusée ; mot de passe compromis puis valable avec le même jeton : succès.
+19. [x] Même fichier, **concurrence** : deux `POST /reset-password` simultanés avec le même jeton et deux mots de passe : une seule réussite, le mot de passe en base est celui de la réussite.
+20. [x] Même fichier, **limites** : trois demandes pour une même adresse depuis trois adresses IP, la troisième refusée, pour une adresse connue et une inconnue ; `compteur_debit` sans valeur en clair.
+21. [x] `src/server/db/connexion.integration.test.ts`, ajout : vérification d'une seconde adresse depuis un navigateur connecté : ancienne session supprimée, nouvelle lisible.
+22. [x] `src/server/db/comptes.integration.test.ts` : `purgerJetonsExpires` supprime une ligne expirée, garde une ligne valable ; `supprimerJetonsReinitialisation` ne supprime que les lignes `reinitialisation:` du compte visé ; `marquerAdresseVerifiee` ; nouvelle étape dans `etapes.test.ts`.
 
 ### Tests de bout en bout (PR 1)
 
-- [ ] **Parcours UC-03** — `e2e/mot-de-passe.spec.ts` (ordinateur-1280 et mobile-390) : depuis `/connexion`, « Mot de passe oublié ? » ; demande ; email lu dans le dossier du transport `fichier` ; lien ouvert, fragment effacé ; aucune requête du navigateur ne porte le jeton dans son adresse ; mot de passe compromis refusé, puis nouveau mot de passe accepté ; connexion avec le nouveau ; un second contexte connecté avant la réinitialisation voit `/compte` « introuvable » ; email de notification présent.
-- [ ] **T-07** — même fichier : adresse inconnue, compte non vérifié et compte vérifié : même écran, même corps de réponse.
-- [ ] **Lien réutilisé ou modifié** — même fichier : « Ce lien n'est plus valable » et le lien vers une nouvelle demande.
-- [ ] **T-55 et T-04 sur le site construit** — `e2e/auth.attaque.spec.ts` : `GET /api/auth/reset-password/<jeton>` identique à `/api/auth/n-existe-pas` ; trois demandes pour une même adresse avec des `X-Forwarded-For` différents : la troisième reçoit `trop_de_requetes`.
-- [ ] **Contrôle après déploiement** — `e2e/controle-deploiement.spec.ts` : `comptes:*` à sept `POST` ; `auth:identique` avec `/reset-password/<jeton>` ; nouvelles pages contrôlées.
+- [x] **Parcours UC-03** — `e2e/mot-de-passe.spec.ts` (ordinateur-1280 et mobile-390) : depuis `/connexion`, « Mot de passe oublié ? » ; demande ; email lu dans le dossier du transport `fichier` ; lien ouvert, fragment effacé ; aucune requête du navigateur ne porte le jeton dans son adresse ; mot de passe compromis refusé, puis nouveau mot de passe accepté ; connexion avec le nouveau ; un second contexte connecté avant la réinitialisation voit `/compte` « introuvable » ; email de notification présent.
+- [x] **T-07** — même fichier : adresse inconnue, compte non vérifié et compte vérifié : même écran, même corps de réponse.
+- [x] **Lien réutilisé ou modifié** — même fichier : « Ce lien n'est plus valable » et le lien vers une nouvelle demande.
+- [x] **T-55 et T-04 sur le site construit** — `e2e/auth.attaque.spec.ts` : `GET /api/auth/reset-password/<jeton>` identique à `/api/auth/n-existe-pas` ; trois demandes pour une même adresse avec des `X-Forwarded-For` différents : la troisième reçoit `trop_de_requetes`.
+- [x] **Contrôle après déploiement** — `e2e/controle-deploiement.spec.ts` : `comptes:*` à sept `POST` ; `auth:identique` avec `/reset-password/<jeton>` ; nouvelles pages contrôlées.
 
 ### Tests de la PR 2
 
@@ -530,3 +531,36 @@ Appliquées par l'assistant le 2026-10-16, selon sa recommandation, sauf avis co
 13. **Deux PR**, la seconde après une liste de contrôle (« Découpage en PR »).
 14. **`EMAIL_DESTINATAIRES_AUTORISES` vérifiée absente à la main**, sans changer la validation : la refuser en production ferait échouer la construction pour une variable sans effet.
 15. **Retour arrière par « Instant Rollback »**, puis PR de retour ; aucune variable d'interruption (section 12.2).
+
+## Notes de l'implémentation
+
+### PR 1, le 2026-10-16
+
+Branche `feat/1.3-mot-de-passe` : commits `docs(1.3): fiche`, `docs(1.3): décisions`, `test(1.3)` (phase rouge), `feat(1.3)`.
+
+**Phase rouge** (commit `test(1.3)`). Unitaires : 131 tests en échec dans 9 fichiers, et 3 fichiers non chargés (`config.test.ts`, `reinitialisation.test.ts`, `jeton-reinitialisation-better-auth.test.ts` : module `src/server/auth/reinitialisation.ts` absent). Chaque échec tient à l'absence du code : points d'entrée fermés (réponse inexistante au lieu de 200, 400, 403 ou 429), modèles, briques, `lienPage`, limites, étape de la tâche et rappels absents. Intégration (sur `dev`) : 2 fichiers non chargés (le banc importe le module absent) et 1 échec (`purgerJetonsExpires` absente). Bout en bout (site construit avant le code, tests de `src/` remisés le temps de la construction, base jetable) : 65 échecs, 378 réussis (pages `/mot-de-passe-oublie` et `/lien/reinitialisation` absentes, points d'entrée fermés, contrôle après déploiement sans les nouveaux cas).
+
+**Passaient avant le code, et pourquoi** : les chemins qui restent fermés (`GET /reset-password/<jeton>`, `/verify-password`, `/change-password`, `/forget-password`, GET des points ouverts) et les deux `POST` fermés en production : garde-fous de non-régression ; « la limite de la demande n'est jamais comptée » ailleurs, et « rien n'est révoqué » quand une vérification ne pose pas de cookie (la dépendance ou la révocation n'existait pas) ; « une erreur ne nomme aucune limite » (comportement existant, figé) ; « aucun paramètre de lien » des trois modèles existants ; les raisons de la réinitialisation dans `appelerAuth` (déjà dans la liste fermée ; le type `PointAuth`, lui, refusait les chemins : `npm run typecheck` échouait) ; `RANGS` à 24 (outillage). Des tests passaient à vide avant le code (fonction `lienPage` absente qui lève, point d'entrée fermé qui répond vite et ne révoque rien) : un témoin leur a été ajouté avant le commit de la phase rouge (une page de la liste acceptée, un statut 200 attendu), et ils échouaient ensuite.
+
+**Tests modifiés, sans changer ce qu'ils prouvent** :
+
+- Listes des fiches précédentes : cinq points ouverts deviennent sept (`points-entree.attaque.test.ts`, `better-auth.test.ts`, `auth.attaque.spec.ts`), quatre étapes de la tâche au lieu de trois (`quotidienne.test.ts`), cinq modèles au lieu de trois (`modeles.test.ts`), 24 rangs d'adresses de bout en bout au lieu de 18 (`nettoyer-comptes.spec.ts`), 28 requêtes par passage du contrôle au lieu de 23 (`controle-deploiement.spec.ts`).
+- `auth.attaque.spec.ts` : `/request-password-reset` et `/reset-password` sortent de la liste des chemins fermés en `GET` et `POST` (ouverts en `POST` par cette fiche) ; leur `GET` reste vérifié fermé avec les autres points ouverts.
+- `points-entree.test.ts` : `/verify-email` sort de « la révocation de la connexion n'est jamais appelée » ; c'est le report de la 1.2 traité ici (section 8), couvert par ses propres tests.
+- `modeles.test.ts` : `compte.existant` porte désormais deux liens de pages fixes (décision A) ; son test « aucun lien » devient « seuls liens, les deux pages fixes sur l'origine », et le texte attendu est celui de la section 6.2. La reconnaissance des briques admises gagne `jetonReinitialisation`.
+- `inventaire.test.ts` : la règle `redirigerSiConnecte` couvre aussi `(public)/mot-de-passe-oublie`.
+- Appels de `creerTraitementAuth` des tests de la 1.1 et de la 1.2 (`journal.attaque.test.ts`, `mots-de-passe.attaque.test.ts`, bancs) et `LIMITES_TEST` (`outils-test/email.ts`) : nouvelles dépendances et limites exigées par le type, sans effet.
+- `connexion.integration.test.ts` : banc de 12 adresses au lieu de 10 (deux comptes du nouveau test).
+- `comptes.integration.test.ts`, purge des jetons expirés (après l'implémentation) : le test passait seul et échouait une fois sur deux dans `npm run test:integration`. Better Auth supprime lui-même toute ligne expirée de `verification` à chaque recherche de jeton (`findVerificationValue`) ; lancé en parallèle, `reinitialisation.integration.test.ts` effaçait la ligne expirée avant la purge, qui comptait alors 0. Les lignes sont désormais créées et purgées dans une transaction annulée ensuite, invisible des autres connexions ; `creerPurgeJetons` accepte une transaction. Mêmes assertions (au moins une ligne supprimée, l'expirée absente, la valable présente), plus « rien n'est laissé sur `dev` ».
+
+**Écarts avec la fiche** :
+
+- La limite de la demande passe par une dépendance propre, `limiterReinitialisation(adresse)`, et non par `limiterCompte(nom, adresse)` : la signature de la 1.2 et ses tests restent intacts.
+- `supprimerJetonsReinitialisation` et `marquerAdresseVerifiee` vivent dans `src/server/db/reinitialisation.ts`, et non dans `db/comptes.ts` : la règle ESLint U réserve `db/comptes.ts` à la tâche quotidienne. `purgerJetonsExpires`, appelée par la tâche, est bien dans `db/comptes.ts`. Leurs tests sont dans `reinitialisation.integration.test.ts`.
+- Le test 13 (forme du jeton) lance la vraie version de Better Auth sur son adaptateur en mémoire (`better-auth/adapters/memory`, déjà installé) : il fige la forme du jeton et vérifie que notre réglage `storeIdentifier` ne stocke que l'empreinte, sans base.
+- Le lien « Mot de passe oublié ? » est placé juste sous le cadre du formulaire de connexion, et non dans le formulaire : il ne s'intercale pas entre le mot de passe et le bouton dans l'ordre des tabulations.
+- La ligne `[email]` d'une limite atteinte nomme la limite (section 6.4), pour la surveillance de la décision C.
+
+**Vérifications** : `npm run verifier` vert (format, lint, typecheck, 61 fichiers et 2 196 tests unitaires, construction, 443 tests de bout en bout sur la base jetable, aucun sauté, ports 3000 et 3101 libres) ; `npm run test:integration` sur `dev` : 23 fichiers, 210 réussis et 1 échec attendu (déjà présent), deux passages de suite.
+
+**À faire par le développeur avant la fusion** : la preuve de la section 13 sur la prévisualisation de la branche.

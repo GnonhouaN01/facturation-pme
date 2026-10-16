@@ -37,8 +37,9 @@ export const LIMITES = {
   "email.destinataire_jour": { maximum: 10, fenetreSecondes: 24 * 60 * 60, par: "destinataire" },
   "email.organisation": { maximum: 40, fenetreSecondes: 24 * 60 * 60, par: "organisation" },
   "email.application": { maximum: 200, fenetreSecondes: 24 * 60 * 60, par: "application" },
-  // Emails sans organisation (vérification, compte existant ; réinitialisation
-  // en 1.3) : jamais plus de la moitié d'email.application. Vérifiée avant
+  // Emails sans organisation (vérification, compte existant ; la
+  // réinitialisation a son propre budget depuis la 1.3, plus bas) : jamais
+  // plus de la moitié d'email.application. Vérifiée avant
   // elle, après les deux limites par destinataire. Fiche :
   // docs/features/inscription.md, section 3.2.
   "email.compte": { maximum: 100, fenetreSecondes: 24 * 60 * 60, par: "application" },
@@ -59,6 +60,20 @@ export const LIMITES = {
   "auth.connexion": { maximum: 10, fenetreSecondes: 15 * 60, par: "adresse_ip" },
   "auth.connexion_compte": { maximum: 5, fenetreSecondes: 15 * 60, par: "adresse_email" },
   "auth.deconnexion": { maximum: 20, fenetreSecondes: 60, par: "adresse_ip" },
+  // Mot de passe oublié (1.3, S-11, T-43) : demandes par adresse IP dans
+  // Better Auth, et par adresse email dans notre gestionnaire, comptée pour
+  // toute adresse (T-07) ; réinitialisations par adresse IP dans Better Auth.
+  // Un tiers peut bloquer la demande d'une adresse une heure (RR-12). Fiche :
+  // docs/features/mot-de-passe.md, section 5.
+  "auth.reinitialisation_demande": { maximum: 4, fenetreSecondes: 60 * 60, par: "adresse_ip" },
+  "auth.reinitialisation_compte": { maximum: 2, fenetreSecondes: 60 * 60, par: "adresse_email" },
+  "auth.reinitialisation": { maximum: 6, fenetreSecondes: 15 * 60, par: "adresse_ip" },
+  // Emails de la réinitialisation (lien et notification), à part
+  // d'email.compte : une vague d'inscriptions ne bloque pas « mot de passe
+  // oublié », et inversement. email.compte + email.reinitialisation restent
+  // sous email.application (RR-13, décision C). Fiche :
+  // docs/features/mot-de-passe.md, section 6.4.
+  "email.reinitialisation": { maximum: 50, fenetreSecondes: 24 * 60 * 60, par: "application" },
 } as const satisfies Record<string, Limite>;
 
 // Valeur comptée par les limites « par application » : un seul compte Gmail

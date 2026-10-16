@@ -99,7 +99,9 @@ describe("apresReinitialisation : rappel onPasswordReset (section 4.2)", () => {
       marquer?: () => Promise<void>;
     } = {},
   ) {
-    const planifierNotification = vi.fn(options.planifier ?? (async () => {}));
+    const planifierNotification = vi.fn<(donnees: { user: { email: string } }) => Promise<void>>(
+      options.planifier ?? (async () => {}),
+    );
     const supprimerJetons = vi.fn(options.supprimer ?? (async () => 1));
     const marquerVerifiee = vi.fn(options.marquer ?? (async () => {}));
     const apres = creerApresReinitialisation({

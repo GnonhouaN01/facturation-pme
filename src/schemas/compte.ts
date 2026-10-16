@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  JETON_REINITIALISATION,
   LONGUEUR_MAX_MOT_DE_PASSE,
   LONGUEUR_MAX_NOM,
   LONGUEUR_MIN_MOT_DE_PASSE,
@@ -45,4 +46,15 @@ export const schemaConnexion = z.strictObject({
 export const schemaDeconnexion = z.strictObject({});
 export const schemaVerification = z.strictObject({
   jeton: z.string().max(LONGUEUR_MAX_JETON).regex(JETON_VERIFICATION),
+});
+
+// Mot de passe oublié (1.3) : la demande ne porte que l'adresse (ni
+// redirectTo, ni callbackURL) ; la réinitialisation, le jeton lu dans le
+// fragment du lien et le nouveau mot de passe, dont la longueur minimale est
+// vérifiée à part (mot_de_passe_trop_court, jeton intact). Fiche :
+// docs/features/mot-de-passe.md, section 2.1.
+export const schemaDemandeReinitialisation = z.strictObject({ email });
+export const schemaReinitialisation = z.strictObject({
+  jeton: z.string().regex(JETON_REINITIALISATION),
+  motDePasse,
 });

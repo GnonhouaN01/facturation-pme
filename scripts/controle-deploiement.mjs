@@ -282,6 +282,10 @@ export async function controlerSite(adresse, { detail = false } = {}) {
   const lien = () => `/lien/devis/${randomBytes(32).toString("base64url")}`;
   const tacheInconnue = `/api/taches/${randomBytes(8).toString("hex")}`;
   const authInconnu = () => `/api/auth/${randomBytes(8).toString("hex")}`;
+  // 1.3 : jeton forgé de la forme de generateId(24) de Better Auth.
+  const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const jetonReinitialisation = () =>
+    [...randomBytes(24)].map((octet) => ALPHABET[octet % ALPHABET.length]).join("");
   const [accueil, accueilBis, tableau, tableauForge, absente, lien1, lien2] = [
     await lire(origine, "/"),
     await lire(origine, "/"),
@@ -298,6 +302,11 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     await lire(origine, "/compte"),
     await lire(origine, "/compte", cookieForge()),
   ];
+  // 1.3 : les pages publiques du mot de passe oublié.
+  const [oubli, lienReinitialisation] = [
+    await lire(origine, "/mot-de-passe-oublie"),
+    await lire(origine, "/lien/reinitialisation"),
+  ];
   const [tacheSans, tacheForgee, tacheAbsente] = [
     await lire(origine, "/api/taches/quotidienne"),
     await lire(origine, "/api/taches/quotidienne", undefined, autorisationForgee()),
@@ -310,10 +319,12 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     await lire(origine, "/api/auth/organization/get-full-organization"),
     // 1.2 : la lecture de session reste fermée (S-82).
     await lire(origine, "/api/auth/get-session"),
+    // 1.3 : le lien de Better Auth, jeton dans le chemin, reste fermé.
+    await lire(origine, `/api/auth/reset-password/${jetonReinitialisation()}?callbackURL=%2F`),
     await lire(origine, authInconnu()),
   ];
-  // Décision 1 de la 1.1, étendue par la 1.2 : en production, les cinq POST
-  // des comptes répondent comme un chemin inexistant de /api/auth.
+  // Décision 1 de la 1.1, étendue par la 1.2 et la 1.3 : en production, les
+  // sept POST des comptes répondent comme un chemin inexistant de /api/auth.
   const comptes = [];
   for (const chemin of [
     "/api/auth/sign-up/email",
@@ -321,6 +332,8 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     "/api/auth/verify-email",
     "/api/auth/sign-in/email",
     "/api/auth/sign-out",
+    "/api/auth/request-password-reset",
+    "/api/auth/reset-password",
     authInconnu(),
   ]) {
     comptes.push(await lire(origine, chemin, undefined, undefined, "POST"));
@@ -344,6 +357,8 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     ["lien", lien1, 404, [lien1, lien2]],
     ["connexion", connexion, 200, [connexion]],
     ["compte", compte, 404, [compte, compteForge]],
+    ["mot-de-passe-oublie", oubli, 200, [oubli]],
+    ["lien-reinitialisation", lienReinitialisation, 200, [lienReinitialisation]],
   ];
   for (const [nom, reponse, attendu, lues] of pages) {
     controler(`${nom}:statut`, [reponse], statut(attendu));

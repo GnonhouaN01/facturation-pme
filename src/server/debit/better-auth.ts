@@ -22,6 +22,9 @@ export const CHEMINS_LIMITES = {
   // 1.2 (docs/features/connexion.md, section 3).
   "/sign-in/email": "auth.connexion",
   "/sign-out": "auth.deconnexion",
+  // 1.3 (docs/features/mot-de-passe.md, section 5).
+  "/request-password-reset": "auth.reinitialisation_demande",
+  "/reset-password": "auth.reinitialisation",
 } as const satisfies Record<string, NomLimite>;
 
 export type RegleBetterAuth = { window: number; max: number };

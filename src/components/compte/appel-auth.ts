@@ -35,8 +35,16 @@ const RAISONS: ReadonlySet<string> = new Set<RaisonAuth>([
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 
+// 1.3 : demande et réinitialisation du mot de passe
+// (docs/features/mot-de-passe.md, section 7).
 export type PointAuth =
-  "/sign-up/email" | "/send-verification-email" | "/verify-email" | "/sign-in/email" | "/sign-out";
+  | "/sign-up/email"
+  | "/send-verification-email"
+  | "/verify-email"
+  | "/sign-in/email"
+  | "/sign-out"
+  | "/request-password-reset"
+  | "/reset-password";
 
 export async function appelerAuth(point: PointAuth, corps: unknown): Promise<ReponseAuth> {
   try {

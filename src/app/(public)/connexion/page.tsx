@@ -21,8 +21,14 @@ export default async function PageConnexion() {
       <h1 className="font-heading text-[2rem] leading-9.5 font-semibold tracking-[-0.02em] text-foreground">
         {TEXTES.titre}
       </h1>
-      <div className="rounded-lg border border-border bg-card p-6">
-        <FormulaireConnexion />
+      <div className="flex flex-col gap-2">
+        <div className="rounded-lg border border-border bg-card p-6">
+          <FormulaireConnexion />
+        </div>
+        {/* 1.3 : mot de passe oublié (docs/features/mot-de-passe.md, section 7). */}
+        <Link href="/mot-de-passe-oublie" className={`self-start ${LIEN}`}>
+          {TEXTES.motDePasseOublie}
+        </Link>
       </div>
       <div className="flex flex-col gap-1">
         <p className="text-[0.9375rem] leading-6 text-muted-foreground">

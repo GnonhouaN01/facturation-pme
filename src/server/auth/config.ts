@@ -11,8 +11,13 @@ import { reglesBetterAuth, stockageBetterAuth } from "../debit/better-auth";
 import { LIMITES } from "../debit/limites";
 import { env } from "../env";
 
-import { planifierEmailCompteExistant, planifierEmailVerification } from "./emails";
+import {
+  planifierEmailCompteExistant,
+  planifierEmailReinitialisation,
+  planifierEmailVerification,
+} from "./emails";
 import { consignerAuth } from "./journal";
+import { apresReinitialisation, empreinteJetonReinitialisation } from "./reinitialisation";
 
 // Options partagées avec l'instance de test (src/server/db/outils-test/),
 // qui y ajoute le module de test de Better Auth. Ce module n'est jamais
@@ -64,6 +69,24 @@ export const optionsAuth = {
     minPasswordLength: 12,
     maxPasswordLength: 128,
     onExistingUserSignUp: planifierEmailCompteExistant,
+    // Mot de passe oublié (1.3) : lien en fragment, valable 30 minutes ;
+    // toutes les sessions fermées après le changement (S-17) ; rappel qui
+    // notifie, supprime les autres jetons et marque l'adresse vérifiée.
+    // Fiche : docs/features/mot-de-passe.md, sections 3 et 4.
+    sendResetPassword: planifierEmailReinitialisation,
+    resetPasswordTokenExpiresIn: 30 * 60,
+    revokeSessionsOnPasswordReset: true,
+    onPasswordReset: apresReinitialisation,
+  },
+  // Jeton de réinitialisation stocké sous son empreinte (S-15), seule
+  // surcharge : la vérification de l'adresse n'écrit aucune ligne (JWT), et la
+  // 1.4 choisira pour ses codes. Fiche : docs/features/mot-de-passe.md,
+  // section 3.2.
+  verification: {
+    storeIdentifier: {
+      default: "plain",
+      overrides: { "reset-password:": { hash: empreinteJetonReinitialisation } },
+    },
   },
   emailVerification: {
     sendOnSignUp: true,
