@@ -60,6 +60,11 @@ export type DependancesPointsEntree = {
   // vrai si une session est encore lisible (suppression avalée par Better
   // Auth, docs/features/connexion.md, section 4.2).
   sessionEncoreLisible: (entetes: Headers) => Promise<boolean>;
+  // Révocation en base de la session du cookie reçu, après une connexion
+  // réussie : Better Auth 1.7.7 crée la nouvelle session sans toucher à
+  // l'ancienne (signInEmail), qui resterait valide jusqu'à son terme.
+  // Correctif de la 1.2, docs/features/connexion.md, section 4.3.
+  revoquerSession: (entetes: Headers) => Promise<void>;
   horloge?: Horloge;
 };
 
@@ -250,6 +255,14 @@ export const POINTS_ENTREE_OUVERTS: Readonly<Record<string, PointEntree>> = Obje
         return { ok: true, cookies };
       }
       return { raison: "identifiants_incorrects" };
+    },
+    // Après une connexion réussie seulement : l'ancienne session du
+    // navigateur est révoquée avant que le nouveau cookie parte. En échec :
+    // « erreur », aucun cookie ; la nouvelle session, dont le jeton n'a pas
+    // quitté le serveur, reste inutilisable et sera purgée à son terme.
+    verifier: async (entetes, dependances) => {
+      await dependances.revoquerSession(entetes);
+      return true;
     },
   },
   // F-002, déconnexion (1.2) : Better Auth supprime la session et efface le

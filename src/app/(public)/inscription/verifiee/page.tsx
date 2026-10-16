@@ -6,6 +6,9 @@ import { TEXTES_COMPTE } from "@/textes/compte";
 
 // Fin de UC-01 : l'adresse est vérifiée, la session ouverte. La page ne lit
 // pas la session : elle ne dit rien de plus à qui l'ouvrirait directement.
+// Seule page de l'inscription qui ne redirige pas un utilisateur connecté
+// (correctif de la 1.2) : elle s'adresse justement à celui dont la
+// vérification vient d'ouvrir la session.
 // Fiche : docs/features/inscription.md, section 5.1.
 export default function PageInscriptionVerifiee() {
   return (

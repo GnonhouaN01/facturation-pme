@@ -155,7 +155,9 @@ Sans cookie, ou avec un cookie inconnu : `{ ok: true }` (rien à fermer). Après
 
 #### 4.3 Cookie
 
-Réglages de la 1.1 inchangés : `HttpOnly`, `SameSite=Lax`, `Secure` en `https` (préfixe `__Secure-`, constaté sur la prévisualisation de la 1.1). La connexion crée toujours une nouvelle session avec un nouveau jeton : un jeton posé avant la connexion n'est jamais repris (fixation de session, T-03). Une connexion alors qu'une session existe déjà en crée une seconde ; l'ancienne reste valable jusqu'à son terme et sera visible en 1.5.
+Réglages de la 1.1 inchangés : `HttpOnly`, `SameSite=Lax`, `Secure` en `https` (préfixe `__Secure-`, constaté sur la prévisualisation de la 1.1). La connexion crée toujours une nouvelle session avec un nouveau jeton : un jeton posé avant la connexion n'est jamais repris (fixation de session, T-03).
+
+**Reconnexion depuis un navigateur connecté** (correctif de la 1.2, constat sur la prévisualisation du 2026-10-16). Lu dans `node_modules/better-auth/dist/api/routes/sign-in.mjs` : `signInEmail` crée la nouvelle session (`createSession`) sans lire ni révoquer celle du cookie reçu, que notre gestionnaire ne lui transmet d'ailleurs pas ; l'ancienne restait valide en base jusqu'à son terme. Retenu : après une connexion **réussie**, notre gestionnaire révoque en base la session du cookie reçu (`revoquerSession`, `internalAdapter.deleteSession` du jeton du cookie), puis renvoie le nouveau cookie. Une connexion échouée ne révoque rien : une faute de frappe ne déconnecte pas, et la révocation ne dépend jamais de l'existence d'un compte. Révocation en échec : `erreur` avec incident, aucun cookie ; la nouvelle session, dont le jeton n'a jamais quitté le serveur, reste inutilisable et disparaît à la purge des sessions expirées. Écartées : révoquer avant l'appel à Better Auth (une tentative échouée déconnecterait) ; fermer toutes les sessions de l'utilisateur (relève de la 1.5 et de S-17, au changement de mot de passe). Les sessions ouvertes depuis d'autres navigateurs restent valables, visibles et révocables en 1.5.
 
 #### 4.4 Purge des sessions expirées (S-63)
 
@@ -181,7 +183,7 @@ Aucun utilisateur n'a d'organisation avant la 2.1, et toute page de `(app)/` exi
 | Gabarit de `(app)/` | `(app)` | Bouton « Se déconnecter » en bas de la barre latérale (et du menu replié sous 768 px) |
 | `/inscription/verifiee` | `(public)` | Lien vers `/compte` (la vérification ouvre une session) |
 
-La page `/connexion` ne lit pas la session : un utilisateur déjà connecté voit le formulaire (section 4.3). Formulaires affichés seulement après hydratation, `<noscript>` sinon, comme en 1.1 (décision par défaut 4 de la PR 2 : un formulaire HTML partirait en `GET`, mot de passe dans l'adresse). Interface selon `docs/DESIGN-SYSTEM.md` (compétence `interface`), textes dans `src/textes/compte.ts`, vérifiée à 390 et 1280 px. `/connexion` entre dans le projet `mobile-390` de Playwright, comme `inscription`.
+**Utilisateur connecté** (correctif de la 1.2, constat sur la prévisualisation du 2026-10-16) : `/connexion`, `/connexion/nouveau-lien`, `/inscription` et `/inscription/envoyee` appellent `redirigerSiConnecte` (`src/server/actions/exposer.ts`), qui lit la session côté serveur et redirige vers `/compte` (307). Sans session, avec une session invalide ou une lecture en échec, la page s'affiche comme avant, au même document : rien ne dépend de l'existence d'un compte. Ne redirigent pas : `/inscription/verifiee`, qui s'adresse justement à l'utilisateur dont la vérification vient d'ouvrir la session (UC-01, étape 5), et `/lien/verification` (zone par lien). Le test d'inventaire vérifie l'appel dans chaque page concernée. Formulaires affichés seulement après hydratation, `<noscript>` sinon, comme en 1.1 (décision par défaut 4 de la PR 2 : un formulaire HTML partirait en `GET`, mot de passe dans l'adresse). Interface selon `docs/DESIGN-SYSTEM.md` (compétence `interface`), textes dans `src/textes/compte.ts`, vérifiée à 390 et 1280 px. `/connexion` entre dans le projet `mobile-390` de Playwright, comme `inscription`.
 
 #### 5.3 Après la connexion
 
@@ -347,10 +349,14 @@ Dans cet ordre, chacun vu en échec avant le code.
 24. [x] **Gabarit connecté** — `e2e/affichage-connecte.spec.ts` (outil de la section 8.2) : vérifications de la section 8.3 à 1280, 390 et 360 px, focus au clavier, captures.
 25. [x] **Contrôle après déploiement** — `e2e/controle-deploiement.spec.ts`, serveur factice : `comptes:*` échoue si l'un des cinq `POST` diffère d'un chemin inexistant ; `auth:identique` échoue si `/get-session` diffère ; `/compte` contrôlé comme `/tableau-de-bord`.
 26. [x] **Organisation de test, conditions de la décision 4** — `e2e/organisation-e2e.spec.ts` (faux `Pool`, sans base), un test par condition : aucun fichier de `src/` ne l'importe ; sans `CI` ni `E2E_BASE_JETABLE`, avec `E2E_BASE=dev`, ou avec un hôte autre que `127.0.0.1` ou `localhost` : saut annoncé par un message explicite, aucune connexion ouverte ; `DATABASE_URL_MIGRATION` jamais prise, `.env.local` jamais lu, utilisateur autre que `app_facturation` refusé ; identifiants différents d'une exécution à l'autre ; suppression par `id = ANY($1::uuid[])` de la liste exacte, sans `LIKE` ; refus si `VERCEL_ENV` est défini, pour toute valeur, sans connexion ; adresse hors de l'exécution refusée. `scripts/e2e-base-jetable.test.mjs` : `E2E_BASE_JETABLE=1` transmis à Playwright en mode jetable seulement.
+27. [x] **Utilisateur connecté redirigé** (correctif) — `exposer.test.ts` (`redirigerSiConnecte` : session valide, absente, lecture en échec), `inventaire.test.ts` (appel dans chaque page concernée, sauf « Adresse vérifiée »), `e2e/connexion.spec.ts` aux deux largeurs : connecté, chaque page mène à `/compte` ; « Adresse vérifiée » et `/lien/verification` restent ; en HTML brut, 307 vers `/compte` avec une session valide, même statut et même document sans cookie, avec un cookie forgé, aléatoire ou vide.
+28. [x] **Reconnexion : ancienne session révoquée** (correctif) — `points-entree.test.ts` (après Better Auth, seulement sur succès, échec de la révocation : `erreur` sans cookie, jamais sur les autres points) ; `points-entree.attaque.test.ts` (ni en production ni sur une origine refusée) ; `gestionnaire.test.ts` (`deleteSession` du jeton du cookie) ; `connexion.integration.test.ts` (ancienne session supprimée en base, nouvelle lisible ; échec : l'ancienne reste) ; `e2e/connexion.spec.ts` aux deux largeurs (ancien cookie rejoué : page « introuvable » ; nouveau : `/compte`).
 
 ### Vérifications manuelles (développeur)
 
 - [ ] Essai sur la prévisualisation, adresse propre du déploiement (« Découpage en PR ») ; journaux du déploiement sans adresse ni jeton.
+- [ ] Correctif : connecté, ouvrir `/connexion`, `/connexion/nouveau-lien`, `/inscription` et `/inscription/envoyee` : chacune mène à `/compte` ; `/inscription/verifiee` s'affiche. Déconnecté, ou cookie de session supprimé, les quatre pages s'affichent normalement.
+- [ ] Correctif : connecté dans un navigateur, copier la valeur du cookie `__Secure-better-auth.session_token` ; se reconnecter (après déconnexion du seul onglet, ou par un `POST /api/auth/sign-in/email` portant ce cookie) ; dans une fenêtre privée, poser l'ancienne valeur : `/compte` répond « introuvable ».
 
 ## Fichiers concernés
 
@@ -388,7 +394,8 @@ Dans cet ordre, chacun vu en échec avant le code.
 - **Blocage d'un compte par un tiers** (T-43) : 5 requêtes bloquent la connexion d'une adresse 15 minutes, renouvelables (section 3), sans rien apprendre sur l'existence du compte. Risque résiduel RR-12 de `THREATS.md` (décision 5).
 - **Durée au-delà du plancher** : une base lente rend l'écart mesurable (section 2.2), comme en 1.1.
 - **Reconnexion hebdomadaire** : une session ne dure que 7 jours, même active (décision 3).
-- **Session antérieure gardée** : se reconnecter ne ferme pas la session précédente du même navigateur ou d'un autre ; visible et révocable en 1.5.
+- **Sessions d'autres navigateurs gardées** : se reconnecter révoque la session du navigateur qui se reconnecte (section 4.3), pas celles des autres navigateurs ; visibles et révocables en 1.5.
+- **Vérification d'une autre adresse depuis un navigateur connecté** : la vérification ouvre une nouvelle session sans révoquer celle du cookie reçu (le gestionnaire ne transmet pas le cookie à `/verify-email`). Cas rare (une seconde inscription vérifiée dans le même navigateur), sans élévation de droits ; à traiter avec la 1.5.
 - **Pages inertes en production** jusqu'à la 1.3 : `/connexion` y affiche une erreur à l'envoi (section 1.3).
 - **Ligne `[auth] warn` par échec** : un essai en masse remplit le journal technique d'autant de lignes, bornées par les limites de la section 3.
 
@@ -449,3 +456,13 @@ Le 2026-10-14, une seule PR (branche `feat/1.2-connexion`) : commits `docs(1.2):
 **Point prévu par la 0.6, non repris (reporté au jalon 2, fiche dédiée, décision du 2026-10-16)** : `socle-interface.md` (section 2.2) prévoyait qu'en 1.2, `connexion_requise` redirige vers `/connexion` avec l'adresse de retour. Non fait : la réponse « introuvable » reste, pour `(app)/` comme pour `(compte)/`, comme décidé dans cette fiche. Les tests de la 0.6 et le contrôle après déploiement reposent sur ce 404. Le nom de l'utilisateur dans la barre latérale et le scénario « base injoignable avec une session valide » passent au jalon 2 (« Reporté »).
 
 **Vérifications** : `npm run verifier` vert (format, lint, typecheck, 59 fichiers et 1 968 tests unitaires, construction, 381 tests de bout en bout sur la base jetable, aucun sauté, ports 3000 et 3101 libres) ; `npm run test:integration` sur `dev` : 22 fichiers, 194 réussis et 1 échec attendu (déjà présent).
+
+### Correctif du 2026-10-16 (constat sur la prévisualisation)
+
+Un utilisateur connecté pouvait ouvrir `/connexion` et `/inscription` ; une reconnexion laissait l'ancienne session valide en base. Corrigé dans la même PR : sections 4.3 et 5.2, tests 27 et 28.
+
+**Phase rouge** (commit `test(1.2)` du correctif) : 8 tests unitaires en échec (`redirigerSiConnecte` absente ; pages sans l'appel ; aucune révocation après la connexion, ni par le gestionnaire), 1 d'intégration (ancienne session encore lisible après la reconnexion), 6 de bout en bout aux deux largeurs (pages affichées au lieu de rediriger, en navigateur comme en HTML brut ; ancien cookie encore accepté). Passaient avant le code, et pourquoi : les cas « rien n'est révoqué » (échecs, autres points, production, origine refusée, sans cookie) et « connexion échouée : l'ancienne session reste », puisque rien n'était révoqué ; les démonstrations de l'inventaire ; `RANGS` à 18 (outillage).
+
+**Tests modifiés** : appels de `creerTraitementAuth` des tests de la 1.1 (nouvelle dépendance exigée par le type, sans effet) ; `RANGS` passe de 16 à 18 (deux comptes de bout en bout de plus), le rang 15 « limite », inutilisé, devient « redirection ».
+
+**Docker** : il n'était pas démarré à la reprise. L'assistant a lancé Docker Desktop sur le poste pour la base jetable.

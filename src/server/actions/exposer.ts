@@ -3,7 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import { headers } from "next/headers";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { z } from "zod";
 
 import { lireSession } from "../auth/session";
@@ -94,6 +94,24 @@ export async function lireComptePourPage<T>(
   }
   if (session === null) notFound();
   return lire({ utilisateurId: session.utilisateurId });
+}
+
+// Pages de connexion et d'inscription (correctif de la 1.2) : un utilisateur
+// connecté, adresse vérifiée, va sur /compte. La décision ne dépend que du
+// cookie de session de la requête, jamais de l'existence d'un compte : sans
+// session, avec une session invalide ou une lecture en échec (consignée sans
+// cause), la page s'affiche comme avant. Fiche : docs/features/connexion.md,
+// section 5.2.
+export async function redirigerSiConnecte(): Promise<void> {
+  const entetes = new Headers(await headers());
+  let session: Awaited<ReturnType<typeof lireSession>>;
+  try {
+    session = await lireSession(entetes);
+  } catch (erreur) {
+    traduireErreur(erreur, "compte.redirection");
+    return;
+  }
+  if (session !== null) redirect("/compte");
 }
 
 // Message fixe : ni l'incident, ni la cause, ni la raison (S-85, T-35).

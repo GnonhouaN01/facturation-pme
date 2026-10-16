@@ -18,8 +18,9 @@ import { creerTraitementAuth, jetonDeSession } from "./points-entree";
 // Better Auth (findSession), et non par auth.api.getSession : celle-ci, ne
 // trouvant plus la session, demande l'effacement du cookie, que l'extension
 // nextCookies ajoute à notre réponse, même quand la déconnexion a échoué
-// (constaté à l'implémentation). Fiche : docs/features/connexion.md,
-// sections 3 et 4.2.
+// (constaté à l'implémentation). Une connexion réussie révoque l'ancienne
+// session du cookie reçu par deleteSession (correctif de la 1.2). Fiche :
+// docs/features/connexion.md, sections 3, 4.2 et 4.3.
 export const traiterRequeteAuth = creerTraitementAuth({
   traiter: (requete) => auth.handler(requete),
   origine: env.BETTER_AUTH_URL,
@@ -29,5 +30,10 @@ export const traiterRequeteAuth = creerTraitementAuth({
     const contexte = await auth.$context;
     const jeton = jetonDeSession(entetes.get("cookie"), contexte.authCookies.sessionToken.name);
     return jeton !== null && (await contexte.internalAdapter.findSession(jeton)) !== null;
+  },
+  revoquerSession: async (entetes) => {
+    const contexte = await auth.$context;
+    const jeton = jetonDeSession(entetes.get("cookie"), contexte.authCookies.sessionToken.name);
+    if (jeton !== null) await contexte.internalAdapter.deleteSession(jeton);
   },
 });
