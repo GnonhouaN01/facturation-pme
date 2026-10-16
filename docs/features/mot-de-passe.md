@@ -339,7 +339,22 @@ Aucune intervention ne remet un compteur à zéro à la main : la limite est une
 
 ### 13. Preuve sur la prévisualisation (PR 1, développeur)
 
-Comme la section 7 de la 1.1 : variables de prévisualisation limitées à la branche `feat/1.3-mot-de-passe` (`GMAIL_*`, `EMAIL_TRANSPORT=smtp`, `EMAIL_DESTINATAIRES_AUTORISES` avec l'adresse du développeur), adresse propre du déploiement. Demande de réinitialisation pour un compte vérifié ; email reçu, lien en fragment ; nouveau mot de passe compromis refusé, puis lien encore valable ; nouveau mot de passe accepté ; notification reçue ; session de l'autre navigateur fermée ; second usage du lien : « Ce lien n'est plus valable » ; demande pour une adresse inconnue : même écran, aucun email. Journaux sans adresse ni jeton. Variables retirées après la fusion.
+Comme la section 7 de la 1.1 : variables de prévisualisation limitées à une branche (`GMAIL_*`, `EMAIL_TRANSPORT=smtp`, `EMAIL_DESTINATAIRES_AUTORISES`), adresse propre du déploiement. Demande de réinitialisation pour un compte vérifié ; email reçu, lien en fragment ; nouveau mot de passe compromis refusé, puis lien encore valable ; nouveau mot de passe accepté ; notification reçue ; session de l'autre navigateur fermée ; second usage du lien : « Ce lien n'est plus valable » ; demande pour une adresse inconnue : même écran, aucun email. Journaux sans adresse ni jeton. Variables retirées après la preuve.
+
+#### 13.1 Fusion avant la preuve
+
+La PR 1 (#50) a été fusionnée dans `main` avant cette preuve. Sans exposition : les comptes restent fermés en production (`COMPTES_OUVERTS_EN_PRODUCTION` à `false`), les sept `POST` y répondent comme un chemin inexistant, et le contrôle après déploiement le vérifie (`comptes:*`). Le correctif CodeQL (jetons forgés tirés par `randomInt` de `node:crypto`, au lieu d'un octet modulo 62, dans `scripts/controle-deploiement.mjs` et `e2e/auth.attaque.spec.ts`) est inclus dans cette fusion.
+
+La preuve se fait donc sur la prévisualisation de la branche `fix/1.3-preuve`, créée depuis `main` après la fusion :
+
+- variables de prévisualisation limitées à la branche `fix/1.3-preuve` (champ « Preview Branch » de Vercel) : `GMAIL_UTILISATEUR` et `GMAIL_MOT_DE_PASSE_APPLICATION` (second compte, Sensitive), `EMAIL_TRANSPORT=smtp`, et `EMAIL_DESTINATAIRES_AUTORISES` exactement `ngolognonhoua@gmail.com,mataderleii@gmail.com` (virgule, sans espace ni virgule finale) ;
+- inscription et demandes avec ces adresses exactes : la liste autorisée compare la partie locale telle quelle (points et `+` compris), seul le domaine passe en minuscules ;
+- la limite `email.destinataire` compte en revanche les variantes Gmail comme une seule boîte (minuscules, partie après `+` et points retirés) : 3 emails par heure et 10 par jour pour chacune des deux adresses, vérification, réinitialisation et « Tentative d'inscription » confondues ; la notification n'entre pas dans la limite par destinataire (section 6.4) ;
+- après la preuve : variables retirées de la branche, branche fusionnée avec ses résultats.
+
+#### 13.2 Résultats
+
+À remplir par le développeur.
 
 ### Alternatives écartées
 
