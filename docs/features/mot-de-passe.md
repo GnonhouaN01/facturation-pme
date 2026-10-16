@@ -339,7 +339,37 @@ Aucune intervention ne remet un compteur à zéro à la main : la limite est une
 
 ### 13. Preuve sur la prévisualisation (PR 1, développeur)
 
-Comme la section 7 de la 1.1 : variables de prévisualisation limitées à la branche `feat/1.3-mot-de-passe` (`GMAIL_*`, `EMAIL_TRANSPORT=smtp`, `EMAIL_DESTINATAIRES_AUTORISES` avec l'adresse du développeur), adresse propre du déploiement. Demande de réinitialisation pour un compte vérifié ; email reçu, lien en fragment ; nouveau mot de passe compromis refusé, puis lien encore valable ; nouveau mot de passe accepté ; notification reçue ; session de l'autre navigateur fermée ; second usage du lien : « Ce lien n'est plus valable » ; demande pour une adresse inconnue : même écran, aucun email. Journaux sans adresse ni jeton. Variables retirées après la fusion.
+Comme la section 7 de la 1.1 : variables de prévisualisation limitées à une branche (`GMAIL_*`, `EMAIL_TRANSPORT=smtp`, `EMAIL_DESTINATAIRES_AUTORISES`), adresse propre du déploiement. Demande de réinitialisation pour un compte vérifié ; email reçu, lien en fragment ; nouveau mot de passe compromis refusé, puis lien encore valable ; nouveau mot de passe accepté ; notification reçue ; session de l'autre navigateur fermée ; second usage du lien : « Ce lien n'est plus valable » ; demande pour une adresse inconnue : même écran, aucun email. Journaux sans adresse ni jeton. Variables retirées après la preuve.
+
+#### 13.1 Fusion avant la preuve
+
+La PR 1 (#50) a été fusionnée dans `main` avant cette preuve. Sans exposition : les comptes restent fermés en production (`COMPTES_OUVERTS_EN_PRODUCTION` à `false`), les sept `POST` y répondent comme un chemin inexistant, et le contrôle après déploiement le vérifie (`comptes:*`). Le correctif CodeQL (jetons forgés tirés par `randomInt` de `node:crypto`, au lieu d'un octet modulo 62, dans `scripts/controle-deploiement.mjs` et `e2e/auth.attaque.spec.ts`) est inclus dans cette fusion.
+
+La preuve se fait donc sur la prévisualisation de la branche `fix/1.3-preuve`, créée depuis `main` après la fusion :
+
+- variables de prévisualisation limitées à la branche `fix/1.3-preuve` (champ « Preview Branch » de Vercel) : `GMAIL_UTILISATEUR` et `GMAIL_MOT_DE_PASSE_APPLICATION` (second compte, Sensitive), `EMAIL_TRANSPORT=smtp`, et `EMAIL_DESTINATAIRES_AUTORISES` exactement `ngolognonhoua@gmail.com,mataderleii@gmail.com` (virgule, sans espace ni virgule finale) ;
+- inscription et demandes avec ces adresses exactes : la liste autorisée compare la partie locale telle quelle (points et `+` compris), seul le domaine passe en minuscules ;
+- la limite `email.destinataire` compte en revanche les variantes Gmail comme une seule boîte (minuscules, partie après `+` et points retirés) : 3 emails par heure et 10 par jour pour chacune des deux adresses, vérification, réinitialisation et « Tentative d'inscription » confondues ; la notification n'entre pas dans la limite par destinataire (section 6.4) ;
+- après la preuve : variables retirées de la branche, branche fusionnée avec ses résultats.
+
+#### 13.2 Résultats
+
+Par le développeur, les 2026-10-16 et 2026-10-17, sur la prévisualisation `facturation-nigjmrhuy` de la branche `fix/1.3-preuve`, ouverte par l'adresse propre du déploiement. Conforme.
+
+- **Gmail réel**, envoi depuis `mataderleii@gmail.com` : `ngolognonhoua@gmail.com` reçoit « Tentative d'inscription avec votre adresse », avec les deux liens `/connexion` et `/mot-de-passe-oublie` sur l'origine du déploiement (décision A). Email de réinitialisation : `SPF`, `DKIM` et `DMARC` en `PASS`.
+- **Parcours UC-03** : lien `/lien/reinitialisation#…`, validité de 30 minutes annoncée, fragment effacé à l'ouverture ; mot de passe compromis refusé sans brûler le lien (section 3.3) ; nouveau mot de passe accepté ; email « Votre mot de passe a été modifié » reçu ; lien réutilisé : « Ce lien n'est plus valable » ; connexion avec le nouveau mot de passe.
+- **Utilisateur connecté** : `/mot-de-passe-oublie` redirige vers `/compte` (attendu, section 7).
+- **Limites constatées en réel** : `email.destinataire` (3 par heure et par boîte), avec une ligne `[email]` qui nomme la limite (section 6.4) ; demandes de lien par adresse IP (`auth.reinitialisation_demande`), avec le message « Trop de tentatives ».
+- **Non refaits à la main**, la limite par adresse IP étant atteinte ; couverts par les tests automatiques :
+  - fermeture de toutes les sessions après la réinitialisation : `src/server/db/reinitialisation.integration.test.ts`, « mot de passe changé, toutes les sessions supprimées, notification, autres jetons supprimés » (deux sessions ouvertes avant, aucune après) ; `e2e/mot-de-passe.spec.ts`, parcours UC-03 (session ouverte dans un autre navigateur, `/compte` « introuvable » après) ;
+  - même écran pour une adresse inconnue : `src/server/db/reinitialisation.integration.test.ts`, « compte vérifié, compte non vérifié, adresse inconnue : même réponse, 800 ms au moins ; email pour les deux comptes seulement » ; `e2e/mot-de-passe.spec.ts`, « T-07 : … même écran, même corps de réponse » ; `src/server/auth/points-entree.attaque.test.ts`, « T-07 (1.3) : une seule réponse pour toute demande ».
+- **Journaux du déploiement** : aucune adresse email, aucun jeton, aucune ligne `[Better Auth]` ; seulement des lignes `[email]` au contenu fixe (modèle, raison, limite, identifiant d'incident) et des requêtes en 200, 307 (utilisateur connecté redirigé vers `/compte`) et 429 (limite par adresse IP).
+
+Leçons :
+
+- Une variable de Vercel ajoutée ne s'applique qu'au déploiement suivant : redéployer après tout ajout.
+- Un envoi par le transport `memoire` (prévisualisation avant les variables `smtp`) compte quand même dans les limites `email.*` : il entame les 3 emails par heure de la boîte.
+- Préparer la preuve pour tenir dans 3 emails par heure et par boîte (vérification, demandes, « Tentative d'inscription » confondues ; la notification n'y entre pas), et dans 4 demandes de lien par heure et par adresse IP.
 
 ### Alternatives écartées
 
@@ -409,7 +439,7 @@ Aucune. `verification.identifier` est déjà du texte ; l'empreinte change sa va
 - [x] `compte.existant` et `compte.mot_de_passe_modifie` portent les liens de pages fixes ; aucun modèle n'accepte de lien de l'appelant (décision A).
 - [x] La tâche quotidienne supprime les jetons expirés et garde les autres.
 - [x] `npm run verifier` et `npm run test:integration` verts, sorties montrées.
-- [ ] Preuve de la section 13 faite et notée (développeur).
+- [x] Preuve de la section 13 faite et notée (développeur, 2026-10-16 et 2026-10-17, section 13.2).
 
 ### PR 2
 
@@ -465,7 +495,7 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 22 relèven
 
 ### Vérifications manuelles (développeur)
 
-- [ ] PR 1 : preuve sur la prévisualisation (section 13).
+- [x] PR 1 : preuve sur la prévisualisation (section 13.2).
 - [ ] PR 2 : liste de contrôle (section 12), essai réel et journaux (section 12.1).
 
 ## Fichiers concernés
