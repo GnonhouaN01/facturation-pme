@@ -338,10 +338,10 @@ test.describe("T-55, S-81 et T-43 : réinitialisation", () => {
   const ipAuHasard = () => `10.${randomInt(256)}.${randomInt(256)}.${randomInt(1, 255)}`;
 
   test("GET /reset-password/<jeton> avec callbackURL : identique à un chemin inexistant, aucune redirection", async () => {
-    const jeton = randomBytes(18)
-      .toString("base64")
-      .replaceAll(/[^A-Za-z0-9]/gu, "a")
-      .slice(0, 24);
+    // Tirage uniforme dans l'alphabet de generateId(24) (remplacer « + » et
+    // « / » d'un base64 par une lettre la favoriserait).
+    const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    const jeton = Array.from({ length: 24 }, () => ALPHABET[randomInt(ALPHABET.length)]).join("");
     const reponse = await lire(`/reset-password/${jeton}?callbackURL=%2F`);
     expect(reponse).toEqual(await lire(`${inexistant()}?callbackURL=%2F`));
     expect(reponse.entetes.map(([nom]) => nom)).not.toContain("location");

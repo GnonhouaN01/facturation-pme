@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import { basename } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -282,10 +282,12 @@ export async function controlerSite(adresse, { detail = false } = {}) {
   const lien = () => `/lien/devis/${randomBytes(32).toString("base64url")}`;
   const tacheInconnue = `/api/taches/${randomBytes(8).toString("hex")}`;
   const authInconnu = () => `/api/auth/${randomBytes(8).toString("hex")}`;
-  // 1.3 : jeton forgé de la forme de generateId(24) de Better Auth.
+  // 1.3 : jeton forgé de la forme de generateId(24) de Better Auth. Tirage
+  // uniforme par randomInt (un octet modulo 62 favoriserait les premiers
+  // caractères de l'alphabet).
   const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   const jetonReinitialisation = () =>
-    [...randomBytes(24)].map((octet) => ALPHABET[octet % ALPHABET.length]).join("");
+    Array.from({ length: 24 }, () => ALPHABET[randomInt(ALPHABET.length)]).join("");
   const [accueil, accueilBis, tableau, tableauForge, absente, lien1, lien2] = [
     await lire(origine, "/"),
     await lire(origine, "/"),
