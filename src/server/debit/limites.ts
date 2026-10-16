@@ -12,8 +12,16 @@ export type Limite = {
   // chaîne) ; pour les emails (0.7), l'application entière, l'organisation de
   // la transaction ou l'adresse du destinataire, normalisée pour le compteur ;
   // pour les points d'entrée de Better Auth (1.1), l'adresse IP, lue par
-  // Better Auth lui-même et jamais stockée en clair.
-  par: "utilisateur" | "application" | "organisation" | "destinataire" | "adresse_ip";
+  // Better Auth lui-même et jamais stockée en clair ; pour la connexion par
+  // compte (1.2), l'adresse email saisie, normalisée comme un destinataire,
+  // comptée pour toute adresse, avec ou sans compte (T-07).
+  par:
+    | "utilisateur"
+    | "application"
+    | "organisation"
+    | "destinataire"
+    | "adresse_ip"
+    | "adresse_email";
 };
 
 export const LIMITES = {
@@ -43,6 +51,14 @@ export const LIMITES = {
   "auth.verification": { maximum: 10, fenetreSecondes: 10 * 60, par: "adresse_ip" },
   // Tout autre chemin, ouvert plus tard par une fiche : valeur sûre.
   "auth.defaut": { maximum: 30, fenetreSecondes: 60, par: "adresse_ip" },
+  // Connexion et déconnexion (1.2, S-11, T-01) : par adresse IP dans Better
+  // Auth ; par compte dans notre gestionnaire, avant Better Auth. Toutes les
+  // tentatives comptent. Un tiers peut bloquer un compte 15 minutes sans
+  // apprendre s'il existe (RR-12). Fiche : docs/features/connexion.md,
+  // section 3.
+  "auth.connexion": { maximum: 10, fenetreSecondes: 15 * 60, par: "adresse_ip" },
+  "auth.connexion_compte": { maximum: 5, fenetreSecondes: 15 * 60, par: "adresse_email" },
+  "auth.deconnexion": { maximum: 20, fenetreSecondes: 60, par: "adresse_ip" },
 } as const satisfies Record<string, Limite>;
 
 // Valeur comptée par les limites « par application » : un seul compte Gmail

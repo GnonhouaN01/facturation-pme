@@ -399,6 +399,188 @@ describe("pages de la zone application", () => {
   });
 });
 
+// Zone (compte) de la 1.2 : pages d'un utilisateur connecté, sans
+// organisation. Chaque page.tsx appelle lireComptePourPage elle-même (le
+// gabarit ne protège pas) ; aucune métadonnée propre ni loading.* dans la
+// zone (le titre fuirait sur la page « introuvable », et notFound()
+// répondrait 200). Même contrôle textuel que pour (app)/. Fiche :
+// docs/features/connexion.md, section 5.1, test 12.
+const ZONE_COMPTE = "(compte)/";
+const APPEL_LIRE_COMPTE = /\blireComptePourPage\s*(<[^>]*>)?\s*\(/;
+const CHARGEMENT = /^loading\.(ts|tsx|js|jsx|mjs|mts)$/;
+const METADONNEES =
+  /\bexport\s+(const\s+metadata\b|(async\s+)?function\s+generateMetadata\b|const\s+generateMetadata\b)/;
+
+function problemesDeLaZoneCompte(sources: readonly Source[]): string[] {
+  const problemes: string[] = [];
+  for (const { chemin, contenu } of sources) {
+    if (!chemin.startsWith(ZONE_COMPTE)) continue;
+    const nom = chemin.split("/").at(-1) ?? "";
+    const code = sansCommentaires(contenu);
+    if (PAGE.test(nom) && !APPEL_LIRE_COMPTE.test(code)) {
+      problemes.push(`${chemin} : page de la zone compte sans lireComptePourPage`);
+    }
+    if (CHARGEMENT.test(nom)) problemes.push(`${chemin} : loading interdit dans la zone compte`);
+    if (METADONNEES.test(code))
+      problemes.push(`${chemin} : métadonnées propres dans la zone compte`);
+  }
+  return problemes;
+}
+
+describe("pages de la zone compte (1.2)", () => {
+  test("dépôt : /compte existe, et chaque page de (compte)/ appelle lireComptePourPage", () => {
+    const sources = sourcesDeApp();
+
+    expect(sources.map(({ chemin }) => chemin)).toContain("(compte)/compte/page.tsx");
+    expect(sources.map(({ chemin }) => chemin)).toContain("(compte)/layout.tsx");
+    expect(problemesDeLaZoneCompte(sources)).toEqual([]);
+  });
+
+  test.each<[string, Source[], string[]]>([
+    [
+      "page qui appelle lireComptePourPage",
+      [
+        {
+          chemin: "(compte)/compte/page.tsx",
+          contenu: "const c = await lireComptePourPage(async (compte) => compte);",
+        },
+      ],
+      [],
+    ],
+    [
+      "page sans lireComptePourPage",
+      [{ chemin: "(compte)/compte/page.tsx", contenu: "export default function P() {}" }],
+      ["(compte)/compte/page.tsx : page de la zone compte sans lireComptePourPage"],
+    ],
+    [
+      "lirePourPage au lieu de lireComptePourPage",
+      [
+        {
+          chemin: "(compte)/compte/page.tsx",
+          contenu: `await lirePourPage("organisation.membres.voir", lire);`,
+        },
+      ],
+      ["(compte)/compte/page.tsx : page de la zone compte sans lireComptePourPage"],
+    ],
+    [
+      "appel seulement dans un commentaire",
+      [
+        {
+          chemin: "(compte)/compte/page.tsx",
+          contenu: "// lireComptePourPage(lire)\nexport default function P() {}",
+        },
+      ],
+      ["(compte)/compte/page.tsx : page de la zone compte sans lireComptePourPage"],
+    ],
+    [
+      "loading.tsx dans la zone",
+      [{ chemin: "(compte)/compte/loading.tsx", contenu: "export default () => null;" }],
+      ["(compte)/compte/loading.tsx : loading interdit dans la zone compte"],
+    ],
+    [
+      "métadonnées propres",
+      [
+        {
+          chemin: "(compte)/compte/page.tsx",
+          contenu:
+            'export const metadata = { title: "Compte" };\nawait lireComptePourPage(async () => null);',
+        },
+        {
+          chemin: "(compte)/layout.tsx",
+          contenu: "export async function generateMetadata() { return {}; }",
+        },
+      ],
+      [
+        "(compte)/compte/page.tsx : métadonnées propres dans la zone compte",
+        "(compte)/layout.tsx : métadonnées propres dans la zone compte",
+      ],
+    ],
+    [
+      "hors de la zone : non concernés",
+      [
+        { chemin: "(public)/connexion/page.tsx", contenu: "export default function P() {}" },
+        { chemin: "(compte)/compte/bouton.tsx", contenu: "export function B() {}" },
+      ],
+      [],
+    ],
+  ])("démonstration, %s", (_nom, sources, attendus) => {
+    expect(problemesDeLaZoneCompte(sources)).toEqual(attendus);
+  });
+});
+
+// Correctif de la 1.2 : chaque page de la connexion et de l'inscription
+// appelle redirigerSiConnecte (un utilisateur connecté va sur /compte), sauf
+// « Adresse vérifiée », qui s'adresse justement à l'utilisateur dont la
+// vérification vient d'ouvrir la session. Fiche : docs/features/connexion.md,
+// section 5.2.
+const PAGES_SANS_SESSION = /^\(public\)\/(connexion|inscription)(\/|$)/;
+const EXCEPTIONS_REDIRECTION = new Set(["(public)/inscription/verifiee/page.tsx"]);
+const APPEL_REDIRIGER = /\bredirigerSiConnecte\s*\(/;
+
+function problemesDeRedirection(sources: readonly Source[]): string[] {
+  return sources
+    .filter(({ chemin }) => PAGES_SANS_SESSION.test(chemin))
+    .filter(({ chemin }) => PAGE.test(chemin.split("/").at(-1) ?? ""))
+    .filter(({ chemin }) => !EXCEPTIONS_REDIRECTION.has(chemin))
+    .filter(({ contenu }) => !APPEL_REDIRIGER.test(sansCommentaires(contenu)))
+    .map(({ chemin }) => `${chemin} : page sans redirigerSiConnecte`);
+}
+
+describe("pages de connexion et d'inscription : utilisateur connecté redirigé (correctif 1.2)", () => {
+  test("dépôt : chaque page concernée appelle redirigerSiConnecte", () => {
+    const sources = sourcesDeApp();
+    const concernees = sources
+      .map(({ chemin }) => chemin)
+      .filter(
+        (chemin) => PAGES_SANS_SESSION.test(chemin) && PAGE.test(chemin.split("/").at(-1) ?? ""),
+      )
+      .sort();
+
+    expect(concernees).toEqual([
+      "(public)/connexion/nouveau-lien/page.tsx",
+      "(public)/connexion/page.tsx",
+      "(public)/inscription/envoyee/page.tsx",
+      "(public)/inscription/page.tsx",
+      "(public)/inscription/verifiee/page.tsx",
+    ]);
+    expect(problemesDeRedirection(sources)).toEqual([]);
+  });
+
+  test.each<[string, Source[], string[]]>([
+    [
+      "page qui appelle redirigerSiConnecte",
+      [{ chemin: "(public)/connexion/page.tsx", contenu: "await redirigerSiConnecte();" }],
+      [],
+    ],
+    [
+      "page sans l'appel",
+      [
+        {
+          chemin: "(public)/inscription/envoyee/page.tsx",
+          contenu: "export default function P() {}",
+        },
+      ],
+      ["(public)/inscription/envoyee/page.tsx : page sans redirigerSiConnecte"],
+    ],
+    [
+      "appel seulement dans un commentaire",
+      [{ chemin: "(public)/connexion/page.tsx", contenu: "// redirigerSiConnecte()" }],
+      ["(public)/connexion/page.tsx : page sans redirigerSiConnecte"],
+    ],
+    [
+      "« Adresse vérifiée », l'accueil et la zone par lien : non concernés",
+      [
+        { chemin: "(public)/inscription/verifiee/page.tsx", contenu: "" },
+        { chemin: "(public)/page.tsx", contenu: "" },
+        { chemin: "lien/verification/page.tsx", contenu: "" },
+      ],
+      [],
+    ],
+  ])("démonstration, %s", (_nom, sources, attendus) => {
+    expect(problemesDeRedirection(sources)).toEqual(attendus);
+  });
+});
+
 // Forme exacte de la route de la tâche quotidienne : un import, un seul
 // export GET, égal à traiterTache. Tout le contrôle vit dans
 // src/server/taches/quotidienne.ts (secret, liste fermée, réponses). Fiche :

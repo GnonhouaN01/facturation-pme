@@ -47,7 +47,9 @@ src/app/
 │   ├── page.tsx             Accueil
 │   ├── connexion/
 │   ├── inscription/         Formulaire ; envoyee/ (vérifiez votre boîte, renvoi) ; verifiee/ (1.1)
+│   ├── connexion/           Formulaire ; nouveau-lien/ (renvoi du lien de confirmation) (1.2)
 │   └── mot-de-passe-oublie/
+├── (compte)/                Pages d'un utilisateur connecté, sans organisation (1.2) : compte/
 ├── (app)/                   Pages avec session obligatoire
 │   ├── layout.tsx           Lit le rôle par lirePourPage, affiche barre latérale et bandeau ; ne protège pas
 │   ├── tableau-de-bord/     page.tsx : page vide (0.6), remplie par la 7.1
@@ -83,12 +85,15 @@ src/app/
 | Zone | Qui y accède | Frontière de confiance |
 |---|---|---|
 | `(public)/` | Tout le monde | F1 |
+| `(compte)/` | Un utilisateur connecté, adresse vérifiée, sans organisation (1.2) | F2 |
 | `(app)/` | Un membre connecté | F2 |
 | `lien/` | Le détenteur d'un jeton | F1, la plus exposée |
 
 Regrouper les pages publiques par lien dans un dossier à part rend visible, d'un coup d'œil, toute la surface accessible sans compte.
 
 **Chaque page de `(app)/` se protège elle-même** (fonctionnalité 0.6) : son `page.tsx` appelle `lirePourPage` (`server/actions/exposer.ts`) avec son droit, même s'il ne lit rien. Le gabarit `(app)/layout.tsx` appelle aussi `lirePourPage`, pour connaître le rôle et les entrées de navigation, mais c'est de l'affichage : un gabarit n'est pas réexécuté à chaque navigation. Sans session, sans adhésion ou sans droit, la réponse est la page « introuvable », statut 404, la même avec ou sans cookie forgé (S-02 porte sur les ressources, `docs/features/controle-deploiement.md`, section 5). Le test d'inventaire (`server/actions/inventaire.test.ts`) vérifie l'appel dans chaque `page.tsx` de la zone. Fiche : `docs/features/socle-interface.md`, sections 2.3 et 2.4.
+
+**Chaque page de `(compte)/` se protège de même** (1.2) : son `page.tsx` appelle `lireComptePourPage` (`server/actions/exposer.ts`), qui ne lit que la session vérifiée et ne donne que l'identifiant de l'utilisateur ; sans session, la page « introuvable ». Aucune métadonnée propre ni `loading.*` dans la zone. Le test d'inventaire le vérifie. Fiche : `docs/features/connexion.md`, section 5.1.
 
 **Les fichiers `actions.ts`** sont les points d'entrée des modifications. Ils ne contiennent aucune règle métier : chaque action y est déclarée à travers la fonction commune de contrôle, puis délègue à un service. Voir la section 3.3.
 
@@ -224,7 +229,7 @@ src/components/
 ├── ui/                      Composants shadcn/ui, copiés dans le projet
 ├── gabarits/                Gabarit de l'application : barre latérale, navigation, bandeau, en-tête de page
 ├── erreurs/                 Contenu des pages « erreur »
-├── compte/                  Formulaires d'inscription et de renvoi, confirmation par lien, champ (1.1)
+├── compte/                  Formulaires d'inscription, de renvoi et de connexion, confirmation par lien, champ, bouton de déconnexion (1.1, 1.2)
 └── clients/, devis/, ...    Composants propres à un domaine
 ```
 
@@ -291,7 +296,7 @@ Ces règles seront vérifiées automatiquement par l'analyse du code, en phase 9
 | `server/db/` | `drizzle-orm`, `pg`, `server/env.ts` | Tout le reste de `server/` |
 | `server/erreurs/` | Rien du projet, sauf entre eux (fonctionnalité 0.6 : `onRequestError` ne charge pas `env.ts`) | Tout le reste du projet |
 | `server/taches/` | `server/debit/debit.ts` (`purgerCompteurs`), `server/db/comptes.ts`, `server/env.ts`, `server/erreurs/` (`code-postgres.ts`, `consigner.ts`), `node:crypto` | Tout le reste du projet |
-| `server/auth/` | `server/db/client.ts` et `server/db/schema/auth.ts` (`config.ts` seulement), `server/debit/`, `server/email/` (`envoyerEmail` dans `emails.ts` seulement, règle T), `server/actions/origine.ts`, `server/env.ts`, `schemas/` (1.1) | `server/db/requetes/`, `server/services/` |
+| `server/auth/` | `server/db/client.ts` et `server/db/schema/auth.ts` (`config.ts` seulement), `server/debit/` (dont `verifierDebit` dans `gestionnaire.ts`, limite par compte, 1.2), `server/email/` (`envoyerEmail` dans `emails.ts` seulement, règle T ; `adressePourCompteur` dans `gestionnaire.ts`, 1.2), `server/actions/origine.ts`, `server/env.ts`, `schemas/` (1.1) | `server/db/requetes/`, `server/services/` |
 | `app/api/auth/[...all]/route.ts` | `server/auth/gestionnaire.ts` seulement (forme exacte, test d'inventaire) | Tout le reste |
 | `schemas/`, `lib/`, `textes/` | Rien du projet, sauf entre eux | `server/`, `app/`, `components/` |
 
@@ -342,7 +347,7 @@ Les dossiers et fichiers de ce document se créent au fur et à mesure, avec la 
 
 | Je veux ajouter... | Il va dans... |
 |---|---|
-| Une page | `src/app/(app)/<domaine>/` ou `src/app/(public)/` |
+| Une page | `src/app/(app)/<domaine>/`, `src/app/(compte)/` (sans organisation, 1.2) ou `src/app/(public)/` |
 | Une action de modification | Déclarée par `declarerAction` dans `src/server/actions/<domaine>.ts` et inscrite dans `registre.ts`, puis exposée par `exposer` dans `src/app/(app)/<domaine>/actions.ts` |
 | Une règle métier | `src/server/services/<domaine>.ts` |
 | Une requête à la base | `src/server/db/requetes/<domaine>.ts` |

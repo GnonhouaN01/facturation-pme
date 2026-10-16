@@ -2,6 +2,13 @@ import { randomBytes, randomInt } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
 
+import {
+  adresseConnexion,
+  connecter,
+  creerCompteVerifie,
+  MOT_DE_PASSE,
+  NOM_COOKIE,
+} from "./compte-verifie";
 import { MOT_DE_PASSE_COMPROMIS_E2E } from "./hibp-simule.mjs";
 
 // /api/auth sur le site construit (T-55, S-81, T-41, S-54). Tout point
@@ -10,7 +17,11 @@ import { MOT_DE_PASSE_COMPROMIS_E2E } from "./hibp-simule.mjs";
 // en-têtes au nonce et à la date près. Les trois points ouverts refusent une
 // origine absente ou étrangère et toute entrée falsifiée ; la sixième
 // inscription d'une même adresse IP reçoit trop_de_requetes, sans délai.
-// Fiche : docs/features/inscription.md, sections 2 et 3, test 14.
+// Fiche : docs/features/inscription.md, sections 2 et 3, test 14. Connexion
+// et déconnexion (1.2) : cinq points ouverts ; /get-session reste fermé, même
+// avec un cookie valide ; la sixième tentative sur un compte, depuis six
+// adresses IP, reçoit trop_de_requetes. Fiche : docs/features/connexion.md,
+// test 22.
 
 const ADRESSE = "http://localhost:3000";
 const BASE = `${ADRESSE}/api/auth`;
@@ -57,8 +68,9 @@ const CHEMINS_FERMES = [
   "/organization/get-full-organization",
   "/organization/create",
   "/organization/remove-member",
-  "/sign-in/email",
-  "/sign-out",
+  // 1.2 (modifié) : /sign-in/email et /sign-out sont ouverts en POST ; leur
+  // GET est vérifié avec les autres points ouverts, plus bas.
+  "/sign-in/social",
   "/get-session",
   "/list-sessions",
   "/revoke-sessions",
@@ -127,8 +139,15 @@ test.describe("T-55 : points d'entrée fermés, indiscernables d'une adresse ine
     }
   });
 
-  test("GET des trois points ouverts : fermé (seul POST est admis)", async () => {
-    for (const chemin of ["/sign-up/email", "/send-verification-email", "/verify-email"]) {
+  // 1.2 (modifié) : cinq points ouverts au lieu de trois.
+  test("GET des cinq points ouverts : fermé (seul POST est admis)", async () => {
+    for (const chemin of [
+      "/sign-up/email",
+      "/send-verification-email",
+      "/verify-email",
+      "/sign-in/email",
+      "/sign-out",
+    ]) {
       expect(await lire(chemin), chemin).toEqual(await lire(inexistant()));
     }
   });
@@ -161,6 +180,23 @@ test.describe("S-81 et entrée falsifiée : refus avant Better Auth", () => {
   ];
 
   for (const [nom, entetes] of ORIGINES) {
+    // 1.2 : la connexion et la déconnexion, refusées de même (S-81, T-17).
+    for (const [chemin, corps] of [
+      ["/sign-in/email", JSON.stringify({ email: "e2e-x@exemple.invalid", motDePasse: "x" })],
+      ["/sign-out", "{}"],
+    ] as const) {
+      test(`POST ${chemin}, ${nom} : refusé`, async () => {
+        const reponse = await lire(chemin, {
+          methode: "POST",
+          entetes: { "content-type": "application/json", ...entetes },
+          corps,
+        });
+
+        expect(reponse.statut).toBe(403);
+        expect(JSON.parse(reponse.corps)).toEqual({ ok: false, raison: "refuse" });
+      });
+    }
+
     test(`POST /sign-up/email, ${nom} : refusé`, async () => {
       const reponse = await lire("/sign-up/email", {
         methode: "POST",
@@ -247,5 +283,41 @@ test.describe("T-41 : la sixième inscription d'une même adresse IP", () => {
       const { corps } = await inscrire(ipAuHasard());
       expect(corps, `essai ${rang}`).toEqual({ ok: false, raison: "mot_de_passe_compromis" });
     }
+  });
+});
+
+// 1.2 : T-01 et T-43, limite auth.connexion_compte (5 par 15 minutes et par
+// adresse email, quelle que soit l'adresse IP) ; S-82, /get-session fermé
+// même avec un cookie de session valide. Fiche : docs/features/connexion.md,
+// sections 1.2 et 3, test 22.
+test.describe("T-01 et S-82 : connexion", () => {
+  const ipAuHasard = () => `10.${randomInt(256)}.${randomInt(256)}.${randomInt(1, 255)}`;
+
+  test("six tentatives sur une adresse depuis six adresses IP : la sixième reçoit trop_de_requetes", async () => {
+    const email = `e2e-limite-${randomBytes(6).toString("hex")}@exemple.invalid`;
+    for (let rang = 1; rang <= 5; rang += 1) {
+      const reponse = await connecter(email, MOT_DE_PASSE, { "x-forwarded-for": ipAuHasard() });
+      expect(reponse.status, `essai ${rang}`).toBe(401);
+      expect(await reponse.json()).toEqual({ ok: false, raison: "identifiants_incorrects" });
+    }
+
+    const reponse = await connecter(email, MOT_DE_PASSE, { "x-forwarded-for": ipAuHasard() });
+
+    expect(reponse.status).toBe(429);
+    expect(await reponse.json()).toEqual({ ok: false, raison: "trop_de_requetes" });
+    expect(reponse.headers.get("x-retry-after")).toBeNull();
+    expect(reponse.headers.get("retry-after")).toBeNull();
+    expect(reponse.headers.getSetCookie()).toEqual([]);
+  });
+
+  test("GET /get-session avec un cookie de session valide : identique à un chemin inexistant", async ({}, info) => {
+    const valeur = await creerCompteVerifie(adresseConnexion(info, "session"));
+    const cookie = `${NOM_COOKIE}=${valeur}`;
+
+    const session = await lire("/get-session", { entetes: { cookie } });
+    const reference = await lire(inexistant(), { entetes: { cookie } });
+
+    expect(session).toEqual(reference);
+    expect(session.corps).toBe("");
   });
 });

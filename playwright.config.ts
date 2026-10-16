@@ -81,6 +81,10 @@ export default defineConfig({
         /(^|\W)accueil\.spec\.ts$/,
         /(^|\W)affichage(-360)?\.spec\.ts$/,
         /(^|\W)inscription\.spec\.ts$/,
+        // 1.2 : connexion et gabarit connecté, aux deux largeurs
+        // (docs/features/connexion.md, tests 19 et 24).
+        /(^|\W)connexion\.spec\.ts$/,
+        /(^|\W)affichage-connecte\.spec\.ts$/,
       ],
       use: { ...devices["Desktop Chrome"], viewport: { width: 390, height: 844 } },
     },

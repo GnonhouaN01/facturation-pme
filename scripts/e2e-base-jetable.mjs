@@ -171,7 +171,12 @@ export async function executer({ env, arguments: args, outils }) {
   for (const signal of SIGNAUX) outils.signaux.on(signal, surSignal);
   try {
     if (mode !== "jetable") {
-      const code = await suivre(process.execPath, argumentsPlaywright, env);
+      // La marque de la base jetable n'est jamais transmise hors de ce mode :
+      // une valeur héritée ferait écrire l'organisation de test ailleurs
+      // (docs/features/connexion.md, section 8.2).
+      const envSansMarque = { ...env };
+      delete envSansMarque.E2E_BASE_JETABLE;
+      const code = await suivre(process.execPath, argumentsPlaywright, envSansMarque);
       return etat.interrompu ? 130 : code;
     }
 
@@ -234,6 +239,7 @@ export async function executer({ env, arguments: args, outils }) {
         DATABASE_URL_MIGRATION: migration,
         DATABASE_URL: application,
       };
+      delete envPreparation.E2E_BASE_JETABLE;
       const preparation = await suivre(process.execPath, [PREPARATION], envPreparation);
       if (preparation !== 0) {
         throw new Error(`${PREFIXE} Préparation de la base en échec (code ${preparation}).`);
@@ -250,7 +256,9 @@ export async function executer({ env, arguments: args, outils }) {
           "(conteneur, rôle, migrations).",
       );
 
-      const envPlaywright = { ...env, DATABASE_URL: application };
+      // E2E_BASE_JETABLE=1 : marque de la base jetable, exigée par
+      // l'organisation de test (e2e/organisation-e2e.ts, 1.2).
+      const envPlaywright = { ...env, DATABASE_URL: application, E2E_BASE_JETABLE: "1" };
       delete envPlaywright.DATABASE_URL_MIGRATION;
       code = await suivre(process.execPath, argumentsPlaywright, envPlaywright);
     } catch (erreur) {

@@ -1,10 +1,13 @@
 import { FormulaireRenvoi } from "@/components/compte/formulaire-renvoi";
 import { TEXTES_COMPTE } from "@/textes/compte";
+import { redirigerSiConnecte } from "@/server/actions/exposer";
 
 // Après l'inscription : le même message pour toute adresse (T-07), et le
 // renvoi du lien (UC-01, 4a). Aucune adresse dans l'adresse de la page.
 // Fiche : docs/features/inscription.md, section 5.1.
-export default function PageInscriptionEnvoyee() {
+export default async function PageInscriptionEnvoyee() {
+  // Utilisateur connecté : /compte (correctif de la 1.2).
+  await redirigerSiConnecte();
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-4 py-12">
       <div className="flex flex-col gap-2">

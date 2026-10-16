@@ -488,7 +488,7 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 11 relèven
 
 ## Reporté
 
-- **1.2** : connexion, déconnexion, `/get-session` si le navigateur en a besoin ; limite de connexion par adresse IP et par email (`DESIGN.md` 3.1, corrigée ici) ; lieu des évènements de compte (création, vérification) ; renvoi automatique de la vérification à la connexion d'un compte non vérifié (`sendOnSignIn`).
+- **1.2** (traité par `docs/features/connexion.md` ; `/get-session` reste fermé, la constante `INSCRIPTION_OUVERTE_EN_PRODUCTION` devient `COMPTES_OUVERTS_EN_PRODUCTION`, le texte de `compte.existant` est revu, l'identifiant d'incident est ajouté) : connexion, déconnexion, `/get-session` si le navigateur en a besoin ; limite de connexion par adresse IP et par email (`DESIGN.md` 3.1, corrigée ici) ; lieu des évènements de compte (création, vérification) ; renvoi automatique de la vérification à la connexion d'un compte non vérifié (`sendOnSignIn`).
 - **1.3** : réinitialisation ; `haveIBeenPwned` sur `/reset-password` ; une réinitialisation sur un compte non vérifié le marque vérifié et ferme toutes ses sessions (pré-appropriation d'adresse, « Limites connues ») ; liens du modèle `compte.existant` vers la connexion et la réinitialisation.
 - **Jalon 4 (S-22)** : notre propre lecture de l'adresse IP, sur l'en-tête confirmé ici.
 - **8.1** : signalement des lignes `[auth] error` au service de suivi.

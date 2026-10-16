@@ -37,6 +37,10 @@ export const LIMITES_TEST = {
   "auth.renvoi_verification": { maximum: 3, fenetreSecondes: 3_600, par: "adresse_ip" },
   "auth.verification": { maximum: 10, fenetreSecondes: 600, par: "adresse_ip" },
   "auth.defaut": { maximum: 30, fenetreSecondes: 60, par: "adresse_ip" },
+  // 1.2 : même raison.
+  "auth.connexion": { maximum: 10, fenetreSecondes: 900, par: "adresse_ip" },
+  "auth.connexion_compte": { maximum: 5, fenetreSecondes: 900, par: "adresse_email" },
+  "auth.deconnexion": { maximum: 20, fenetreSecondes: 60, par: "adresse_ip" },
 } as const satisfies Record<NomLimite, Limite>;
 
 const NOMS = Object.keys(LIMITES_TEST) as NomLimite[];

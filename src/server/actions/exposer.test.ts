@@ -3,8 +3,17 @@ import { notFound, redirect } from "next/navigation";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 
+import { lireSession } from "../auth/session";
+
 import { declarerAction, executerChaine, type DeclarationAction } from "./action";
-import { declarationExposee, ErreurPage, exposer, traduireLecture } from "./exposer";
+import {
+  declarationExposee,
+  ErreurPage,
+  exposer,
+  lireComptePourPage,
+  redirigerSiConnecte,
+  traduireLecture,
+} from "./exposer";
 import type { Resultat } from "./refus";
 
 // L'adaptateur Next.js, sans Next.js : headers() et la chaîne sont remplacés
@@ -12,6 +21,8 @@ import type { Resultat } from "./refus";
 // docs/features/chaine-controles.md, sections 3.2 et 7.
 
 vi.mock("next/headers", () => ({ headers: vi.fn() }));
+// Zone (compte), 1.2 : la session est lue par lireSession, remplacée ici.
+vi.mock("../auth/session", () => ({ lireSession: vi.fn() }));
 // declarerAction est le vrai : il marque les déclarations (PR 3). Seule la
 // chaîne est remplacée.
 vi.mock("./action", async (importOriginal) => ({
@@ -268,5 +279,136 @@ describe("traduireLecture", () => {
     expect(digestDe(seconde)).toMatch(UUID);
     expect(digestDe(premiere)).not.toBe(digestDe(seconde));
     expect((premiere as Error).cause).toBeUndefined();
+  });
+});
+
+// Zone (compte) de la 1.2 : pages d'un utilisateur connecté, sans
+// organisation. Fiche : docs/features/connexion.md, section 5.1, test 12.
+describe("lireComptePourPage", () => {
+  const session = vi.mocked(lireSession);
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+  function leveeDe(fonction: () => Promise<unknown>): Promise<unknown> {
+    return fonction().then(
+      () => {
+        throw new Error("rien n'a été levé");
+      },
+      (erreur: unknown) => erreur,
+    );
+  }
+
+  const digestDe = (erreur: unknown) => (erreur as { digest?: unknown }).digest;
+
+  async function digestNotFound(): Promise<unknown> {
+    try {
+      notFound();
+    } catch (erreur) {
+      return digestDe(erreur);
+    }
+    return undefined;
+  }
+
+  beforeEach(() => {
+    session.mockReset();
+  });
+
+  test("sans session : la page « introuvable » (notFound), lire jamais appelée", async () => {
+    session.mockResolvedValue(null);
+    const lire = vi.fn(async () => "donnees");
+
+    const erreur = await leveeDe(() => lireComptePourPage(lire));
+
+    expect(digestDe(erreur)).toBe(await digestNotFound());
+    expect(lire).not.toHaveBeenCalled();
+  });
+
+  test("avec session : lire ne reçoit que l'identifiant de l'utilisateur, aucune organisation", async () => {
+    session.mockResolvedValue({
+      utilisateurId: "0d6f6c4e-1d1e-4a57-9a51-3f2a7f0b9c11",
+      organisationActiveId: "6f1c3c1e-8a3d-4c5b-9f0e-2d7a1b4c5e6f",
+    });
+    const lire = vi.fn(async (compte: unknown) => compte);
+
+    const lu = await lireComptePourPage(lire);
+
+    expect(lu).toStrictEqual({ utilisateurId: "0d6f6c4e-1d1e-4a57-9a51-3f2a7f0b9c11" });
+    expect(lire).toHaveBeenCalledTimes(1);
+  });
+
+  test("la session est lue avec les en-têtes de la requête", async () => {
+    session.mockResolvedValue(null);
+    await leveeDe(() => lireComptePourPage(async () => null));
+    expect(session).toHaveBeenCalledTimes(1);
+    expect(session.mock.calls[0]?.[0].get("cookie")).toBe("jeton=valeur");
+  });
+
+  test("lecture de la session en échec : ErreurPage avec un incident, sans cause ni message de l'erreur", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    session.mockRejectedValue(new Error("Failed query: select ... params: jeton"));
+    const lire = vi.fn(async () => "donnees");
+
+    const erreur = await leveeDe(() => lireComptePourPage(lire));
+
+    expect(erreur).toBeInstanceOf(ErreurPage);
+    expect(digestDe(erreur)).toMatch(UUID);
+    expect((erreur as Error).message).not.toContain("Failed query");
+    expect((erreur as Error).cause).toBeUndefined();
+    expect(lire).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+});
+
+// Correctif de la 1.2 (constat sur la prévisualisation) : les pages de
+// connexion et d'inscription redirigent un utilisateur connecté vers
+// /compte, par une lecture de session côté serveur. Sans session, ou avec
+// une session illisible, rien ne change. Fiche : docs/features/connexion.md,
+// section 5.2.
+describe("redirigerSiConnecte", () => {
+  const session = vi.mocked(lireSession);
+
+  async function issue(): Promise<unknown> {
+    try {
+      await redirigerSiConnecte();
+      return "affichee";
+    } catch (erreur) {
+      return erreur;
+    }
+  }
+
+  function digestRedirection(): unknown {
+    try {
+      redirect("/compte");
+    } catch (erreur) {
+      return (erreur as { digest?: unknown }).digest;
+    }
+    return undefined;
+  }
+
+  beforeEach(() => {
+    session.mockReset();
+  });
+
+  test("session valide : redirection vers /compte", async () => {
+    session.mockResolvedValue({ utilisateurId: "u", organisationActiveId: null });
+    const erreur = await issue();
+    expect((erreur as { digest?: unknown }).digest).toBe(digestRedirection());
+  });
+
+  test("sans session (absente, invalide, adresse non vérifiée) : la page s'affiche", async () => {
+    session.mockResolvedValue(null);
+    expect(await issue()).toBe("affichee");
+  });
+
+  test("lecture de la session en échec : la page s'affiche, sans erreur ni cause", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    session.mockRejectedValue(new Error("Failed query: select ... params: jeton"));
+    expect(await issue()).toBe("affichee");
+    vi.restoreAllMocks();
+  });
+
+  test("la session est lue avec les en-têtes de la requête", async () => {
+    session.mockResolvedValue(null);
+    await issue();
+    expect(session.mock.calls[0]?.[0].get("cookie")).toBe("jeton=valeur");
   });
 });

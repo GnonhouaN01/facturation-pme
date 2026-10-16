@@ -78,6 +78,12 @@ La 1.6 livre le mécanisme qu'attend la chaîne de contrôles : jusque-là, tout
 
 **Tables de Better Auth (RR-8, `THREATS.md` section 8).** `member`, `user`, `session`, `organization` et `invitation` n'ont pas de règle d'isolation. Dans chaque fonctionnalité du jalon 2, toute requête de l'application sur l'une d'elles filtre explicitement sur l'organisation du contexte, et reçoit un test d'attaque qui tente de lire les lignes de l'autre organisation.
 
+**Reports de la 1.2 au jalon 2** (décision du développeur du 2026-10-16, `docs/features/connexion.md`, « Reporté ») :
+
+- **Redirection vers `/connexion`** d'une page de `(app)/` ou de `(compte)/` ouverte sans session (`connexion_requise`), avec l'adresse de retour limitée à un chemin relatif de l'application, prévue par `docs/features/socle-interface.md`, section 2.2. Fiche dédiée : elle change la réponse sans session de toutes ces pages (aujourd'hui « introuvable », 404), donc les tests S-02 et le contrôle après déploiement qui reposent sur ce 404.
+- **Nom de l'utilisateur dans la barre latérale** (`socle-interface.md`, section 10) : demande une lecture de `user`, table de Better Auth (RR-8).
+- **Scénario « base injoignable avec une session valide »** (`socle-interface.md`, section 4.3) : une vraie session dans le navigateur du serveur en panne.
+
 **Démontrable à la fin :** un gérant crée son entreprise, invite un comptable et un vendeur, et un comptable externe bascule entre deux entreprises sans jamais voir les données de l'une dans l'autre.
 
 ### Jalon 3 — Clients et catalogue
@@ -310,5 +316,5 @@ Cette estimation est une fourchette, pas un engagement. Elle repose sur le rythm
 | Tests sur la branche `dev` | Des tests interrompus peuvent y laisser des données | Identifiants aléatoires, nettoyage systématique, branche recréable à tout moment |
 | Durée | Six à onze mois est long pour un projet personnel | Jalons déployés un par un. Arrêt possible après le jalon 5 avec un produit présentable |
 | Limites des offres gratuites | 100 heures de calcul par mois chez Neon ; 500 emails par jour chez Gmail, 200 par 24 heures dans nos limites | À surveiller à partir du jalon 4 |
-| Dette : identifiant d'incident de l'authentification | Une erreur inattendue de `/api/auth` répond `{ ok: false, raison: "erreur" }` sans identifiant d'incident : la page affiche « Une erreur est survenue. » sans l'identifiant que demande `DESIGN-SYSTEM.md`, et un utilisateur ne peut pas citer l'incident, pourtant écrit au journal technique (`[auth] … incident=…`). Constaté à la PR 2 de la 1.1 (`docs/features/inscription.md`, notes de la PR 2) | Ajouter l'identifiant à la réponse d'erreur de `src/server/auth/points-entree.ts` (le même que la ligne de journal) et l'afficher dans les formulaires de compte. Au plus tard avec la 1.2 (connexion) |
+| Dette soldée : identifiant d'incident de l'authentification | Soldée par la 1.2 : toute réponse « erreur » de `/api/auth` porte l'identifiant de sa ligne `[auth]`, affiché par les formulaires de compte (`docs/features/connexion.md`, section 6) | — |
 | Visibilité des Commerciaux | Jusqu'à la 7.4, un Commercial voit toute l'organisation sur les droits limités au portefeuille (P\* et L\* de la matrice) : la chaîne transmet `ctx.perimetre`, mais aucun service ne filtre encore (`chaine-controles.md`, section 4) | L'application ne reçoit pas de vrais utilisateurs avant la livraison de la 7.4 |

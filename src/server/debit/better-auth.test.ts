@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import { describe, expect, test, vi } from "vitest";
 
+import { POINTS_ENTREE_OUVERTS } from "../auth/points-entree";
 import type { Compteur } from "../db/debit";
 
 import { CHEMINS_LIMITES, creerStockageBetterAuth, reglesBetterAuth } from "./better-auth";
@@ -41,17 +42,29 @@ function regle(nom: NomLimite) {
 const CLE_BETTER_AUTH = "203.0.113.7|/sign-up/email";
 
 describe("reglesBetterAuth : règles par chemin, tirées de LIMITES", () => {
-  test("les trois chemins ouverts, chacun avec sa limite", () => {
+  // Modifié en 1.2 : cinq chemins ouverts au lieu de trois
+  // (docs/features/connexion.md, section 3, test 11).
+  test("les cinq chemins ouverts, chacun avec sa limite", () => {
     expect(CHEMINS_LIMITES).toEqual({
       "/sign-up/email": "auth.inscription",
       "/send-verification-email": "auth.renvoi_verification",
       "/verify-email": "auth.verification",
+      "/sign-in/email": "auth.connexion",
+      "/sign-out": "auth.deconnexion",
     });
     expect(reglesBetterAuth()).toEqual({
       "/sign-up/email": regle("auth.inscription"),
       "/send-verification-email": regle("auth.renvoi_verification"),
       "/verify-email": regle("auth.verification"),
+      "/sign-in/email": regle("auth.connexion"),
+      "/sign-out": regle("auth.deconnexion"),
     });
+  });
+
+  test("les règles couvrent exactement les points d'entrée ouverts", () => {
+    expect(Object.keys(reglesBetterAuth()).sort()).toEqual(
+      Object.keys(POINTS_ENTREE_OUVERTS).sort(),
+    );
   });
 
   test("chaque limite citée est par adresse IP et dure au plus 24 heures", () => {
@@ -63,6 +76,30 @@ describe("reglesBetterAuth : règles par chemin, tirées de LIMITES", () => {
 });
 
 describe("stockage : consume", () => {
+  test("la règle de la limite par compte (adresse email) n'est pas une règle de Better Auth : refusée sans compter", async () => {
+    const { compteur, appels } = compteurFactice();
+    const stockage = creerStockageBetterAuth({
+      limites: LIMITES,
+      compteur,
+      secret: randomBytes(32),
+    });
+    const resultat = await stockage.consume(CLE_BETTER_AUTH, regle("auth.connexion_compte"));
+    expect(resultat).toEqual({ allowed: false, retryAfter: null });
+    expect(appels).toEqual([]);
+  });
+
+  test("la règle de la connexion (auth.connexion) est connue et comptée", async () => {
+    const { compteur, appels } = compteurFactice([1]);
+    const stockage = creerStockageBetterAuth({
+      limites: LIMITES,
+      compteur,
+      secret: randomBytes(32),
+    });
+    const resultat = await stockage.consume("203.0.113.7|/sign-in/email", regle("auth.connexion"));
+    expect(resultat).toEqual({ allowed: true, retryAfter: null });
+    expect(appels[0]?.cle).toMatch(/^auth\.connexion:/u);
+  });
+
   test("la clé est l'empreinte, sous le nom de la limite ; l'adresse IP n'y paraît pas", async () => {
     const { compteur, appels } = compteurFactice();
     const stockage = creerStockageBetterAuth({

@@ -7,10 +7,11 @@ import { inArray } from "drizzle-orm";
 
 import { optionsAuth } from "../../auth/config";
 import { creerEmailsCompte } from "../../auth/emails";
-import { creerTraitementAuth } from "../../auth/points-entree";
+import { creerTraitementAuth, jetonDeSession } from "../../auth/points-entree";
 import { creerStockageBetterAuth } from "../../debit/better-auth";
 import { creerVerificateur } from "../../debit/debit";
 import { LIMITES } from "../../debit/limites";
+import { adressePourCompteur } from "../../email/adresse";
 import { creerPorteEmail } from "../../email/envoi";
 import { env } from "../../env";
 import { creerTransportMemoire, type TransportMemoire } from "../../modules/email/memoire";
@@ -24,12 +25,19 @@ import { compteurDebit } from "../schema/technique";
 // porte d'envoi réelle sur le transport en mémoire (aucun réseau), compteur
 // réel sous un secret aléatoire (clés que ne partage aucun autre test). Ne
 // s'importe que depuis un fichier de test. Fiche :
-// docs/features/inscription.md, « Tests à écrire ».
+// docs/features/inscription.md, « Tests à écrire ». Connexion et déconnexion
+// (1.2) : limite par compte sur le même compteur, déconnexion vérifiée par la
+// session relue avec cette instance, comme gestionnaire.ts. Fiche :
+// docs/features/connexion.md, tests 15 à 17.
 
 export type BancInscription = {
   // Le gestionnaire des points d'entrée, lié à cette instance.
   traiter: (requete: Request) => Promise<Response>;
   transport: TransportMemoire;
+  // La session lue par cette instance de Better Auth (getSession), null si
+  // absente ; et l'utilisateur dont l'adresse n'est pas vérifiée compte comme
+  // absent, comme lireSession.
+  lireSession: (entetes: Headers) => Promise<{ utilisateurId: string; jeton: string } | null>;
   // Exécute les envois planifiés par les rappels (after() en production).
   envoyer: () => Promise<void>;
   // Adresse de test neuve, autorisée par la porte (hors production).
@@ -99,8 +107,27 @@ export function bancInscription(options: { adresses: number }): BancInscription 
       traiter: (requete) => auth.handler(requete),
       origine: env.BETTER_AUTH_URL,
       estProduction: false,
+      limiterCompte: (adresse) =>
+        verificateur.verifierDebit("auth.connexion_compte", adressePourCompteur(adresse)),
+      // Comme gestionnaire.ts : relecture par l'adaptateur, sans cookie écrit.
+      sessionEncoreLisible: async (entetes) => {
+        const contexte = await auth.$context;
+        const jeton = jetonDeSession(entetes.get("cookie"), contexte.authCookies.sessionToken.name);
+        return jeton !== null && (await contexte.internalAdapter.findSession(jeton)) !== null;
+      },
+      // Correctif de la 1.2, comme gestionnaire.ts.
+      revoquerSession: async (entetes) => {
+        const contexte = await auth.$context;
+        const jeton = jetonDeSession(entetes.get("cookie"), contexte.authCookies.sessionToken.name);
+        if (jeton !== null) await contexte.internalAdapter.deleteSession(jeton);
+      },
     }),
     transport,
+    lireSession: async (entetes) => {
+      const lue = await auth.api.getSession({ headers: entetes });
+      if (!lue || lue.user.emailVerified !== true) return null;
+      return { utilisateurId: lue.user.id, jeton: lue.session.token };
+    },
     envoyer: async () => {
       for (const tache of taches.splice(0)) await tache();
     },

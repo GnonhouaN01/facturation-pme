@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { expect, test } from "@playwright/test";
 
-import { ADRESSES_E2E, adresseE2E, ESSAIS_MAX, REPETITIONS_MAX } from "./comptes-e2e";
+import { ADRESSES_E2E, adresseE2E, ESSAIS_MAX, RANGS, REPETITIONS_MAX } from "./comptes-e2e";
 import { nettoyer, REQUETE_NETTOYAGE } from "./nettoyer-comptes";
 
 // Nettoyage des comptes de bout en bout (globalTeardown), sans base : la
@@ -124,12 +124,17 @@ test.describe("nettoyage des comptes de bout en bout", () => {
 
   // Modifié avec la correction de la CI (adresse propre à chaque essai et à
   // chaque répétition) : la liste couvre désormais projets, répétitions,
-  // essais et rangs ; l'assertion reste l'égalité exacte.
+  // essais et rangs ; l'assertion reste l'égalité exacte. 1.2 : nombre de
+  // rangs lu de comptes-e2e.ts (16 au lieu de 10).
+  // Modifié par le correctif de la 1.2 : 18 rangs (redirection, reconnexion).
+  test("RANGS : 18 rangs par projet, essai et répétition (1.2)", () => {
+    expect(RANGS).toBe(18);
+  });
   test("la liste : toutes les adresses que les tests peuvent créer, toutes en .invalid, sans caractère de motif", () => {
     const attendues = ["mobile-390", "ordinateur-1280"].flatMap((projet) =>
       Array.from({ length: REPETITIONS_MAX }, (_, repetition) =>
         Array.from({ length: ESSAIS_MAX }, (_, essai) =>
-          Array.from({ length: 10 }, (_, rang) => adresseE2E(projet, rang, essai, repetition)),
+          Array.from({ length: RANGS }, (_, rang) => adresseE2E(projet, rang, essai, repetition)),
         ),
       ).flat(2),
     );
@@ -146,16 +151,16 @@ test.describe("nettoyage des comptes de bout en bout", () => {
     for (const projet of ["mobile-390", "ordinateur-1280"]) {
       for (let repetition = 0; repetition < REPETITIONS_MAX; repetition += 1) {
         for (let essai = 0; essai < ESSAIS_MAX; essai += 1) {
-          for (let rang = 0; rang < 10; rang += 1) {
+          for (let rang = 0; rang < RANGS; rang += 1) {
             vues.add(adresseE2E(projet, rang, essai, repetition));
           }
         }
       }
     }
-    expect(vues.size).toBe(2 * REPETITIONS_MAX * ESSAIS_MAX * 10);
+    expect(vues.size).toBe(2 * REPETITIONS_MAX * ESSAIS_MAX * RANGS);
     expect(() => adresseE2E("mobile-390", 0, ESSAIS_MAX, 0)).toThrow();
     expect(() => adresseE2E("mobile-390", 0, 0, REPETITIONS_MAX)).toThrow();
-    expect(() => adresseE2E("mobile-390", 10)).toThrow();
+    expect(() => adresseE2E("mobile-390", RANGS)).toThrow();
     expect(() => adresseE2E("autre", 0)).toThrow();
   });
 

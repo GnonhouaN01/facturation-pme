@@ -35,6 +35,14 @@ const motDePasse = z.string().max(LONGUEUR_MAX_MOT_DE_PASSE);
 
 export const schemaInscription = z.strictObject({ nom, email, motDePasse });
 export const schemaRenvoiVerification = z.strictObject({ email });
+// Connexion (1.2) : ni rememberMe, ni callbackURL. Aucune longueur minimale :
+// un mot de passe trop court reçoit la même réponse qu'un mauvais (T-07).
+// Fiche : docs/features/connexion.md, section 1.1.
+export const schemaConnexion = z.strictObject({
+  email,
+  motDePasse: z.string().min(1).max(LONGUEUR_MAX_MOT_DE_PASSE),
+});
+export const schemaDeconnexion = z.strictObject({});
 export const schemaVerification = z.strictObject({
   jeton: z.string().max(LONGUEUR_MAX_JETON).regex(JETON_VERIFICATION),
 });

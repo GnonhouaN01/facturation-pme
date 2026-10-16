@@ -1,6 +1,7 @@
 import { Menu } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { BoutonDeconnexion } from "@/components/compte/bouton-deconnexion";
 import type { EntreeNavigation } from "@/server/autorisation/navigation";
 import { TEXTES_COMMUNS } from "@/textes/commun";
 import { TEXTES_NAVIGATION } from "@/textes/navigation";
@@ -75,10 +76,12 @@ export function GabaritApplication({
             <Navigation entrees={entrees} />
           </div>
         </details>
-        <div className="flex flex-col border-t border-border px-3 pt-3 md:mt-auto">
+        <div className="flex flex-col gap-3 border-t border-border px-3 pt-3 md:mt-auto">
           <span className="text-[0.8125rem] leading-5 text-muted-foreground">
             {TEXTES_NAVIGATION.roles[role]}
           </span>
+          {/* 1.2 : déconnexion (docs/features/connexion.md, section 5.2). */}
+          <BoutonDeconnexion />
         </div>
       </aside>
       <main

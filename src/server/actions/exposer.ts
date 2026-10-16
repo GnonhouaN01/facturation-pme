@@ -3,9 +3,10 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import { headers } from "next/headers";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { z } from "zod";
 
+import { lireSession } from "../auth/session";
 import type { Droit } from "../autorisation/matrice";
 import type { ActionJournal } from "../journal/actions";
 
@@ -19,7 +20,7 @@ import {
   type ResultatLecture,
   type SchemaEntree,
 } from "./action";
-import type { Resultat } from "./refus";
+import { traduireErreur, type Resultat } from "./refus";
 
 // Adaptateur Next.js : la fonction exportée d'un fichier "use server". Lit les
 // en-têtes de la requête, appelle la chaîne, relance les erreurs de contrôle
@@ -70,6 +71,47 @@ export async function lirePourPage<T>(
 ): Promise<T> {
   const entetes = new Headers(await headers());
   return traduireLecture(await etablirContexte({ entetes }, droit, lire));
+}
+
+// Lecture par une page de la zone (compte) (1.2) : un utilisateur connecté,
+// adresse vérifiée, sans organisation ni adhésion. Chaque page.tsx de
+// (compte)/ l'appelle elle-même (le gabarit ne protège pas). Sans session :
+// la page « introuvable », comme lirePourPage ; lecture en échec : la page
+// « erreur », avec un incident, sans cause. lire ne reçoit que l'identifiant
+// de l'utilisateur : aucune donnée d'une organisation n'est lisible par
+// elle. Fiche : docs/features/connexion.md, section 5.1.
+export type ContexteCompte = { utilisateurId: string };
+
+export async function lireComptePourPage<T>(
+  lire: (compte: ContexteCompte) => Promise<T>,
+): Promise<T> {
+  const entetes = new Headers(await headers());
+  let session: Awaited<ReturnType<typeof lireSession>>;
+  try {
+    session = await lireSession(entetes);
+  } catch (erreur) {
+    return traduireLecture<T>(traduireErreur(erreur, "compte.lecture"));
+  }
+  if (session === null) notFound();
+  return lire({ utilisateurId: session.utilisateurId });
+}
+
+// Pages de connexion et d'inscription (correctif de la 1.2) : un utilisateur
+// connecté, adresse vérifiée, va sur /compte. La décision ne dépend que du
+// cookie de session de la requête, jamais de l'existence d'un compte : sans
+// session, avec une session invalide ou une lecture en échec (consignée sans
+// cause), la page s'affiche comme avant. Fiche : docs/features/connexion.md,
+// section 5.2.
+export async function redirigerSiConnecte(): Promise<void> {
+  const entetes = new Headers(await headers());
+  let session: Awaited<ReturnType<typeof lireSession>>;
+  try {
+    session = await lireSession(entetes);
+  } catch (erreur) {
+    traduireErreur(erreur, "compte.redirection");
+    return;
+  }
+  if (session !== null) redirect("/compte");
 }
 
 // Message fixe : ni l'incident, ni la cause, ni la raison (S-85, T-35).

@@ -8,7 +8,7 @@ import { TEXTES_COMPTE } from "@/textes/compte";
 import { TEXTES_RESULTATS } from "@/textes/resultats";
 
 import { appelerAuth } from "./appel-auth";
-import { Bandeau } from "./bandeau";
+import { Bandeau, BandeauErreur } from "./bandeau";
 import { FormulaireRenvoi } from "./formulaire-renvoi";
 
 // Page /lien/verification#<jeton> (UC-01, étapes 4 et 5 ; décision 3). Le
@@ -56,6 +56,7 @@ export function ConfirmationVerification() {
   // undefined : rendu du serveur, avant la lecture du fragment.
   const jeton = useSyncExternalStore(suivreFragment, lireFragment, () => undefined);
   const [etat, setEtat] = useState<Etat>("attente");
+  const [incident, setIncident] = useState<string | undefined>(undefined);
 
   async function confirmer() {
     if (!jeton || etat === "envoi") return;
@@ -67,7 +68,10 @@ export function ConfirmationVerification() {
     }
     if (reponse.raison === "lien_invalide" || reponse.raison === "invalide") setEtat("invalide");
     else if (reponse.raison === "trop_de_requetes") setEtat("trop_de_requetes");
-    else setEtat("erreur");
+    else {
+      setIncident(reponse.raison === "erreur" ? reponse.incident : undefined);
+      setEtat("erreur");
+    }
   }
 
   const invalide = jeton === null || etat === "invalide";
@@ -91,7 +95,7 @@ export function ConfirmationVerification() {
           {etat === "trop_de_requetes" ? (
             <Bandeau etat="danger">{TEXTES_RESULTATS.trop_de_requetes}</Bandeau>
           ) : null}
-          {etat === "erreur" ? <Bandeau etat="danger">{TEXTES_RESULTATS.erreur}</Bandeau> : null}
+          {etat === "erreur" ? <BandeauErreur incident={incident} /> : null}
           <Button
             type="button"
             onClick={confirmer}

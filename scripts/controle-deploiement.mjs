@@ -8,12 +8,14 @@ import { parseArgs } from "node:util";
 // Authorization, sauf un secret forgé, tiré au hasard, sur une requête de
 // /api/taches/quotidienne (page « tache », 8.3,
 // docs/features/tache-quotidienne.md, section 6). Seule exception au GET :
-// quatre POST sans corps, sans Origin, sans cookie, vers les trois points
-// d'entrée de l'inscription et un chemin inexistant de /api/auth (page
-// « inscription », 1.1, docs/features/inscription.md, section 2.3). En
-// production, l'inscription est fermée : les quatre reçoivent la réponse d'un
-// chemin fermé. Ouverte, elle les refuserait avant Better Auth (origine
-// absente) : rien n'est écrit, rien n'est envoyé. Lancé par
+// six POST sans corps, sans Origin, sans cookie, vers les cinq points
+// d'entrée des comptes (inscription 1.1, connexion et déconnexion 1.2) et un
+// chemin inexistant de /api/auth (page « comptes »,
+// docs/features/inscription.md, section 2.3 ; docs/features/connexion.md,
+// section 10). En production, les comptes sont fermés : les six reçoivent la
+// réponse d'un chemin fermé. Ouverts, ils les refuseraient avant Better Auth
+// (origine absente) : rien n'est écrit, rien n'est envoyé. Le cookie forgé
+// sert aussi à /compte (1.2). Lancé par
 // .github/workflows/controle-deploiement.yml après chaque déploiement de
 // production réussi, et par les tests (e2e/controle-deploiement.spec.ts)
 // contre un serveur factice et le site construit en local.
@@ -81,6 +83,9 @@ export const TEXTES_GABARIT = [
   "Comptable",
   "Commercial",
   "Lecteur",
+  // 1.2 : bouton de déconnexion des gabarits de l'application et du compte
+  // (src/textes/compte.ts).
+  "Se déconnecter",
 ];
 
 // Noms du cookie de session de Better Auth, sur http et sur https.
@@ -114,7 +119,7 @@ export function validerAdresse(adresse) {
 
 // Options d'une requête du contrôle : redirection non suivie, sans cookie ni
 // Authorization sauf les valeurs forgées des GET. Un POST (page
-// « inscription » seulement) part sans corps, sans cookie, sans
+// « comptes » seulement) part sans corps, sans cookie, sans
 // Authorization ; fetch n'y ajoute ni Origin ni Content-Type. Toute autre
 // demande lève : la règle ne dépend pas de l'appelant.
 /**
@@ -286,6 +291,13 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     await lire(origine, lien()),
     await lire(origine, lien()),
   ];
+  // 1.2 : la page publique de connexion, et la page de compte sans session et
+  // avec un cookie forgé.
+  const [connexion, compte, compteForge] = [
+    await lire(origine, "/connexion"),
+    await lire(origine, "/compte"),
+    await lire(origine, "/compte", cookieForge()),
+  ];
   const [tacheSans, tacheForgee, tacheAbsente] = [
     await lire(origine, "/api/taches/quotidienne"),
     await lire(origine, "/api/taches/quotidienne", undefined, autorisationForgee()),
@@ -296,18 +308,22 @@ export async function controlerSite(adresse, { detail = false } = {}) {
   const auths = [
     await lire(origine, "/api/auth/organization/list"),
     await lire(origine, "/api/auth/organization/get-full-organization"),
+    // 1.2 : la lecture de session reste fermée (S-82).
+    await lire(origine, "/api/auth/get-session"),
     await lire(origine, authInconnu()),
   ];
-  // Décision 1 de la 1.1 : en production, les trois POST de l'inscription
-  // répondent comme un chemin inexistant de /api/auth.
-  const inscriptions = [];
+  // Décision 1 de la 1.1, étendue par la 1.2 : en production, les cinq POST
+  // des comptes répondent comme un chemin inexistant de /api/auth.
+  const comptes = [];
   for (const chemin of [
     "/api/auth/sign-up/email",
     "/api/auth/send-verification-email",
     "/api/auth/verify-email",
+    "/api/auth/sign-in/email",
+    "/api/auth/sign-out",
     authInconnu(),
   ]) {
-    inscriptions.push(await lire(origine, chemin, undefined, undefined, "POST"));
+    comptes.push(await lire(origine, chemin, undefined, undefined, "POST"));
   }
 
   const resultats = [];
@@ -326,6 +342,8 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     ["tableau-de-bord", tableau, 404, [tableau, tableauForge]],
     ["inexistante", absente, 404, [absente]],
     ["lien", lien1, 404, [lien1, lien2]],
+    ["connexion", connexion, 200, [connexion]],
+    ["compte", compte, 404, [compte, compteForge]],
   ];
   for (const [nom, reponse, attendu, lues] of pages) {
     controler(`${nom}:statut`, [reponse], statut(attendu));
@@ -339,7 +357,7 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     if (!n1 || !n2) return "nonce absent";
     return n1 === n2 ? "même nonce sur deux requêtes" : null;
   });
-  for (const [nom, reponse] of pages.slice(1)) {
+  for (const [nom, reponse] of pages.filter(([, , attendu]) => attendu === 404)) {
     controler(`${nom}:anglais`, [reponse], (r) =>
       ANGLAIS.test(documentServi(r.corps)) ? "texte anglais ou « 404 » dans le document" : null,
     );
@@ -349,6 +367,7 @@ export async function controlerSite(adresse, { detail = false } = {}) {
   for (const [nom, lues] of [
     ["tableau-de-bord", [tableau, tableauForge]],
     ["inexistante", [absente]],
+    ["compte", [compte, compteForge]],
   ]) {
     controler(`${nom}:gabarit`, lues, (...r) => {
       const trouves = TEXTES_GABARIT.filter((texte) => r.some((x) => x.corps.includes(texte)));
@@ -370,6 +389,13 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     "tableau-de-bord:identique",
     tableau,
     tableauForge,
+    ["sans cookie", "cookie forgé"],
+    "statut ou document différent avec un cookie de session forgé",
+  );
+  identique(
+    "compte:identique",
+    compte,
+    compteForge,
     ["sans cookie", "cookie forgé"],
     "statut ou document différent avec un cookie de session forgé",
   );
@@ -417,13 +443,13 @@ export async function controlerSite(adresse, { detail = false } = {}) {
   controler("auth:identique", auths, (...r) =>
     r.every((x) => forme(x) === forme(r[0]))
       ? null
-      : "réponse différente pour un point d'entrée de /organization/* et un chemin inexistant",
+      : "réponse différente pour un point d'entrée fermé (/organization/*, /get-session) et un chemin inexistant",
   );
-  controler("inscription:statut", inscriptions, premierProbleme(statut(404)));
-  controler("inscription:identique", inscriptions, (...r) =>
+  controler("comptes:statut", comptes, premierProbleme(statut(404)));
+  controler("comptes:identique", comptes, (...r) =>
     r.every((x) => forme(x) === forme(r.at(-1)))
       ? null
-      : "un point d'entrée de l'inscription répond autrement qu'un chemin inexistant : inscription ouverte",
+      : "un point d'entrée des comptes répond autrement qu'un chemin inexistant : comptes ouverts",
   );
   return resultats;
 }

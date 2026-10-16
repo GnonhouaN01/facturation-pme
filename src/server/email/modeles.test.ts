@@ -376,4 +376,19 @@ describe("modèles de compte (1.1)", () => {
       false,
     );
   });
+
+  // Dette de la 1.1 : le texte vaut pour un compte vérifié ou non, et renvoie
+  // à la page de connexion (1.2), sans lien (règle 17 ; liens en 1.3). Fiche :
+  // docs/features/connexion.md, section 7, test 13.
+  test("compte.existant : texte de la 1.2, pour un compte vérifié ou non", () => {
+    const texte = TEXTES_EMAILS.modeles["compte.existant"];
+    expect(texte.sujet).toBe("Tentative d'inscription avec votre adresse");
+    expect(texte.corps).toBe(
+      "Quelqu'un a tenté de créer un compte sur Facturation PME avec votre adresse email, qui a déjà un compte. Si c'est vous, connectez-vous depuis la page de connexion de Facturation PME avec votre mot de passe. Si vous n'avez pas encore confirmé votre adresse, demandez un nouveau lien de confirmation depuis cette même page. Sinon, ignorez cet email : votre compte n'a pas été modifié.",
+    );
+    const { corps } = MODELES_EMAIL["compte.existant"].construire({}, { origine: ORIGINE });
+    expect(corps).toContain(texte.corps);
+    expect(corps).not.toMatch(/https?:|\/connexion/u);
+    expect(corps.toLowerCase()).not.toContain("mot de passe oublié");
+  });
 });

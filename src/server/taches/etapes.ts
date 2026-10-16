@@ -1,7 +1,7 @@
 import "server-only";
 
 import { purgerCompteurs } from "../debit/debit";
-import { purgerComptesNonVerifies } from "../db/comptes";
+import { purgerComptesNonVerifies, purgerSessionsExpirees } from "../db/comptes";
 import { codePostgres } from "../erreurs/code-postgres";
 import { classeDe } from "../erreurs/consigner";
 
@@ -12,7 +12,7 @@ import { classeDe } from "../erreurs/consigner";
 // erreur, sa pile, sa cause, ni une donnée (S-54, T-35). Fiche :
 // docs/features/tache-quotidienne.md, sections 3.1 à 3.3.
 
-export type NomEtape = "compteurs_debit" | "comptes_non_verifies";
+export type NomEtape = "compteurs_debit" | "comptes_non_verifies" | "sessions_expirees";
 
 export type Etape = Readonly<{
   nom: NomEtape;
@@ -23,6 +23,8 @@ export type Etape = Readonly<{
 export const ETAPES: readonly Etape[] = Object.freeze([
   Object.freeze({ nom: "compteurs_debit", executer: purgerCompteurs }),
   Object.freeze({ nom: "comptes_non_verifies", executer: purgerComptesNonVerifies }),
+  // 1.2 : sessions expirées (docs/features/connexion.md, section 4.4).
+  Object.freeze({ nom: "sessions_expirees", executer: purgerSessionsExpirees }),
 ] satisfies Etape[]);
 
 const PREFIXE = "[tache]";

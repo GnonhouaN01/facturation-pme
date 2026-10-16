@@ -8,8 +8,8 @@ import { LONGUEUR_MAX_MOT_DE_PASSE, LONGUEUR_MIN_MOT_DE_PASSE } from "@/schemas/
 import { TEXTES_COMPTE } from "@/textes/compte";
 import { TEXTES_RESULTATS } from "@/textes/resultats";
 
-import { appelerAuth, type RaisonAuth } from "./appel-auth";
-import { Bandeau } from "./bandeau";
+import { appelerAuth, type ReponseAuth } from "./appel-auth";
+import { Bandeau, BandeauErreur } from "./bandeau";
 import { Champ } from "./champ";
 import { useHydrate } from "./hydrate";
 
@@ -20,7 +20,15 @@ import { useHydrate } from "./hydrate";
 // « Vérifiez votre boîte ». Sans JavaScript, aucun champ (useHydrate).
 // Fiche : docs/features/inscription.md, section 5.1.
 
-type Erreurs = { nom?: string; email?: string; motDePasse?: string; generale?: string };
+// inattendue : erreur du serveur, affichée avec son identifiant d'incident
+// (1.2, docs/features/connexion.md, section 6).
+type Erreurs = {
+  nom?: string;
+  email?: string;
+  motDePasse?: string;
+  generale?: string;
+  inattendue?: { incident?: string | undefined };
+};
 
 const TEXTES = TEXTES_COMPTE.inscription;
 
@@ -36,8 +44,8 @@ function erreursLocales(nom: string, email: string, motDePasse: string): Erreurs
   return erreurs;
 }
 
-function erreursServeur(raison: RaisonAuth): Erreurs {
-  switch (raison) {
+function erreursServeur(reponse: Exclude<ReponseAuth, { ok: true }>): Erreurs {
+  switch (reponse.raison) {
     case "mot_de_passe_trop_court":
       return { motDePasse: TEXTES_COMPTE.erreurs.motDePasseTropCourt };
     case "mot_de_passe_compromis":
@@ -48,8 +56,10 @@ function erreursServeur(raison: RaisonAuth): Erreurs {
       return { generale: TEXTES_RESULTATS.trop_de_requetes };
     case "refuse":
       return { generale: TEXTES_RESULTATS.refuse };
+    case "erreur":
+      return { inattendue: { incident: reponse.incident } };
     default:
-      return { generale: TEXTES_RESULTATS.erreur };
+      return { inattendue: {} };
   }
 }
 
@@ -77,7 +87,7 @@ export function FormulaireInscription() {
       router.push("/inscription/envoyee");
       return;
     }
-    setErreurs(erreursServeur(reponse.raison));
+    setErreurs(erreursServeur(reponse));
     setEnvoi(false);
   }
 
@@ -92,6 +102,7 @@ export function FormulaireInscription() {
   return (
     <form noValidate onSubmit={soumettre} className="flex flex-col gap-5">
       {erreurs.generale ? <Bandeau etat="danger">{erreurs.generale}</Bandeau> : null}
+      {erreurs.inattendue ? <BandeauErreur incident={erreurs.inattendue.incident} /> : null}
       <Champ
         id="inscription-nom"
         nom="nom"

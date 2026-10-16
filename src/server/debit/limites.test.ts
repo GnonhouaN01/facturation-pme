@@ -21,13 +21,15 @@ describe("LIMITES", () => {
       // 0.7 : trois valeurs de plus, pour les limites d'envoi d'emails
       // (docs/features/envoi-emails.md, section 5.2). 1.1 : adresse_ip, pour
       // les points d'entrée de Better Auth (docs/features/inscription.md,
-      // section 3.2).
+      // section 3.2). 1.2 : adresse_email, pour la limite de connexion par
+      // compte (docs/features/connexion.md, section 3).
       expect([
         "utilisateur",
         "application",
         "organisation",
         "destinataire",
         "adresse_ip",
+        "adresse_email",
       ]).toContain(limite.par);
     },
   );
@@ -153,5 +155,35 @@ describe("limites de l'inscription (1.1)", () => {
 
   test("VALEUR_APPLICATION : valeur fixe des limites par application", () => {
     expect(VALEUR_APPLICATION).toBe("gmail");
+  });
+});
+
+// Fonctionnalité 1.2. Fiche : docs/features/connexion.md, section 3,
+// décision par défaut 4, test 11.
+describe("limites de la connexion (1.2)", () => {
+  const QUINZE_MINUTES = 15 * 60;
+
+  test("valeurs retenues", () => {
+    expect(LIMITES["auth.connexion"]).toStrictEqual({
+      maximum: 10,
+      fenetreSecondes: QUINZE_MINUTES,
+      par: "adresse_ip",
+    });
+    expect(LIMITES["auth.connexion_compte"]).toStrictEqual({
+      maximum: 5,
+      fenetreSecondes: QUINZE_MINUTES,
+      par: "adresse_email",
+    });
+    expect(LIMITES["auth.deconnexion"]).toStrictEqual({
+      maximum: 20,
+      fenetreSecondes: 60,
+      par: "adresse_ip",
+    });
+  });
+
+  test("la limite par compte est plus stricte que la limite par adresse IP (T-01)", () => {
+    expect(LIMITES["auth.connexion_compte"].maximum).toBeLessThan(
+      LIMITES["auth.connexion"].maximum,
+    );
   });
 });

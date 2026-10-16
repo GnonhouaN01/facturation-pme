@@ -158,3 +158,34 @@ describe("1.1 : configuration de Better Auth", () => {
     expect(attributs.secure).toBe(true);
   });
 });
+
+// Fonctionnalité 1.2 : session. Fiche : docs/features/connexion.md,
+// sections 2.3 et 4, test 10.
+describe("1.2 : session", () => {
+  const SEPT_JOURS = 7 * 24 * 60 * 60;
+
+  test("7 jours, jamais prolongée (décision 3)", () => {
+    expect(optionsAuth.session?.expiresIn).toBe(SEPT_JOURS);
+    expect(optionsAuth.session?.disableSessionRefresh).toBe(true);
+  });
+
+  test("aucun cache de session dans un cookie : relue en base à chaque requête", async () => {
+    expect(optionsAuth.session).not.toHaveProperty("cookieCache");
+    const contexte = await auth.$context;
+    expect(contexte.sessionConfig.cookieRefreshCache).toBe(false);
+  });
+
+  test("le contexte de Better Auth applique la durée", async () => {
+    const contexte = await auth.$context;
+    expect(contexte.sessionConfig.expiresIn).toBe(SEPT_JOURS);
+  });
+
+  test("cookie de session : Max-Age de 7 jours, aligné sur la base", async () => {
+    const contexte = await auth.$context;
+    expect(contexte.authCookies.sessionToken.attributes.maxAge).toBe(SEPT_JOURS);
+  });
+
+  test("aucun email de vérification à la connexion d'un compte non vérifié (section 2.3)", () => {
+    expect(optionsAuth.emailVerification).not.toHaveProperty("sendOnSignIn");
+  });
+});

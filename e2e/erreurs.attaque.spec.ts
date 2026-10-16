@@ -5,6 +5,7 @@ import { connect } from "node:net";
 import { type APIRequestContext, type Page, expect, test } from "@playwright/test";
 
 import { TEXTES_COMMUNS } from "../src/textes/commun";
+import { TEXTES_COMPTE } from "../src/textes/compte";
 import { TEXTES_ERREURS } from "../src/textes/erreurs";
 
 import {
@@ -314,7 +315,9 @@ test.describe("T-39 : journal du serveur à la base injoignable", () => {
     // La panne est réelle sur les deux chemins.
     expect(page.status()).toBe(500);
     expect(inscription.status()).toBe(500);
-    expect(await inscription.json()).toEqual({ ok: false, raison: "erreur" });
+    // 1.2 (modifié) : la réponse porte aussi l'identifiant d'incident (dette
+    // de PLAN.md, docs/features/connexion.md, section 6).
+    expect(await inscription.json()).toMatchObject({ ok: false, raison: "erreur" });
 
     // Témoin : la sortie du serveur est bien lue, et ces deux échecs y ont
     // ajouté leurs lignes fixes.
@@ -341,5 +344,50 @@ test.describe("T-39 : journal du serveur à la base injoignable", () => {
     for (const ligne of lignesAuth(sortie)) {
       expect(ligne).toMatch(/^\[auth\] \{"niveau":"(warn|error)","incident":"[0-9a-f-]{36}"\}$/);
     }
+  });
+});
+
+// Dette de PLAN.md (1.2) : une erreur de /api/auth affiche « Une erreur est
+// survenue. » et l'identifiant d'incident, le même que celui de la ligne
+// [auth] écrite dans la sortie du serveur ; ni l'adresse ni le mot de passe
+// n'y apparaissent. Fiche : docs/features/connexion.md, section 6, test 23.
+test.describe("identifiant d'incident, connexion sur le serveur en panne", () => {
+  const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
+
+  test("le formulaire affiche le texte fixe et l'identifiant, présent sur une ligne [auth]", async ({
+    page,
+  }) => {
+    const chemin = process.env.JOURNAL_PANNE_E2E;
+    if (!chemin) throw new Error("JOURNAL_PANNE_E2E absent : playwright.config.ts doit le poser.");
+    const email = `e2e-panne-${randomBytes(6).toString("hex")}@exemple.invalid`;
+    const motDePasse = `Panne-${randomBytes(9).toString("base64url")}`;
+
+    await page.goto(`${ADRESSE_PANNE}/connexion`);
+    await page.getByLabel(TEXTES_COMPTE.connexion.email).fill(email);
+    await page.getByLabel(TEXTES_COMPTE.connexion.motDePasse).fill(motDePasse);
+    const [reponse] = await Promise.all([
+      page.waitForResponse((r) => new URL(r.url()).pathname === "/api/auth/sign-in/email"),
+      page.getByRole("button", { name: TEXTES_COMPTE.connexion.envoyer }).click(),
+    ]);
+    expect(reponse.status()).toBe(500);
+    const corps = (await reponse.json()) as { incident?: string };
+    expect(corps.incident).toMatch(UUID);
+
+    // Modifié : l'annonceur de route de Next.js porte aussi role="alert".
+    const alerte = page.locator("form").getByRole("alert");
+    await expect(alerte).toContainText(TEXTES_ERREURS.erreur);
+    await expect(alerte).toContainText(TEXTES_ERREURS.identifiantIncident);
+    await expect(alerte).toContainText(corps.incident ?? "absent");
+
+    await expect
+      .poll(async () => (await readFile(chemin, "utf8")).includes(corps.incident ?? "absent"), {
+        timeout: 10_000,
+      })
+      .toBe(true);
+    const sortie = await readFile(chemin, "utf8");
+    const ligne = sortie.split("\n").find((l) => l.includes(corps.incident ?? "absent"));
+    expect(ligne).toBe(`[auth] ${JSON.stringify({ niveau: "error", incident: corps.incident })}`);
+    expect(sortie.includes(email)).toBe(false);
+    expect(sortie.includes(motDePasse)).toBe(false);
   });
 });

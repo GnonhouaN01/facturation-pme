@@ -76,7 +76,9 @@ export const PAGES: readonly PageLivree[] = [
       await page.goto("/inscription/verifiee");
       await attendreTitre(page, TEXTES_COMPTE.verifiee.titre);
     },
-    premiereAction: (page) => page.getByRole("link", { name: TEXTES_COMMUNS.revenirAccueil }),
+    // Modifié en 1.2 : le lien vers /compte précède le retour à l'accueil
+    // (docs/features/connexion.md, section 5.2).
+    premiereAction: (page) => page.getByRole("link", { name: TEXTES_COMPTE.verifiee.lienCompte }),
   },
   {
     // Jeton de forme valable, jamais envoyé : le bouton seul est vérifié.
@@ -95,6 +97,32 @@ export const PAGES: readonly PageLivree[] = [
       await attendreTitre(page, TEXTES_COMPTE.verification.lienInvalide);
     },
     premiereAction: (page) => page.getByRole("textbox", { name: TEXTES_COMPTE.renvoi.email }),
+  },
+  // 1.2 : connexion, renvoi du lien depuis la connexion, et /compte sans
+  // session (docs/features/connexion.md, section 5.2).
+  {
+    nom: "connexion",
+    ouvrir: async (page) => {
+      await page.goto("/connexion");
+      await attendreTitre(page, TEXTES_COMPTE.connexion.titre);
+    },
+    premiereAction: (page) => page.getByRole("textbox", { name: TEXTES_COMPTE.connexion.email }),
+  },
+  {
+    nom: "connexion-nouveau-lien",
+    ouvrir: async (page) => {
+      await page.goto("/connexion/nouveau-lien");
+      await attendreTitre(page, TEXTES_COMPTE.renvoi.titre);
+    },
+    premiereAction: (page) => page.getByRole("textbox", { name: TEXTES_COMPTE.renvoi.email }),
+  },
+  {
+    nom: "compte-sans-session",
+    ouvrir: async (page) => {
+      await page.goto("/compte");
+      await attendreTitre(page, TEXTES_ERREURS.introuvable);
+    },
+    premiereAction: (page) => page.getByRole("link", { name: TEXTES_COMMUNS.revenirAccueil }),
   },
   {
     // Second serveur, base injoignable (e2e/serveur-panne.ts).

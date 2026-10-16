@@ -353,4 +353,25 @@ test.describe("base jetable des tests de bout en bout", () => {
     expect(await lancerJetable(f, {}, ["e2e/inscription.spec.ts"])).toBe(0);
     expect(f.lancements.at(-1)!.args.slice(1)).toEqual(["test", "e2e/inscription.spec.ts"]);
   });
+
+  // 1.2, décision 4 : l'organisation de test (e2e/organisation-e2e.ts) n'écrit
+  // que sur la base jetable ou en CI. Le lanceur marque le mode jetable pour
+  // Playwright, et seulement lui ; une marque héritée est retirée dans les
+  // autres modes. Fiche : docs/features/connexion.md, section 8.2, test 26.
+  test("8. E2E_BASE_JETABLE=1 transmis à Playwright en mode jetable seulement", async () => {
+    const jetable = faux();
+    expect(await lancerJetable(jetable)).toBe(0);
+    const playwright = jetable.lancements.find((x) => x.quoi === "playwright")!;
+    expect(playwright.env.E2E_BASE_JETABLE).toBe("1");
+    for (const quoi of ["preparation", "migrations"]) {
+      expect(jetable.lancements.find((x) => x.quoi === quoi)!.env.E2E_BASE_JETABLE).toBeUndefined();
+    }
+
+    for (const env of [{ E2E_BASE: "dev" }, { CI: "true" }]) {
+      const f = faux();
+      expect(await lancerJetable(f, { ...env, E2E_BASE_JETABLE: "1" })).toBe(0);
+      expect(f.lancements).toHaveLength(1);
+      expect("E2E_BASE_JETABLE" in f.lancements[0]!.env, JSON.stringify(env)).toBe(false);
+    }
+  });
 });
