@@ -1,6 +1,6 @@
 # Fonctionnalité : mot de passe oublié, puis ouverture des comptes en production
 
-Statut : brouillon, rédigée le 2026-10-16. Trois choix à trancher par le développeur (section « Décisions ») ; les autres points suivent la recommandation de l'assistant (section « Décisions par défaut »).
+Statut : validée le 2026-10-16. Fiche rédigée le 2026-10-16 ; les trois vrais choix tranchés par le développeur le même jour (section « Décisions »), les autres points selon la recommandation de l'assistant (section « Décisions par défaut »).
 
 Jalon 1, fonctionnalité 1.3 de `docs/PLAN.md`. Taille M. Cas d'utilisation : UC-03. Exigences : F-002 (réinitialisation), S-10, S-11, S-15, S-17, S-54, S-55, S-63, S-81, S-85. Menaces : T-04, T-07, T-39, T-41, T-43, T-55, T-65.
 
@@ -223,7 +223,7 @@ La règle 17 et la parade de T-65 n'admettent que des liens `/lien/` construits 
 - le lien est écrit **dans la construction du modèle**, jamais reçu de l'appelant : `compte.existant` et `compte.mot_de_passe_modifie` gardent `parametres: z.strictObject({})` ;
 - origine de la configuration, comme les deux autres formes.
 
-Un appelant ne peut donc toujours produire aucun lien vers un autre site ni vers une page choisie (T-65). La PR modifie le texte de la règle 17 de `CLAUDE.md` et la parade de T-65 dans `THREATS.md` : « origine de l'application ; chemin `/lien/` construit depuis un jeton, ou page fixe d'une liste fermée ».
+Un appelant ne peut donc toujours produire aucun lien vers un autre site ni vers une page choisie (T-65). Un test prouve qu'une page hors de la liste est refusée (`lienPage` lève), y compris une page proche (`connexion/`, `Connexion`, `../connexion`, `mot-de-passe-oublie?x=1`), et que l'adresse produite commence toujours par l'origine de la configuration. La règle 17 de `CLAUDE.md` et la parade de T-65 dans `THREATS.md` sont réécrites avec les décisions (commit `docs(1.3): décisions`) : « origine de l'application ; chemin `/lien/` construit depuis un jeton, ou page fixe d'une liste fermée écrite dans le modèle ».
 
 #### 6.4 Limites d'envoi : un budget propre à la réinitialisation
 
@@ -236,6 +236,8 @@ Aujourd'hui, `email.compte` (100 par 24 h, 1.1) est partagée par la vérificati
 | `compte.verification`, `compte.existant` | Inchangé : `email.destinataire`, `email.destinataire_jour`, `email.compte`, `email.application` |
 | `compte.reinitialisation` | `email.destinataire`, `email.destinataire_jour`, `email.reinitialisation`, `email.application` |
 | `compte.mot_de_passe_modifie` | `email.reinitialisation`, `email.application` |
+
+**Ligne de journal d'une limite atteinte** (pour la surveillance de la décision C) : la ligne `[email]` des rappels de compte gagne le nom de la limite, valeur d'une liste fermée qui ne désigne personne : `[email] {"modele":"compte.reinitialisation","raison":"limite","limite":"email.reinitialisation","incident":"<uuid>"}`. Toujours ni adresse, ni jeton.
 
 **Notification sans limite par destinataire** (décision par défaut 8) : elle ne part qu'après la consommation d'un jeton, lui-même envoyé sous les limites par destinataire ; elle est donc bornée par elles. Sans cette exception, trois emails dans l'heure vers une adresse (demandes, vérification) feraient taire l'alerte, que quiconque provoque par deux demandes avant d'utiliser un lien dérobé.
 
@@ -311,7 +313,22 @@ Avant de fusionner la PR 2, dans cet ordre. Une case non cochée : on ne fusionn
 1. Le workflow de contrôle après déploiement passe (`comptes:*` à 403).
 2. Essai réel par le développeur, sur le domaine de production, avec sa propre adresse : inscription, email, confirmation, `/compte`, déconnexion, connexion, « Mot de passe oublié », email, nouveau mot de passe, notification reçue, ancienne session fermée.
 3. Journaux du déploiement : lignes `[auth]` et `[email]` fixes seulement ; aucune adresse, aucun jeton.
-4. Compte d'envoi Gmail : aucune alerte ; puis surveillance des journaux `[email] ... "limite"` les jours suivants.
+4. Compte d'envoi Gmail : aucune alerte ; puis surveillance des journaux `[email] ... "limite"` les jours suivants (section 12.3).
+
+#### 12.3 Surveiller les budgets d'emails (RR-13, décision C)
+
+**Où lire.** Tableau de bord de Vercel, projet, onglet « Logs » (journaux d'exécution) ; filtre d'environnement « Production » ; recherche `"raison":"limite"`. Chaque ligne a la forme `[email] {"modele":...,"raison":"limite","limite":...,"incident":...}` (section 6.4). La durée de conservation des journaux de l'offre Hobby est courte (de l'ordre d'une heure, à vérifier dans les réglages du projet) : la lecture se fait le jour même, et une vague se voit tant qu'elle dure. Le compte exact d'une fenêtre se lit sur Neon, branche `production`, table `compteur_debit` : la clé commence par le nom de la limite en clair (`email.compte:`, `email.reinitialisation:`, `email.application:`), suivi d'une empreinte ; la colonne `compte` donne le nombre, `fenetre_debut` le début de la fenêtre.
+
+**Conduite à tenir**, selon la limite nommée :
+
+| Lignes vues | Lecture | Conduite |
+|---|---|---|
+| `email.destinataire` ou `email.destinataire_jour`, quelques-unes | Un utilisateur qui redemande, ou un tiers qui vise une adresse (RR-12) | Rien : bloqué par conception, la fenêtre se vide seule |
+| `email.compte`, en série | Vague d'inscriptions : vérifications bloquées pour tous jusqu'à la fin de la fenêtre (24 h au plus) ; la réinitialisation n'est pas touchée | Noter l'heure et le nombre. Si la vague continue et gêne de vrais utilisateurs : retour arrière (section 12.2), puis fiche de protection |
+| `email.reinitialisation`, en série | Vague de demandes de réinitialisation ou de réinitialisations : plus aucun lien ne part | Même conduite ; vérifier aussi qu'aucune alerte de Google n'est arrivée sur le compte d'envoi |
+| `email.application` | Budget global atteint : plus aucun email de l'application | Retour arrière si la cause n'est pas comprise ; vérifier le compte Gmail (RR-10) |
+
+Aucune intervention ne remet un compteur à zéro à la main : la limite est une protection, et la vider rouvrirait la voie à l'abus.
 
 #### 12.2 Retour arrière
 
@@ -418,8 +435,8 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 22 relèven
 11. [ ] **Rappel d'après réinitialisation** — même fichier, dépendances simulées : notification planifiée, jetons supprimés, adresse marquée vérifiée seulement si `emailVerified` est faux ; chaque dépendance qui lève : aucune exception, une ligne `[auth]` sans identifiant ni adresse, les autres étapes faites.
 12. [ ] **Configuration** — `config.test.ts`, ajouts : `sendResetPassword` est `planifierEmailReinitialisation` ; `resetPasswordTokenExpiresIn` 1 800 ; `revokeSessionsOnPasswordReset` vrai ; `onPasswordReset` est `apresReinitialisation` ; `verification.storeIdentifier` : `default` `"plain"`, une seule surcharge, `reset-password:` ; `haveIBeenPwned` couvre `/reset-password`.
 13. [ ] **Forme du jeton de Better Auth** — `src/server/auth/jeton-reinitialisation-better-auth.test.ts` : `generateId(24)` de la version installée rend 24 caractères `[A-Za-z0-9]` (comme le test de l'adresse IP de la 1.1 : une mise à jour qui le change fait échouer la suite).
-14. [ ] **Emails** — `emails.test.ts` : `planifierEmailReinitialisation` rend la main sans envoyer, ignore `url` même vers un autre site, ne lève jamais ; ordre des limites de la section 6.4 pour les deux nouveaux modèles ; la notification ne vérifie pas les limites par destinataire.
-15. [ ] **Modèles et liens** — `modeles.test.ts` : brique `jetonReinitialisation` ; `lienFragment` par table type → brique (un jeton de vérification refusé pour `reinitialisation`, et l'inverse) ; `lienPage` : liste fermée, toute autre page refusée, aucune requête ni fragment ; textes des trois modèles ; aucun modèle n'a de paramètre de lien.
+14. [ ] **Emails** — `emails.test.ts` : `planifierEmailReinitialisation` rend la main sans envoyer, ignore `url` même vers un autre site, ne lève jamais ; ordre des limites de la section 6.4 pour les deux nouveaux modèles ; la notification ne vérifie pas les limites par destinataire ; une limite atteinte écrit une ligne `[email]` qui nomme la limite, sans adresse ni jeton.
+15. [ ] **Modèles et liens** — `modeles.test.ts` : brique `jetonReinitialisation` ; `lienFragment` par table type → brique (un jeton de vérification refusé pour `reinitialisation`, et l'inverse) ; `lienPage` : liste fermée, toute page hors liste refusée (dont `connexion/`, `Connexion`, `../connexion`, `mot-de-passe-oublie?x=1`, une adresse complète), adresse toujours sur l'origine de la configuration, aucune requête ni fragment ; textes des trois modèles ; aucun modèle n'a de paramètre de lien.
 16. [ ] **Limites** — `limites.test.ts` : trois limites `auth.reinitialisation*` et `email.reinitialisation`, sous 24 h ; aucune règle partagée entre deux limites `auth.*` ; `reglesBetterAuth()` couvre exactement les chemins ouverts qui passent par Better Auth ; somme `email.compte` + `email.reinitialisation` sous `email.application`.
 17. [ ] **Pages** — `inventaire.test.ts` : `/mot-de-passe-oublie` appelle `redirigerSiConnecte` ; `/lien/reinitialisation` ne lit pas la session. `appel-auth.test.ts` : raisons de la réinitialisation reconnues.
 
@@ -467,32 +484,32 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 22 relèven
 | `src/server/actions/inventaire.test.ts` | Pages de la 1.3 |
 | `e2e/*.spec.ts`, `playwright.config.ts` | Nouveaux tests ; `mot-de-passe-oublie` dans `mobile-390` |
 | `scripts/controle-deploiement.mjs` | Sept `POST` (PR 1), `403 refuse` (PR 2), nouvelles pages |
-| `CLAUDE.md` (règle 17, contrôle, comptes), `docs/THREATS.md` (T-65, RR-12, 7.2, 10), `docs/STRUCTURE.md` 7 (`auth/config.ts` importe `db/comptes.ts`), `docs/PLAN.md`, `docs/features/controle-deploiement.md`, `docs/features/connexion.md` (limite close), `docs/CONFIGURATION.md` | Documents |
+| `CLAUDE.md` (règle 17, contrôle, comptes), `docs/THREATS.md` (T-65, RR-12, RR-13, 7.2, 10), `docs/STRUCTURE.md` 7 (`auth/config.ts` importe `db/comptes.ts`), `docs/PLAN.md`, `docs/features/controle-deploiement.md`, `docs/features/connexion.md` (limite close), `docs/CONFIGURATION.md` | Documents |
 
 ## Reporté
 
 - **1.4** : test « la double authentification reste exigée après une réinitialisation » (T-04, UC-03 « Abus ») ; stockage des codes dans `verification`.
-- **1.5** : affichage des sessions ; la réinitialisation les ferme toutes dès la 1.3.
-- **1.6 ou paramètres du compte** : changement du mot de passe depuis une session (`/change-password`), avec `haveIBeenPwned` et la même révocation ; modification du nom.
+- **1.5** : affichage des sessions ; la réinitialisation les ferme toutes dès la 1.3. **Correction du nom saisi par un tiers** : le compte récupéré par une réinitialisation garde le nom choisi par le pré-propriétaire (section 4.3, décision B) ; la 1.5 donne à l'utilisateur le moyen de le corriger.
+- **1.6 ou paramètres du compte** : changement du mot de passe depuis une session (`/change-password`), avec `haveIBeenPwned` et la même révocation.
 - **8.1** : signalement des lignes `[email] ... "limite"` et `[auth] error` au service de suivi.
 
 ## Limites connues
 
 - **Blocage de la réinitialisation par un tiers** : 2 demandes bloquent une adresse une heure, renouvelables (section 5), sans rien apprendre ; ajouté à RR-12.
-- **Budgets d'emails épuisables** : depuis quelques adresses IP, un attaquant épuise `email.compte` (vérifications) en un jour ; `email.reinitialisation` en est séparé, et inversement. Avec beaucoup d'adresses IP, il épuise aussi `email.reinitialisation` (50) : plus aucun lien ne part jusqu'à la fin de la fenêtre (décision C).
+- **Budgets d'emails épuisables** (RR-13, décision C) : depuis quelques adresses IP, un attaquant épuise `email.compte` (vérifications) en un jour ; `email.reinitialisation` en est séparé, et inversement. Avec beaucoup d'adresses IP, il épuise aussi `email.reinitialisation` (50) : plus aucun lien ne part jusqu'à la fin de la fenêtre. Surveillance et conduite : section 12.3.
 - **Révocation en échec après le changement** : le mot de passe est changé, les sessions peuvent vivre ; la réponse est `erreur` ; une nouvelle réinitialisation les ferme (section 4.1).
-- **Nom choisi par le pré-propriétaire** : gardé par le compte que le titulaire récupère (section 4.3), jusqu'à une page de modification du nom.
+- **Nom choisi par le pré-propriétaire** : gardé par le compte que le titulaire récupère (section 4.3), jusqu'à sa correction en 1.5 (« Reporté »).
 - **Lien dans « Messages envoyés »** (RR-9) : 30 minutes, usage unique, supprimé au premier succès.
 - **Durée au-delà du plancher** : une base lente rend l'écart mesurable, comme en 1.1 et 1.2.
 - **Deux appels à Have I Been Pwned** par réinitialisation réussie (section 3.3).
 
 ## Décisions
 
-À prendre par le développeur. Recommandation de l'assistant en premier.
+Prises par le développeur le 2026-10-16.
 
-- **A. Liens vers des pages fixes dans les emails** (section 6.3). Recommandé : `lienPage` avec une liste fermée de deux pages, écrites dans le modèle, jamais fournies par l'appelant ; règle 17 et T-65 réécrites dans la PR. Autre choix : aucun lien, le texte renvoie « à la page de connexion de Facturation PME ».
-- **B. Réinitialisation d'un compte non vérifié** (section 4.3). Recommandé : l'email part, et le succès marque l'adresse vérifiée (prévu par la 1.1). Autre choix : l'email part, l'adresse reste non vérifiée, le titulaire confirme ensuite par le renvoi du lien (une étape de plus, aucune écriture de plus).
-- **C. Risque accepté à l'ouverture** (section 6.4, « Limites connues »). Recommandé : ouvrir avec les budgets séparés, et inscrire le risque d'épuisement des budgets d'emails comme risque résiduel (RR-13), surveillé par les lignes `[email] ... "limite"`. Autre choix : retarder l'ouverture jusqu'à une protection contre les adresses IP nombreuses (aucune n'est prévue avant le jalon 4, S-22).
+- **A. Liens vers des pages fixes dans les emails** (section 6.3) : `lienPage` accepté. Liste fermée de deux pages (`/connexion`, `/mot-de-passe-oublie`), écrite dans le modèle ; adresse toujours construite sur l'origine de l'application ; jamais de page ni de paramètre fournis par l'appelant ; un test prouve qu'une page hors de la liste est refusée. Règle 17 de `CLAUDE.md` et parade de T-65 réécrites.
+- **B. Réinitialisation d'un compte non vérifié** (section 4.3) : le succès marque l'adresse vérifiée. La correction du nom saisi par un tiers est reportée à la 1.5 (« Reporté »).
+- **C. Budget `email.reinitialisation`** (50 par 24 h) et **RR-13** acceptés (section 6.4). Surveillance des lignes `[email] ... "limite"` et conduite à tenir : section 12.3.
 
 ## Décisions par défaut
 
