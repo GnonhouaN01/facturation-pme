@@ -8,14 +8,14 @@ import { parseArgs } from "node:util";
 // Authorization, sauf un secret forgé, tiré au hasard, sur une requête de
 // /api/taches/quotidienne (page « tache », 8.3,
 // docs/features/tache-quotidienne.md, section 6). Seule exception au GET :
-// six POST sans corps, sans Origin, sans cookie, vers les cinq points
-// d'entrée des comptes (inscription 1.1, connexion et déconnexion 1.2) et un
-// chemin inexistant de /api/auth (page « comptes »,
-// docs/features/inscription.md, section 2.3 ; docs/features/connexion.md,
-// section 10). En production, les comptes sont fermés : les six reçoivent la
-// réponse d'un chemin fermé. Ouverts, ils les refuseraient avant Better Auth
-// (origine absente) : rien n'est écrit, rien n'est envoyé. Le cookie forgé
-// sert aussi à /compte (1.2). Lancé par
+// sept POST sans corps, sans Origin, sans cookie, vers les sept points
+// d'entrée des comptes (inscription 1.1, connexion et déconnexion 1.2, mot
+// de passe oublié 1.3 ; page « comptes »). Les comptes sont ouverts en
+// production depuis la PR 2 de la 1.3 : chacun doit répondre exactement le
+// refus d'origine, 403 { ok: false, raison: "refuse" }, que le gestionnaire
+// rend avant de lire le corps et avant Better Auth. Rien n'est écrit, rien
+// n'est compté, rien n'est envoyé (docs/features/mot-de-passe.md,
+// section 11). Le cookie forgé sert aussi à /compte (1.2). Lancé par
 // .github/workflows/controle-deploiement.yml après chaque déploiement de
 // production réussi, et par les tests (e2e/controle-deploiement.spec.ts)
 // contre un serveur factice et le site construit en local.
@@ -90,6 +90,10 @@ export const TEXTES_GABARIT = [
 
 // Noms du cookie de session de Better Auth, sur http et sur https.
 const COOKIES_SESSION = ["better-auth.session_token", "__Secure-better-auth.session_token"];
+
+// Réponse du gestionnaire de /api/auth à un POST sans Origin (S-81), avant
+// toute lecture du corps (docs/features/mot-de-passe.md, section 11).
+const REFUS_ORIGINE = '{"ok":false,"raison":"refuse"}';
 
 const ANGLAIS = /\b404\b|not found|could not be found/i;
 const DELAI_REQUETE = 15_000;
@@ -325,8 +329,8 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     await lire(origine, `/api/auth/reset-password/${jetonReinitialisation()}?callbackURL=%2F`),
     await lire(origine, authInconnu()),
   ];
-  // Décision 1 de la 1.1, étendue par la 1.2 et la 1.3 : en production, les
-  // sept POST des comptes répondent comme un chemin inexistant de /api/auth.
+  // Comptes ouverts (1.3, PR 2) : les sept POST des comptes, sans Origin,
+  // reçoivent le refus d'origine.
   const comptes = [];
   for (const chemin of [
     "/api/auth/sign-up/email",
@@ -336,7 +340,6 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     "/api/auth/sign-out",
     "/api/auth/request-password-reset",
     "/api/auth/reset-password",
-    authInconnu(),
   ]) {
     comptes.push(await lire(origine, chemin, undefined, undefined, "POST"));
   }
@@ -448,8 +451,9 @@ export async function controlerSite(adresse, { detail = false } = {}) {
 
   // /api/auth (1.1) : les points fermés de /organization/* et un chemin
   // inexistant, la même réponse (statut, corps, Content-Type), 404 au corps
-  // vide. Puis l'inscription, fermée en production : les trois POST comme le
-  // POST d'un chemin inexistant. Rien de ces réponses n'est affiché.
+  // vide. Puis les comptes, ouverts : les sept POST reçoivent exactement le
+  // refus d'origine, en JSON, sans cookie. Aucune ligne de détail : rien de
+  // ces réponses n'est affiché.
   controler("auth:statut", auths, premierProbleme(statut(404)));
   controler("auth:politique", auths, premierProbleme(verifierPolitique));
   controler("auth:entetes", auths, premierProbleme(verifierEntetes));
@@ -462,12 +466,21 @@ export async function controlerSite(adresse, { detail = false } = {}) {
       ? null
       : "réponse différente pour un point d'entrée fermé (/organization/*, /get-session) et un chemin inexistant",
   );
-  controler("comptes:statut", comptes, premierProbleme(statut(404)));
-  controler("comptes:identique", comptes, (...r) =>
-    r.every((x) => forme(x) === forme(r.at(-1)))
-      ? null
-      : "un point d'entrée des comptes répond autrement qu'un chemin inexistant : comptes ouverts",
+  controler("comptes:statut", comptes, premierProbleme(statut(403)));
+  controler(
+    "comptes:refus",
+    comptes,
+    premierProbleme((r) => {
+      if (r.corps !== REFUS_ORIGINE) return "corps autre que le refus d'origine";
+      if (!/^application\/json\b/.test(r.entetes.get("content-type") ?? "")) {
+        return "type autre que JSON";
+      }
+      return r.entetes.has("set-cookie") ? "cookie posé" : null;
+    }),
   );
+  controler("comptes:politique", comptes, premierProbleme(verifierPolitique));
+  controler("comptes:entetes", comptes, premierProbleme(verifierEntetes));
+  controler("comptes:fuite", comptes, (...r) => verifierFuite(r));
   return resultats;
 }
 

@@ -610,7 +610,9 @@ test.describe("contrôle après déploiement, serveur factice", () => {
     ["tache-en-anglais", ["tache:anglais"]],
     ["auth-organisation-ouverte", ["auth:identique", "auth:statut"]],
     ["auth-organisation-distingue", ["auth:identique"]],
-    ["auth-x-powered-by", ["auth:entetes"]],
+    // 1.3, PR 2 : l'en-tête est posé sur toute réponse de /api/auth, les
+    // sept POST des comptes compris.
+    ["auth-x-powered-by", ["auth:entetes", "comptes:entetes"]],
     ["auth-en-anglais", ["auth:anglais"]],
     ["session-ouverte", ["auth:identique", "auth:statut"]],
     ["connexion-500", ["connexion:statut"]],

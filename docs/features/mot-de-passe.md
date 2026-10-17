@@ -520,9 +520,9 @@ Aucune. `verification.identifier` est déjà du texte ; l'empreinte change sa va
 
 ### PR 2
 
-- [ ] Hors de toute configuration, les sept `POST` se comportent en production comme en prévisualisation (test avec `estProduction` vrai).
-- [ ] Contrôle après déploiement : `comptes:*` exige `403 refuse` pour les sept `POST` sans corps ni `Origin` ; un serveur factice qui crée un compte, ou qui répond autrement, le fait échouer ; en local, plus aucun contrôle n'échoue.
-- [ ] `COMPTES_OUVERTS_EN_PRODUCTION` et la dépendance `estProduction` du gestionnaire n'existent plus.
+- [x] Hors de toute configuration, les sept `POST` se comportent en production comme en prévisualisation (test avec `estProduction` vrai).
+- [x] Contrôle après déploiement : `comptes:*` exige `403 refuse` pour les sept `POST` sans corps ni `Origin` ; un serveur factice qui crée un compte, ou qui répond autrement, le fait échouer ; en local, plus aucun contrôle n'échoue.
+- [x] `COMPTES_OUVERTS_EN_PRODUCTION` et la dépendance `estProduction` du gestionnaire n'existent plus.
 - [ ] Décision D tranchée ; liste de contrôle de la section 12 cochée ; preuve de la section 12.1 notée en section 12.4.
 
 ## Tests à écrire
@@ -567,9 +567,9 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 22 relèven
 
 ### Tests de la PR 2
 
-23. [ ] `points-entree.attaque.test.ts` : même avec un `estProduction` vrai glissé dans les dépendances (ancienne dépendance, désormais ignorée), les sept `POST` atteignent Better Auth comme hors production (les tests « fermés en production » sont remplacés) ; sans `Origin`, avec un corps valide : `403 refuse`, corps non lu, ni Better Auth, ni `limiterCompte`, ni `limiterReinitialisation`, ni les contrôles du jeton. `gestionnaire.test.ts` : configuration de production (`VERCEL_ENV=production`) et hors production, mêmes réponses pour les sept `POST`.
-24. [ ] `e2e/controle-deploiement.spec.ts` : `comptes:*` passe sur un serveur qui répond `403 refuse` aux sept `POST` ; échoue s'il répond `404` (comptes fermés), `200` (compte créé), un autre corps, un `Set-Cookie`, ou s'il reçoit un corps, une `Origin`, un cookie ou `Authorization` (serveur factice qui traite alors la requête) ; en local, aucun contrôle n'échoue.
-25. [ ] Inventaire : le mot `COMPTES_OUVERTS_EN_PRODUCTION` n'apparaît plus dans `src/`, et `points-entree.ts` ne lit plus `estProduction`.
+23. [x] `points-entree.attaque.test.ts` : même avec un `estProduction` vrai glissé dans les dépendances (ancienne dépendance, désormais ignorée), les sept `POST` atteignent Better Auth comme hors production (les tests « fermés en production » sont remplacés) ; sans `Origin`, avec un corps valide : `403 refuse`, corps non lu, ni Better Auth, ni `limiterCompte`, ni `limiterReinitialisation`, ni les contrôles du jeton. `gestionnaire.test.ts` : configuration de production (`VERCEL_ENV=production`) et hors production, mêmes réponses pour les sept `POST`.
+24. [x] `e2e/controle-deploiement.spec.ts` : `comptes:*` passe sur un serveur qui répond `403 refuse` aux sept `POST` ; échoue s'il répond `404` (comptes fermés), `200` (compte créé), un autre corps, un `Set-Cookie`, ou s'il reçoit un corps, une `Origin`, un cookie ou `Authorization` (serveur factice qui traite alors la requête) ; en local, aucun contrôle n'échoue.
+25. [x] Inventaire : le mot `COMPTES_OUVERTS_EN_PRODUCTION` n'apparaît plus dans `src/`, et `points-entree.ts` ne lit plus `estProduction`.
 
 ### Vérifications manuelles (développeur)
 
@@ -673,3 +673,21 @@ Branche `feat/1.3-mot-de-passe` : commits `docs(1.3): fiche`, `docs(1.3): décis
 **Vérifications** : `npm run verifier` vert (format, lint, typecheck, 61 fichiers et 2 196 tests unitaires, construction, 443 tests de bout en bout sur la base jetable, aucun sauté, ports 3000 et 3101 libres) ; `npm run test:integration` sur `dev` : 23 fichiers, 210 réussis et 1 échec attendu (déjà présent), deux passages de suite.
 
 **À faire par le développeur avant la fusion** : la preuve de la section 13 sur la prévisualisation de la branche.
+
+### PR 2, le 2026-10-17
+
+Branche `feat/1.3-ouverture` : commits `docs(1.3): ouverture, liste de contrôle`, `test(1.3)` (phase rouge), `feat(1.3)`.
+
+**Phase rouge** (commit `test(1.3)`). Unitaires : 16 échecs dans 3 fichiers (`points-entree.attaque.test.ts` : les sept `POST` en production, et les sept sans `Origin` avec un `estProduction` vrai, reçoivent la réponse inexistante ; `gestionnaire.test.ts` : configuration de production, mêmes causes ; `inventaire.test.ts` : constante présente dans `points-entree.ts`, qui lit `estProduction`). Bout en bout, `e2e/controle-deploiement.spec.ts` seul, site construit avec l'ancien code (tests de `src/` mis de côté le temps de la construction : leur typage vise le nouveau code), base jetable : 53 échecs, 11 réussis. Le script attendait encore 404 et `comptes:identique`, alors que le factice répond 403 `refuse` ; le site local avait `comptes:*` en échec. Les 11 réussis ne touchent pas aux comptes (construction des requêtes, adresse refusée, découpage, cohérence des références, serveur injoignable, détails sans valeur reçue).
+
+**Tests modifiés, sans changer ce qu'ils prouvent** :
+
+- Les tests « comptes fermés en production » de la 1.1, de la 1.2 et de la 1.3 (`points-entree.attaque.test.ts`, `gestionnaire.test.ts`) et « production : connexion fermée, aucune révocation » sont remplacés par ceux de la section 11 ; « origine refusée : aucune révocation » reste.
+- Appels de `creerTraitementAuth` (`points-entree.test.ts`, `journal.attaque.test.ts`, `mots-de-passe.attaque.test.ts`, `outils-test/inscription.ts`) : la propriété `estProduction`, retirée du type, est retirée. Les simulations de `configurationEmail` gardent la leur (porte d'envoi).
+- `e2e/controle-deploiement.spec.ts` : 27 requêtes par passage au lieu de 28 ; les six défauts « … ouverte » (403 `refuse`, qui était l'échec) deviennent le comportement conforme ; huit nouveaux défauts ; « auth-x-powered-by » fait aussi échouer `comptes:entetes` (l'en-tête est posé sur toute réponse de `/api/auth`, constaté au premier passage complet) ; le site local n'a plus aucun échec.
+
+**Écart avec la fiche** : aucun. La dépendance `estProduction` du gestionnaire est retirée avec la constante (« tout ce qui en dépend ») ; `configurationEmail.estProduction` reste, lue par la porte d'envoi.
+
+**Vérifications** : `npm run verifier` vert (format, lint, typecheck, 61 fichiers et 2 193 tests unitaires, construction, 446 tests de bout en bout sur la base jetable, aucun sauté, ports 3000 et 3101 libres) ; `npm run test:integration` sur `dev` : 23 fichiers, 210 réussis et 1 échec attendu (déjà présent).
+
+**À faire par le développeur** : décision D, liste de contrôle de la section 12, fusion, preuve de la section 12.1, résultats en section 12.4.

@@ -4,15 +4,15 @@ import { isPasswordCompromised } from "better-auth/plugins";
 
 import { verifierDebit } from "../debit/debit";
 import { adressePourCompteur } from "../email/adresse";
-import { configurationEmail, env } from "../env";
+import { env } from "../env";
 
 import { auth } from "./config";
 import { creerTraitementAuth, jetonDeSession } from "./points-entree";
 
 // Le gestionnaire de /api/auth lié à l'application : Better Auth
-// (auth.handler), l'origine de BETTER_AUTH_URL, et la production lue de
-// VERCEL_ENV par la configuration validée (env-schema.ts), où les comptes
-// restent fermés jusqu'à la 1.3 (décision 1). Seul import de
+// (auth.handler) et l'origine de BETTER_AUTH_URL ; les comptes sont ouverts
+// en production comme ailleurs (PR 2 de la 1.3,
+// docs/features/mot-de-passe.md, section 11). Seul import de
 // src/app/api/auth/[...all]/route.ts. Fiche : docs/features/inscription.md,
 // section 2. Connexion (1.2) : la limite par compte compte l'adresse
 // normalisée comme un destinataire d'email, hors de toute transaction
@@ -31,7 +31,6 @@ import { creerTraitementAuth, jetonDeSession } from "./points-entree";
 export const traiterRequeteAuth = creerTraitementAuth({
   traiter: (requete) => auth.handler(requete),
   origine: env.BETTER_AUTH_URL,
-  estProduction: configurationEmail.estProduction,
   limiterCompte: (adresse) => verifierDebit("auth.connexion_compte", adressePourCompteur(adresse)),
   sessionEncoreLisible: async (entetes) => {
     const contexte = await auth.$context;

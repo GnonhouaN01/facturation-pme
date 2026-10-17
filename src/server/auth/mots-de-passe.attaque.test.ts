@@ -61,7 +61,6 @@ function instance() {
   return creerTraitementAuth({
     traiter: (requete) => auth.handler(requete),
     origine: ORIGINE,
-    estProduction: false,
     // 1.2 : dépendances exigées par le type, sans effet sur l'inscription.
     limiterCompte: async () => true,
     sessionEncoreLisible: async () => false,

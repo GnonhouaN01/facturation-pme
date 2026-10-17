@@ -54,7 +54,6 @@ function avec(
   return creerTraitementAuth({
     traiter,
     origine: ORIGINE,
-    estProduction: false,
     limiterCompte: options.limite ?? (async () => true),
     sessionEncoreLisible: options.sessionLisible ?? (async () => false),
     revoquerSession: options.revoquer ?? (async () => {}),
@@ -356,7 +355,6 @@ describe("déconnexion vérifiée côté serveur (T-03)", () => {
         return reponse.clone();
       },
       origine: ORIGINE,
-      estProduction: false,
       limiterCompte: async () => true,
       sessionEncoreLisible: async () => false,
       revoquerSession: async () => {},
