@@ -1,6 +1,6 @@
 # Fonctionnalité : mot de passe oublié, puis ouverture des comptes en production
 
-Statut : validée le 2026-10-16 ; PR 1 implémentée le 2026-10-16 (« Notes de l'implémentation »), preuve sur la prévisualisation à faire par le développeur (section 13) ; PR 2 à venir. Fiche rédigée le 2026-10-16 ; les trois vrais choix tranchés par le développeur le même jour (section « Décisions »), les autres points selon la recommandation de l'assistant (section « Décisions par défaut »).
+Statut : validée le 2026-10-16 ; PR 1 implémentée le 2026-10-16 et fusionnée (#50), preuve sur la prévisualisation faite (section 13.2, #51) ; PR 2 (ouverture) en cours le 2026-10-17 : liste de contrôle avant fusion et preuve après fusion en section 12, décision D à trancher. Fiche rédigée le 2026-10-16 ; les trois vrais choix tranchés par le développeur le même jour (section « Décisions »), les autres points selon la recommandation de l'assistant (section « Décisions par défaut »).
 
 Jalon 1, fonctionnalité 1.3 de `docs/PLAN.md`. Taille M. Cas d'utilisation : UC-03. Exigences : F-002 (réinitialisation), S-10, S-11, S-15, S-17, S-54, S-55, S-63, S-81, S-85. Menaces : T-04, T-07, T-39, T-41, T-43, T-55, T-65.
 
@@ -275,45 +275,125 @@ Better Auth ne supprime les lignes expirées de `verification` qu'à l'occasion 
 1. **Code.** `COMPTES_OUVERTS_EN_PRODUCTION` et sa branche dans `traiterRequeteAuth` sont retirés (décision 1 de la 1.1 : jamais une variable d'environnement). Les sept points d'entrée répondent en production comme en prévisualisation.
 2. **Effets en production.** Inscription, vérification, connexion, déconnexion, réinitialisation ouvertes à tous. Emails réels vers toute adresse (la liste `EMAIL_DESTINATAIRES_AUTORISES` est ignorée en production, `env-schema.ts`). Appels réels à Have I Been Pwned. Lignes nouvelles dans `user`, `account`, `session`, `verification`, `compteur_debit`, purgées par la tâche quotidienne. Les pages `/inscription`, `/connexion`, `/mot-de-passe-oublie`, `/compte` deviennent utiles. Aucune organisation ne peut être créée avant la 2.1 : un compte ne donne accès à aucune donnée (`PLAN.md` section 7, « Visibilité des Commerciaux », reste valable : pas d'organisation, donc pas de vrais utilisateurs d'une organisation).
 3. **Contrôle après déploiement** (`scripts/controle-deploiement.mjs`), dans la même PR, sinon le premier passage après la fusion échoue :
-   - `comptes:*` change de sens : les sept `POST`, **sans corps, sans `Origin`, sans cookie, sans `Authorization`** (contraintes d'`optionsRequete`, 1.1), doivent répondre exactement `403 { ok: false, raison: "refuse" }` : ouverts, et protégés par l'origine. Notre gestionnaire refuse l'origine **avant** de lire le corps et avant Better Auth : aucun compte créé, aucun email, aucun compteur consommé, par construction. Un test du serveur factice le vérifie, et un test unitaire vérifie que `traiterRequeteAuth` n'appelle ni Better Auth ni `limiterCompte` sans `Origin` ;
-   - `auth:identique` garde les chemins fermés et gagne `GET /api/auth/reset-password/<jeton forgé>` ;
-   - `/mot-de-passe-oublie` contrôlée comme `/inscription`, `/lien/reinitialisation` comme `/lien/verification`.
+   - `comptes:*` change de sens : les sept `POST`, **sans corps, sans `Origin`, sans cookie, sans `Authorization`** (contraintes d'`optionsRequete`, 1.1), doivent répondre exactement `403 { ok: false, raison: "refuse" }`, en JSON, sans `Set-Cookie` : ouverts, et protégés par l'origine. Notre gestionnaire refuse l'origine **avant** de lire le corps et avant Better Auth : aucun compte créé, aucun email, aucun compteur consommé, par construction. Un test du serveur factice le vérifie, et un test unitaire vérifie que `traiterRequeteAuth` n'appelle ni Better Auth ni `limiterCompte` sans `Origin`, et ne lit pas le corps ;
+   - contrôles `comptes:statut` (403), `comptes:refus` (corps exact, type JSON, aucun cookie), `comptes:politique`, `comptes:entetes`, `comptes:fuite`. Le huitième `POST`, vers un chemin inexistant, servait de référence à « identique » : il disparaît, avec `comptes:identique` (le `GET` d'un chemin inexistant reste dans `auth:*`) ;
+   - `auth:identique` garde les chemins fermés, dont `GET /api/auth/reset-password/<jeton forgé>` (PR 1) ;
+   - en local, plus aucun contrôle n'échoue.
 4. **Documents** : `CLAUDE.md` (comptes ouverts, ligne du contrôle), `THREATS.md` section 10, `PLAN.md`, `controle-deploiement.md`, `CONFIGURATION.md`.
 
-#### 12. Liste de contrôle avant ouverture (développeur)
+#### 12. Liste de contrôle avant fusion (développeur)
 
-Avant de fusionner la PR 2, dans cet ordre. Une case non cochée : on ne fusionne pas.
+Avant de fusionner la PR 2, dans cet ordre. Une case non cochée : on ne fusionne pas. Tout se fait depuis les tableaux de bord de Vercel, de Neon et de Google, par le développeur ; l'assistant ne lance aucune commande contre la production.
 
-**Variables de Vercel, environnement Production** (tableau de bord, jamais par l'assistant) :
+**0. Décision préalable**
 
-- [ ] `BETTER_AUTH_URL` : l'origine exacte de production, en `https`. Les liens des emails en sont tirés : une faute envoie des liens morts.
-- [ ] `BETTER_AUTH_SECRET` : propre à la production, différente de celle de Preview.
-- [ ] `DATABASE_URL` : rôle `app_facturation` de la branche `production` de Neon.
-- [ ] `GMAIL_UTILISATEUR`, `GMAIL_MOT_DE_PASSE_APPLICATION` : présentes (posées le 2026-10-13), type Sensitive.
-- [ ] `CRON_SECRET` : présente, type Secret.
-- [ ] `EMAIL_TRANSPORT` : **absente** (`smtp` par défaut en production).
-- [ ] `EMAIL_DESTINATAIRES_AUTORISES` : **absente**. Ignorée en production, elle donnerait une fausse impression de protection ; sa présence signale une copie des réglages de prévisualisation.
-- [ ] Aucune variable `E2E_*`, `EMAIL_DOSSIER` ni `VERCEL_ENV` posée à la main.
+- [ ] Information des personnes sur leurs données (loi ivoirienne n° 2013-450, ARTCI) : choix tranché par le développeur avant l'ouverture (`PLAN.md`, section 7, ne prévoyait la vérification du cadre légal qu'avant le jalon 3). Voir « Décisions ».
 
-**Gmail** :
+**1. Variables de Vercel, environnement Production** (Settings, Environment Variables, filtre « Production » ; vérifier le **nom**, l'environnement et le type, jamais afficher la valeur) :
 
-- [ ] Compte d'envoi sans alerte de Google, double authentification active, « Messages envoyés » purgé (RR-9).
-- [ ] Capacité : Gmail bloque au-delà de 500 envois par jour. Nos plafonds : `email.application` 200 par 24 h, dont `email.compte` 100 et `email.reinitialisation` 50 ; par destinataire 3 par heure et 10 par jour ; aucune organisation n'envoie avant le jalon 4. Fenêtre fixe : au bord, deux fenêtres donnent 400 en 24 h glissantes, toujours sous 500.
-- [ ] Preuve de la PR 1 faite sur la prévisualisation (section 13) : email de réinitialisation reçu, `SPF`, `DKIM`, `DMARC` en `pass`.
+- [ ] `DATABASE_URL` : présente, type Sensitive ou Secret, Production seulement (une autre valeur pour Preview). Rôle `app_facturation` de la branche `production` de Neon (à reconnaître au nom de l'hôte dans Neon, sans copier la valeur).
+- [ ] `BETTER_AUTH_SECRET` : présente, Production seulement, différente de celle de Preview (S-83).
+- [ ] `BETTER_AUTH_URL` : présente, Production seulement. Valeur non secrète, à lire : exactement `https://facturation-pme.vercel.app`, sans barre finale ni chemin. Les liens des emails et l'origine acceptée par `/api/auth` en sont tirés : une faute envoie des liens morts et refuse toute inscription (403).
+- [ ] `GMAIL_UTILISATEUR`, `GMAIL_MOT_DE_PASSE_APPLICATION` : présentes (posées le 2026-10-13), type Sensitive, Production seulement. Absentes, chaque requête du site échoue.
+- [ ] `CRON_SECRET` : présente, type Secret, Production et Preview (deux valeurs).
+- [ ] `EMAIL_TRANSPORT` : **absente** en Production (`smtp` par défaut ; toute autre valeur est refusée au démarrage).
+- [ ] `EMAIL_DESTINATAIRES_AUTORISES` : **absente** en Production. Ignorée par la porte en production, mais validée au démarrage : une valeur mal formée ferait échouer chaque requête ; et sa présence donnerait une fausse impression de protection (décision par défaut 14).
+- [ ] Les variables de la preuve (`GMAIL_*` du second compte, `EMAIL_TRANSPORT=smtp`, `EMAIL_DESTINATAIRES_AUTORISES`) sont **retirées** de la branche `fix/1.3-preuve` (section 13.1).
+- [ ] Aucune variable `DATABASE_URL_MIGRATION`, `E2E_*`, `EMAIL_DOSSIER`, `NODE_ENV` ni `VERCEL_ENV` posée à la main.
 
-**Exploitation** :
+**2. Base de production à jour** (console SQL de Neon, branche `production`, requêtes en lecture seule ; aucune migration n'est apportée par cette fonctionnalité) :
 
-- [ ] Dernier passage du workflow de contrôle après déploiement vert sur `main`.
-- [ ] Tâche quotidienne passée dans les dernières 24 h (journaux de Vercel, lignes de la tâche, sans erreur) : les purges tiendront.
-- [ ] Journaux de production récents sans adresse, sans jeton, sans ligne `[Better Auth]`.
-- [ ] Identifiant du déploiement de production en cours noté : c'est la cible du retour arrière (section 12.2).
+- [ ] Les neuf migrations du dossier `drizzle/` sont appliquées, dans l'ordre :
 
-#### 12.1 Juste après la fusion
+  ```sql
+  SELECT id, name, applied_at
+  FROM drizzle.__drizzle_migrations
+  ORDER BY id;
+  ```
 
-1. Le workflow de contrôle après déploiement passe (`comptes:*` à 403).
-2. Essai réel par le développeur, sur le domaine de production, avec sa propre adresse : inscription, email, confirmation, `/compte`, déconnexion, connexion, « Mot de passe oublié », email, nouveau mot de passe, notification reçue, ancienne session fermée.
-3. Journaux du déploiement : lignes `[auth]` et `[email]` fixes seulement ; aucune adresse, aucun jeton.
-4. Compte d'envoi Gmail : aucune alerte ; puis surveillance des journaux `[email] ... "limite"` les jours suivants (section 12.3).
+  Attendu : 9 lignes, dont la dernière nommée `20261008175217_retirer-droits-journal-audit` (mêmes noms que les dossiers de `drizzle/`, `ls drizzle`). Moins de lignes : lancer le workflow `migrations.yml` (environnement `production`, approbation) **avant** la fusion, puis reprendre cette case.
+
+- [ ] Les tables lues par les comptes existent, avec leurs règles :
+
+  ```sql
+  SELECT t.nom,
+         c.oid IS NOT NULL                     AS presente,
+         coalesce(c.relrowsecurity, false)     AS isolation_active,
+         coalesce(c.relforcerowsecurity, false) AS isolation_forcee
+  FROM (VALUES ('user'), ('account'), ('session'), ('verification'),
+               ('two_factor'), ('organization'), ('member'), ('invitation'),
+               ('compteur_debit'), ('journal_audit'), ('temoin_isolation')) AS t(nom)
+  LEFT JOIN pg_class c
+         ON c.relname = t.nom
+        AND c.relnamespace = 'public'::regnamespace
+        AND c.relkind = 'r'
+  ORDER BY t.nom;
+  ```
+
+  Attendu : `presente` vrai sur les onze lignes ; `isolation_active` et `isolation_forcee` vrais pour `journal_audit` et `temoin_isolation`, faux pour les tables de Better Auth et `compteur_debit` (RR-8, `TABLES_SANS_ORGANISATION`).
+
+- [ ] Les droits du rôle de l'application :
+
+  ```sql
+  SELECT has_table_privilege('app_facturation', 'public.verification', 'INSERT, DELETE') AS verification_ecriture,
+         has_table_privilege('app_facturation', 'public.compteur_debit', 'INSERT, UPDATE') AS compteur_ecriture,
+         has_table_privilege('app_facturation', 'public.journal_audit', 'UPDATE')
+      OR has_table_privilege('app_facturation', 'public.journal_audit', 'DELETE')
+      OR has_table_privilege('app_facturation', 'public.journal_audit', 'TRUNCATE') AS journal_modifiable;
+  ```
+
+  Attendu : `true`, `true`, `false`.
+
+- [ ] Aucun compte n'existe encore (production fermée jusqu'ici) : `SELECT count(*) FROM "user";` donne `0`. Un nombre non nul est à comprendre avant d'ouvrir.
+
+**3. Gmail face à nos limites** :
+
+- [ ] Compte d'envoi de production sans alerte de sécurité de Google, double authentification active, « Messages envoyés » purgé (RR-9).
+- [ ] Capacité : Gmail bloque l'envoi de 1 à 24 h au-delà de 500 emails par jour (Google, consulté le 2026-10-12). Nos plafonds, tous sur une fenêtre fixe : `email.application` 200 par 24 h, dont `email.compte` 100 (vérifications, « Tentative d'inscription ») et `email.reinitialisation` 50 (liens et notifications) ; par boîte, 3 par heure et 10 par jour (`email.destinataire`, `email.destinataire_jour`, la notification exceptée) ; aucune organisation n'envoie avant le jalon 4. Au bord de deux fenêtres, 400 envois en 24 h glissantes au plus : toujours sous 500.
+- [ ] Preuve de la PR 1 faite sur la prévisualisation (section 13.2) : email reçu, `SPF`, `DKIM`, `DMARC` en `PASS`.
+
+**4. Exploitation et journaux** :
+
+- [ ] Dernier passage du workflow « Contrôle après déploiement » vert sur `main` (production actuelle, comptes fermés).
+- [ ] Tâche quotidienne passée dans les dernières 24 h (journaux de Vercel, lignes de la tâche, aucune ligne d'échec) : les purges de `verification`, `session`, `user` non vérifiés et `compteur_debit` tiendront.
+- [ ] Journaux de production récents (onglet « Logs », filtre « Production ») sans adresse email, sans jeton, sans ligne `[Better Auth]`.
+- [ ] Durée de conservation des journaux de l'offre Hobby lue dans les réglages du projet : elle fixe le délai de lecture de la section 12.3.
+- [ ] Identifiant (et adresse) du déploiement de production en cours noté : c'est la cible du retour arrière (section 12.2).
+- [ ] Une plage d'une heure libre juste après la fusion, pour la preuve de la section 12.1 et le retour arrière éventuel.
+
+#### 12.1 Preuve après fusion, sur la production
+
+Par le développeur, avec sa propre adresse (`ngolognonhoua@gmail.com`), sur **`https://facturation-pme.vercel.app`** exactement : l'adresse propre d'un déploiement n'est pas l'origine de `BETTER_AUTH_URL`, et `/api/auth` y refuse tout (403). Toujours la même graphie de l'adresse : la limite par boîte confond les variantes Gmail (points, `+`, casse), la vérification d'existence non.
+
+**Budget de la preuve.** Elle fait partir **2 emails** comptés vers la boîte (vérification, lien de réinitialisation) et la notification, non comptée : la limite de 3 par heure et par boîte laisse **une** marge, pour un seul renvoi en cas de problème. Elle fait **2 demandes de lien** depuis l'adresse IP du poste (limite : 4 par heure) et une seule pour l'adresse (limite : 2 par heure). Ne pas s'inscrire une seconde fois avec la même adresse : cela enverrait « Tentative d'inscription », troisième email de l'heure.
+
+Dans cet ordre :
+
+1. **Contrôle automatique.** Le workflow « Contrôle après déploiement » du déploiement de la fusion est vert : `comptes:statut`, `comptes:refus`, `comptes:politique`, `comptes:entetes`, `comptes:fuite` passent (403 `refuse` pour les sept `POST`). En échec : retour arrière (section 12.2).
+2. **Inscription** (navigateur A, fenêtre normale) : `/inscription`, nom, adresse, mot de passe de 12 caractères au moins. Écran « Vérifiez votre boîte de réception ». *Email 1 sur 3.*
+3. **Vérification** : email « Confirmez votre adresse email » reçu, venu du compte d'envoi de production, lien sur `https://facturation-pme.vercel.app/lien/verification#…`. Ouvert dans A : confirmation, puis `/compte` affiche le nom et l'adresse. En-têtes de l'email : `SPF`, `DKIM`, `DMARC` en `PASS`.
+4. **Déconnexion, connexion** (A) : « Se déconnecter », puis `/compte` « introuvable » ; `/connexion` avec le bon mot de passe : `/compte`.
+5. **Seconde session** (navigateur B, fenêtre privée) : connexion au même compte, `/compte` affiché. B reste ouvert.
+6. **Mot de passe oublié** (A) : « Se déconnecter », puis `/connexion`, « Mot de passe oublié ? », l'adresse, « Recevoir un lien ». Message identique pour toute adresse. *Email 2 sur 3, demande 1 sur 4.*
+7. **Réinitialisation** : email « Réinitialisation de votre mot de passe » reçu, lien `/lien/reinitialisation#…` (fragment effacé à l'ouverture, validité de 30 minutes annoncée). Nouveau mot de passe accepté. *Notification « Votre mot de passe a été modifié » reçue, hors limite par boîte.*
+8. **Sessions fermées** : dans B, recharger `/compte` : « introuvable ». Dans A, connexion avec le **nouveau** mot de passe : `/compte` ; l'ancien est refusé (« Email ou mot de passe incorrect »).
+9. **Lien réutilisé** : rouvrir le lien de l'étape 7 : « Ce lien n'est plus valable » (aucune requête comptée).
+10. **Adresse inconnue** (T-07) : `/mot-de-passe-oublie` avec une adresse sans compte, par exemple `inconnu-<date>@exemple.invalid` : même écran qu'à l'étape 6, aucun email. *Demande 2 sur 4.*
+11. **Journaux du déploiement** (onglet « Logs », Production, la plage de la preuve) : requêtes `/api/auth/*` en 200, 400 ou 403 ; lignes `[auth]` et `[email]` au contenu fixe seulement ; aucune adresse email, aucun jeton, aucune ligne `[Better Auth]`.
+12. **Compte d'envoi Gmail** : aucune alerte de sécurité ; puis surveillance des lignes `[email] ... "limite"` les jours suivants (section 12.3).
+13. **Base** (console SQL, lecture seule) : `SELECT count(*) FROM "user";` donne `1` ; `SELECT count(*) FROM verification WHERE identifier LIKE 'reset-password:%';` donne `0` (aucun jeton en clair).
+
+Les résultats sont notés dans la section 12.4, puis la case « Vérifications manuelles » et le statut de la fiche sont mis à jour (commit `docs(1.3): preuve de l'ouverture`).
+
+#### 12.2 Retour arrière
+
+Déclencheurs : contrôle automatique rouge après la fusion, une étape de la section 12.1 non conforme, une adresse ou un jeton dans un journal, une alerte de Google, ou une vague décrite en section 12.3.
+
+1. **Immédiat : « Instant Rollback » de Vercel** (Deployments, déploiement noté avant la fusion, menu, « Instant Rollback », ou bouton du déploiement de production en cours). Quelques secondes, sans construction ; comptes fermés de nouveau. Aucune migration dans cette fonctionnalité : l'ancien code lit la même base. Après un retour arrière, Vercel cesse d'affecter le domaine de production aux déploiements suivants jusqu'à une promotion explicite (à confirmer dans le tableau de bord) : une fusion sur `main` ne repart donc pas seule en production. **Ne jamais utiliser « Undo Rollback »** : il remettrait la version ouverte.
+2. **Contrôle** : lancer à la main le workflow « Contrôle après déploiement » s'il ne part pas seul. Sur l'ancien code, avec le script de la PR 2, `comptes:*` échoue (404 au lieu de 403) : attendu, c'est la preuve que les comptes sont refermés ; tout le reste passe.
+3. **Puis : PR de retour** (`git revert` du commit de fusion de la PR 2, branche `fix/1.3-retour`) : `main` retrouve le code fermé **et** le script qui attend 404. Une fois fusionnée, promouvoir son déploiement en production (« Promote to Production »), puis contrôle vert. Tant qu'elle n'est pas fusionnée, ne fusionner rien d'autre.
+4. **Ce qui reste après le retour** : les comptes créés (inoffensifs ; non vérifiés purgés à 7 jours), leurs sessions (lisibles sur `/compte`, sans aucune donnée d'organisation ; expirées à 7 jours), les jetons (30 minutes). Si une session doit tomber tout de suite, le développeur supprime les lignes de `session` sur Neon.
+5. **Gmail bloqué** (RR-10) : les emails ne partent plus pendant 1 à 24 h ; inscriptions et réinitialisations attendent. Retour arrière seulement si le blocage dure.
 
 #### 12.3 Surveiller les budgets d'emails (RR-13, décision C)
 
@@ -330,12 +410,9 @@ Avant de fusionner la PR 2, dans cet ordre. Une case non cochée : on ne fusionn
 
 Aucune intervention ne remet un compteur à zéro à la main : la limite est une protection, et la vider rouvrirait la voie à l'abus.
 
-#### 12.2 Retour arrière
+#### 12.4 Résultats de la preuve après fusion
 
-- **Immédiat** : « Instant Rollback » de Vercel vers le déploiement noté (comptes fermés). Quelques secondes, sans construction. Aucune migration dans cette fonctionnalité : l'ancien code lit la même base.
-- **Puis** : PR de retour (`git revert` de la PR 2) pour que `main` corresponde à la production ; tant qu'elle n'est pas fusionnée, ne fusionner rien d'autre (une fusion redéploierait les comptes ouverts).
-- **Ce qui reste après le retour** : les comptes créés (inoffensifs ; non vérifiés purgés à 7 jours), leurs sessions (lisibles sur `/compte`, sans aucune donnée d'organisation ; expirées à 7 jours), les jetons (30 minutes). Si une session doit tomber tout de suite, le développeur supprime les lignes de `session` sur Neon.
-- **Gmail bloqué** (RR-10) : les emails ne partent plus pendant 1 à 24 h ; inscriptions et réinitialisations attendent. Retour arrière seulement si le blocage dure.
+À remplir par le développeur (section 12.1).
 
 ### 13. Preuve sur la prévisualisation (PR 1, développeur)
 
@@ -445,7 +522,8 @@ Aucune. `verification.identifier` est déjà du texte ; l'empreinte change sa va
 
 - [ ] Hors de toute configuration, les sept `POST` se comportent en production comme en prévisualisation (test avec `estProduction` vrai).
 - [ ] Contrôle après déploiement : `comptes:*` exige `403 refuse` pour les sept `POST` sans corps ni `Origin` ; un serveur factice qui crée un compte, ou qui répond autrement, le fait échouer ; en local, plus aucun contrôle n'échoue.
-- [ ] Liste de contrôle de la section 12 cochée ; essai réel de la section 12.1 noté.
+- [ ] `COMPTES_OUVERTS_EN_PRODUCTION` et la dépendance `estProduction` du gestionnaire n'existent plus.
+- [ ] Décision D tranchée ; liste de contrôle de la section 12 cochée ; preuve de la section 12.1 notée en section 12.4.
 
 ## Tests à écrire
 
@@ -489,14 +567,14 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 22 relèven
 
 ### Tests de la PR 2
 
-23. [ ] `points-entree.attaque.test.ts` : avec `estProduction` vrai, les sept `POST` se comportent comme hors production (le test « fermés en production » est remplacé) ; sans `Origin` : `403 refuse`, ni Better Auth, ni `limiterCompte`, ni lecture du corps.
-24. [ ] `e2e/controle-deploiement.spec.ts` : `comptes:*` passe sur un serveur qui répond `403 refuse` aux sept `POST` ; échoue s'il répond `404`, `200`, un autre corps, ou s'il reçoit un corps, une `Origin`, un cookie ou `Authorization` (serveur factice qui vérifie ce qu'il reçoit) ; en local, aucun contrôle n'échoue.
-25. [ ] Inventaire : le mot `COMPTES_OUVERTS_EN_PRODUCTION` n'apparaît plus dans `src/`.
+23. [ ] `points-entree.attaque.test.ts` : même avec un `estProduction` vrai glissé dans les dépendances (ancienne dépendance, désormais ignorée), les sept `POST` atteignent Better Auth comme hors production (les tests « fermés en production » sont remplacés) ; sans `Origin`, avec un corps valide : `403 refuse`, corps non lu, ni Better Auth, ni `limiterCompte`, ni `limiterReinitialisation`, ni les contrôles du jeton. `gestionnaire.test.ts` : configuration de production (`VERCEL_ENV=production`) et hors production, mêmes réponses pour les sept `POST`.
+24. [ ] `e2e/controle-deploiement.spec.ts` : `comptes:*` passe sur un serveur qui répond `403 refuse` aux sept `POST` ; échoue s'il répond `404` (comptes fermés), `200` (compte créé), un autre corps, un `Set-Cookie`, ou s'il reçoit un corps, une `Origin`, un cookie ou `Authorization` (serveur factice qui traite alors la requête) ; en local, aucun contrôle n'échoue.
+25. [ ] Inventaire : le mot `COMPTES_OUVERTS_EN_PRODUCTION` n'apparaît plus dans `src/`, et `points-entree.ts` ne lit plus `estProduction`.
 
 ### Vérifications manuelles (développeur)
 
 - [x] PR 1 : preuve sur la prévisualisation (section 13.2).
-- [ ] PR 2 : liste de contrôle (section 12), essai réel et journaux (section 12.1).
+- [ ] PR 2 : liste de contrôle avant fusion (section 12), preuve après fusion (section 12.1), résultats (section 12.4).
 
 ## Fichiers concernés
 
@@ -541,6 +619,7 @@ Prises par le développeur le 2026-10-16.
 - **A. Liens vers des pages fixes dans les emails** (section 6.3) : `lienPage` accepté. Liste fermée de deux pages (`/connexion`, `/mot-de-passe-oublie`), écrite dans le modèle ; adresse toujours construite sur l'origine de l'application ; jamais de page ni de paramètre fournis par l'appelant ; un test prouve qu'une page hors de la liste est refusée. Règle 17 de `CLAUDE.md` et parade de T-65 réécrites.
 - **B. Réinitialisation d'un compte non vérifié** (section 4.3) : le succès marque l'adresse vérifiée. La correction du nom saisi par un tiers est reportée à la 1.5 (« Reporté »).
 - **C. Budget `email.reinitialisation`** (50 par 24 h) et **RR-13** acceptés (section 6.4). Surveillance des lignes `[email] ... "limite"` et conduite à tenir : section 12.3.
+- **D. Information des personnes avant l'ouverture** (loi ivoirienne n° 2013-450, ARTCI ; PR 2, relevé le 2026-10-17) : **à trancher par le développeur.** Ni `SPEC.md` ni `PLAN.md` ne prévoient de page d'information sur les données personnelles ; `PLAN.md` (section 7) place la vérification du cadre légal « avant le jalon 3 », et `THREATS.md` (section 10, point 3) la garde ouverte. L'ouverture fait collecter, pour la première fois, des données de personnes réelles : nom, adresse email, empreinte du mot de passe, adresse IP et navigateur dans `session`, empreintes dans `compteur_debit`. Case 0 de la section 12.
 
 ## Décisions par défaut
 
