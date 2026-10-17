@@ -1,12 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 
 import { auth } from "./config";
-import {
-  COMPTES_OUVERTS_EN_PRODUCTION,
-  creerTraitementAuth,
-  POINTS_ENTREE_OUVERTS,
-  reponseInexistante,
-} from "./points-entree";
+import { creerTraitementAuth, POINTS_ENTREE_OUVERTS, reponseInexistante } from "./points-entree";
 
 // Tests d'attaque de la liste fermée des points d'entrée de /api/auth : T-55
 // (points d'entrée natifs fermés), S-81 (origine), entrée falsifiée,
@@ -19,7 +14,10 @@ import {
 // Fiche : docs/features/connexion.md, tests 1 à 6. Mot de passe oublié
 // (1.3) : deux points de plus, GET /reset-password/:token toujours fermé,
 // réponse unique de la demande (T-07), entrée falsifiée, limite par adresse
-// email. Fiche : docs/features/mot-de-passe.md, tests 1 à 5.
+// email. Fiche : docs/features/mot-de-passe.md, tests 1 à 5. Ouverture
+// (1.3, PR 2) : les sept POST se comportent en production comme ailleurs,
+// et une requête sans Origin est refusée avant toute lecture du corps.
+// Fiche : docs/features/mot-de-passe.md, section 11, test 23.
 
 // config.ts charge env.ts : valeurs factices, base sur un port fermé (aucune
 // connexion n'est ouverte : seul auth.api est lu).
@@ -98,10 +96,9 @@ function traitement(
   );
   const jetonReinitialisationValide = vi.fn<(jeton: string) => Promise<boolean>>(async () => true);
   const motDePasseCompromis = vi.fn<(motDePasse: string) => Promise<boolean>>(async () => false);
-  const gerer = creerTraitementAuth({
+  const dependances = {
     traiter,
     origine: ORIGINE,
-    estProduction: options.estProduction ?? false,
     limiterCompte,
     sessionEncoreLisible,
     revoquerSession,
@@ -109,7 +106,11 @@ function traitement(
     jetonReinitialisationValide,
     motDePasseCompromis,
     horloge: { maintenant: () => 0, attendre: async () => {} },
-  });
+    // 1.3, PR 2 : l'ancienne dépendance de production, glissée hors du type
+    // si le test la demande ; le gestionnaire ne la lit plus (test 23).
+    ...(options.estProduction === undefined ? {} : { estProduction: options.estProduction }),
+  };
+  const gerer = creerTraitementAuth(dependances);
   return {
     traiter,
     gerer,
@@ -475,37 +476,45 @@ describe("entrée falsifiée : refusée avant Better Auth", () => {
   });
 });
 
-describe("décision 1 : comptes fermés en production (inscription 1.1, connexion 1.2)", () => {
-  test("la constante est à false jusqu'à la 1.3", () => {
-    expect(COMPTES_OUVERTS_EN_PRODUCTION).toBe(false);
-  });
-
+// 1.3, PR 2 : les comptes sont ouverts en production (décision 1 de la 1.1
+// levée). Remplace « comptes fermés en production » de la 1.1 et de la 1.2.
+describe("comptes ouverts en production (1.3, PR 2)", () => {
   test.each(OUVERTS)(
-    "production, %s avec un corps valide : réponse inexistante, octet pour octet, Better Auth jamais appelé",
+    "%s : même avec estProduction vrai dans les dépendances, transmis à Better Auth comme hors production",
     async (chemin) => {
-      const attendue = await inexistante();
-      const { traiter, gerer } = traitement({ estProduction: true });
-      const recue = await gerer(post(chemin, CORPS_VALIDES[chemin]));
-      expect(await empreinte(recue)).toEqual(attendue);
-      expect(traiter).not.toHaveBeenCalled();
+      const production = traitement({ estProduction: true });
+      const ailleurs = traitement({ estProduction: false });
+      const recue = await production.gerer(post(chemin, CORPS_VALIDES[chemin]));
+      const temoin = await ailleurs.gerer(post(chemin, CORPS_VALIDES[chemin]));
+      expect(recue.status).toBe(200);
+      expect(await empreinte(recue)).toEqual(await empreinte(temoin));
+      expect(production.traiter).toHaveBeenCalledTimes(1);
+      expect(ailleurs.traiter).toHaveBeenCalledTimes(1);
     },
   );
 
-  test("production : même réponse qu'un point d'entrée fermé (organisation)", async () => {
-    const { gerer } = traitement({ estProduction: true });
-    const fermee = await empreinte(await gerer(post("/organization/update-member-role", {})));
-    const inscription = await empreinte(
-      await gerer(post("/sign-up/email", CORPS_VALIDES["/sign-up/email"])),
-    );
-    expect(inscription).toEqual(fermee);
-  });
-
-  test.each(OUVERTS)("témoin hors production, %s : transmis à Better Auth", async (chemin) => {
-    const { traiter, gerer } = traitement({ estProduction: false });
-    const reponse = await gerer(post(chemin, CORPS_VALIDES[chemin]));
-    expect(reponse.status).toBe(200);
-    expect(traiter).toHaveBeenCalledTimes(1);
-  });
+  // Ce que le contrôle après déploiement envoie en production : un POST sans
+  // Origin. Ici avec un corps valide : refusé avant toute lecture, rien
+  // n'est créé, rien n'est compté, rien n'est envoyé.
+  test.each(OUVERTS)(
+    "%s sans Origin, corps valide : 403 refuse, corps non lu, aucune dépendance appelée",
+    async (chemin) => {
+      const outils = traitement({ estProduction: true });
+      const recue = post(chemin, CORPS_VALIDES[chemin], { "content-type": "application/json" });
+      const reponse = await outils.gerer(recue);
+      expect(reponse.status).toBe(403);
+      expect(await reponse.json()).toEqual({ ok: false, raison: "refuse" });
+      expect(reponse.headers.getSetCookie()).toEqual([]);
+      expect(recue.bodyUsed).toBe(false);
+      expect(outils.traiter).not.toHaveBeenCalled();
+      expect(outils.limiterCompte).not.toHaveBeenCalled();
+      expect(outils.limiterReinitialisation).not.toHaveBeenCalled();
+      expect(outils.jetonReinitialisationValide).not.toHaveBeenCalled();
+      expect(outils.motDePasseCompromis).not.toHaveBeenCalled();
+      expect(outils.sessionEncoreLisible).not.toHaveBeenCalled();
+      expect(outils.revoquerSession).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("décision 3 : le jeton de vérification n'est jamais dans une adresse reçue", () => {
@@ -815,20 +824,8 @@ describe("limite par compte (S-11, T-01) : auth.connexion_compte", () => {
 });
 
 // Correctif de la 1.2 : la révocation ne dépend que du succès de la connexion,
-// jamais de l'existence d'un compte. Production : rien n'est appelé.
+// jamais de l'existence d'un compte.
 describe("révocation de l'ancienne session : jamais hors d'une connexion réussie", () => {
-  test("production : connexion fermée, aucune révocation", async () => {
-    const { gerer, revoquerSession } = traitement({ estProduction: true });
-    await gerer(
-      post("/sign-in/email", CONNEXION, {
-        "content-type": "application/json",
-        origin: ORIGINE,
-        cookie: "better-auth.session_token=ancien.signature",
-      }),
-    );
-    expect(revoquerSession).not.toHaveBeenCalled();
-  });
-
   test("origine refusée : aucune révocation (une page tierce ne déconnecte personne)", async () => {
     const { gerer, revoquerSession } = traitement();
     await gerer(
@@ -1127,22 +1124,6 @@ describe("T-07 (1.3) : une seule réponse pour toute demande", () => {
     expect(await reponse.text()).toBe(JSON.stringify({ ok: true }));
     expect(reponse.headers.getSetCookie()).toEqual([]);
   });
-});
-
-describe("comptes fermés en production (1.3) : les deux nouveaux POST", () => {
-  test.each(["/request-password-reset", "/reset-password"])(
-    "production, %s : réponse inexistante, octet pour octet, rien n'est appelé",
-    async (chemin) => {
-      const attendue = await inexistante();
-      const outils = traitement({ estProduction: true });
-      const recue = await outils.gerer(post(chemin, CORPS_VALIDES[chemin]));
-      expect(await empreinte(recue)).toEqual(attendue);
-      expect(outils.traiter).not.toHaveBeenCalled();
-      expect(outils.limiterReinitialisation).not.toHaveBeenCalled();
-      expect(outils.jetonReinitialisationValide).not.toHaveBeenCalled();
-      expect(outils.motDePasseCompromis).not.toHaveBeenCalled();
-    },
-  );
 });
 
 describe("limite par adresse email de la demande (S-11, T-43) : auth.reinitialisation_compte", () => {
