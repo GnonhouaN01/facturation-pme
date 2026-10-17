@@ -677,3 +677,27 @@ describe("zone par lien : aucune lecture de session (1.3)", () => {
     }
   });
 });
+
+// Ouverture des comptes en production (1.3, PR 2) : la constante de la
+// décision 1 de la 1.1 et la dépendance qui la servait sont retirées, sans
+// reste. Le mot est construit ici, pour que ce fichier ne le contienne pas.
+// Fiche : docs/features/mot-de-passe.md, section 11, test 25.
+const CONSTANTE_RETIREE = ["COMPTES", "OUVERTS", "EN", "PRODUCTION"].join("_");
+
+describe("comptes ouverts en production (1.3, PR 2)", () => {
+  test("aucun fichier de src/ ne mentionne la constante retirée", () => {
+    const tous = fichiers(SRC);
+    expect(tous.length).toBeGreaterThan(100);
+    const mentions = tous
+      .filter((chemin) => readFileSync(chemin, "utf8").includes(CONSTANTE_RETIREE))
+      .map((chemin) => versPosix(relative(SRC, chemin)));
+    expect(mentions).toEqual([]);
+  });
+
+  test("le gestionnaire de /api/auth ne lit plus la production", () => {
+    for (const nom of ["points-entree.ts", "gestionnaire.ts"]) {
+      const contenu = readFileSync(join(SRC, "server", "auth", nom), "utf8");
+      expect(/\bestProduction\b/.test(contenu), nom).toBe(false);
+    }
+  });
+});

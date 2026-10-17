@@ -19,8 +19,7 @@ import { schemaAdresse } from "../email/adresse";
 import { consignerIncidentAuth } from "./journal";
 
 // Le gestionnaire de /api/auth : une liste fermée de points d'entrée ouverts
-// (T-55). Tout autre chemin, toute autre méthode, et les points ouverts en
-// production tant que les comptes y sont fermés, reçoivent la même réponse
+// (T-55). Tout autre chemin et toute autre méthode reçoivent la même réponse
 // qu'une adresse inexistante, sans que Better Auth soit appelé. Un point
 // ouvert passe par : origine (S-81), taille et type du corps, schéma strict,
 // appel à Better Auth avec les seuls champs validés, réponse traduite en une
@@ -29,12 +28,9 @@ import { consignerIncidentAuth } from "./journal";
 // de sa ligne de journal (S-85). Fiches : docs/features/inscription.md,
 // section 2 ; docs/features/connexion.md, sections 1 à 4 et 6 ;
 // docs/features/mot-de-passe.md, sections 2, 3.3 et 8 (mot de passe oublié).
-
-// Décision 1 de la 1.1, étendue à la connexion par la 1.2 et au mot de passe
-// oublié par la 1.3 : comptes fermés en production. Une constante du code,
-// jamais une variable d'environnement ; la PR 2 de la 1.3 la retire
-// (docs/features/mot-de-passe.md, section 11).
-export const COMPTES_OUVERTS_EN_PRODUCTION = false;
+// Les points ouverts répondent en production comme ailleurs depuis la PR 2
+// de la 1.3 (docs/features/mot-de-passe.md, section 11) : aucune dépendance
+// ne dit l'environnement.
 
 export const DUREE_PLANCHER_MS = 800;
 export const TAILLE_MAX_CORPS = 4096;
@@ -56,7 +52,6 @@ export type DependancesPointsEntree = {
   traiter: (requete: Request) => Promise<Response>;
   // BETTER_AUTH_URL : l'origine acceptée, et celle des appels internes.
   origine: string;
-  estProduction: boolean;
   // Limite auth.connexion_compte, pour l'adresse validée : vrai si la
   // tentative est admise. Comptée pour toute adresse (T-07).
   limiterCompte: (adresse: string) => Promise<boolean>;
@@ -533,9 +528,6 @@ export function creerTraitementAuth(
       ? POINTS_ENTREE_OUVERTS[chemin]
       : undefined;
     if (point === undefined || requete.method !== point.methode) return reponseInexistante();
-    if (dependances.estProduction && !COMPTES_OUVERTS_EN_PRODUCTION) {
-      return reponseInexistante();
-    }
 
     if (!point.plancher) return traiterOuvert(point, requete, url);
     const debut = horloge.maintenant();

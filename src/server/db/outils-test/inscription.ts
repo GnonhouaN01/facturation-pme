@@ -119,7 +119,6 @@ export function bancInscription(options: { adresses: number }): BancInscription 
     traiter: creerTraitementAuth({
       traiter: (requete) => auth.handler(requete),
       origine: env.BETTER_AUTH_URL,
-      estProduction: false,
       limiterCompte: (adresse) =>
         verificateur.verifierDebit("auth.connexion_compte", adressePourCompteur(adresse)),
       // Comme gestionnaire.ts : relecture par l'adaptateur, sans cookie écrit.

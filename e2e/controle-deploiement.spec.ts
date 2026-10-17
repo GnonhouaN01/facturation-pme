@@ -29,7 +29,10 @@ import { documentServi, ENTETES_SECTION_6, POLITIQUE_PRODUCTION } from "./outils
 // « auth » et « inscription » (1.1) : docs/features/inscription.md,
 // section 2.3, test 16. Connexion (1.2) : « inscription » devient « comptes »
 // (cinq POST), « auth » gagne /api/auth/get-session, pages « connexion » et
-// « compte » : docs/features/connexion.md, section 10, test 25.
+// « compte » : docs/features/connexion.md, section 10, test 25. Ouverture
+// (1.3, PR 2) : les sept POST des comptes doivent recevoir le refus d'origine
+// (403 refuse), sans qu'aucun compte soit créé : docs/features/mot-de-passe.md,
+// section 11, test 24.
 
 const SCRIPT = "scripts/controle-deploiement.mjs";
 const executer = promisify(execFile);
@@ -77,24 +80,28 @@ type Defaut =
   | "auth-organisation-distingue"
   | "auth-x-powered-by"
   | "auth-en-anglais"
-  | "inscription-ouverte"
-  | "renvoi-ouvert"
   // Connexion (1.2).
-  | "connexion-ouverte"
-  | "deconnexion-ouverte"
   | "session-ouverte"
   | "connexion-500"
   | "compte-200"
   | "compte-distingue"
   | "gabarit-compte-dans-la-charge"
   // Mot de passe oublié (1.3).
-  | "demande-ouverte"
-  | "reinitialisation-ouverte"
   | "lien-reinitialisation-ouvert"
   | "mot-de-passe-oublie-500"
-  | "lien-reinitialisation-500";
+  | "lien-reinitialisation-500"
+  // Ouverture des comptes (1.3, PR 2).
+  | "comptes-fermes"
+  | "inscription-acceptee"
+  | "renvoi-500"
+  | "connexion-cookie"
+  | "demande-autre-raison"
+  | "reinitialisation-texte"
+  | "deconnexion-x-powered-by"
+  | "verification-fuite";
 
-// Les sept points d'entrée ouverts hors production, en POST (1.1 à 1.3).
+// Les sept points d'entrée des comptes, en POST (1.1 à 1.3), ouverts en
+// production depuis la PR 2 de la 1.3.
 const POINTS_COMPTES = [
   "/api/auth/sign-up/email",
   "/api/auth/send-verification-email",
@@ -206,9 +213,11 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
 
     // /api/auth : comme src/server/auth/points-entree.ts, un chemin fermé,
     // une méthode non admise et un chemin inexistant reçoivent 404, corps
-    // vide, sans Content-Type. En production, les trois POST ouverts aussi
-    // (inscription fermée jusqu'à la 1.3) ; ouverts, ils refusent une
-    // requête sans Origin par 403 et un corps JSON.
+    // vide, sans Content-Type. Les sept POST des comptes, ouverts (1.3,
+    // PR 2), refusent une requête sans Origin par 403 et un corps JSON. Une
+    // requête porteuse d'une Origin, d'un cookie, d'un Authorization ou d'un
+    // corps serait traitée : le factice répond alors comme un compte créé,
+    // 200 et un cookie de session, et le contrôle échoue.
     if (chemin.startsWith("/api/auth/")) {
       // Le corps est lu en entier avant la réponse : sa taille est notée.
       recue.corpsOctets = 0;
@@ -224,19 +233,6 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
         auth["Content-Type"] = "application/json; charset=utf-8";
         corps = valeur;
       };
-      if (
-        requete.method === "POST" &&
-        POINTS_COMPTES.includes(chemin) &&
-        (defaut === "inscription-ouverte" ||
-          (defaut === "renvoi-ouvert" && chemin === "/api/auth/send-verification-email") ||
-          (defaut === "connexion-ouverte" && chemin === "/api/auth/sign-in/email") ||
-          (defaut === "deconnexion-ouverte" && chemin === "/api/auth/sign-out") ||
-          (defaut === "demande-ouverte" && chemin === "/api/auth/request-password-reset") ||
-          (defaut === "reinitialisation-ouverte" && chemin === "/api/auth/reset-password"))
-      ) {
-        statut = 403;
-        json('{"ok":false,"raison":"refuse"}');
-      }
       // 1.3 : le lien de Better Auth (jeton dans le chemin), s'il était
       // ouvert, redirigerait vers la callbackURL.
       if (
@@ -262,6 +258,49 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
       }
       if (defaut === "auth-en-anglais") corps = "Not Found";
       requete.on("end", () => {
+        if (requete.method === "POST" && POINTS_COMPTES.includes(chemin)) {
+          const traitee =
+            requete.headers.origin !== undefined ||
+            requete.headers.cookie !== undefined ||
+            requete.headers.authorization !== undefined ||
+            (recue.corpsOctets ?? 0) > 0;
+          statut = 403;
+          json('{"ok":false,"raison":"refuse"}');
+          if (
+            traitee ||
+            (defaut === "inscription-acceptee" && chemin === "/api/auth/sign-up/email")
+          ) {
+            statut = 200;
+            json('{"ok":true}');
+            auth["Set-Cookie"] = "better-auth.session_token=jeton.signature; Path=/; HttpOnly";
+          }
+          if (defaut === "comptes-fermes") {
+            statut = 404;
+            corps = "";
+            delete auth["Content-Type"];
+          }
+          if (defaut === "renvoi-500" && chemin === "/api/auth/send-verification-email") {
+            statut = 500;
+            json(
+              '{"ok":false,"raison":"erreur","incident":"00000000-0000-4000-8000-000000000000"}',
+            );
+          }
+          if (defaut === "connexion-cookie" && chemin === "/api/auth/sign-in/email") {
+            auth["Set-Cookie"] = "better-auth.session_token=jeton.signature; Path=/; HttpOnly";
+          }
+          if (defaut === "demande-autre-raison" && chemin === "/api/auth/request-password-reset") {
+            json('{"ok":false,"raison":"invalide"}');
+          }
+          if (defaut === "reinitialisation-texte" && chemin === "/api/auth/reset-password") {
+            auth["Content-Type"] = "text/plain; charset=utf-8";
+          }
+          if (defaut === "deconnexion-x-powered-by" && chemin === "/api/auth/sign-out") {
+            auth["X-Powered-By"] = "Next.js";
+          }
+          if (defaut === "verification-fuite" && chemin === "/api/auth/verify-email") {
+            auth["X-Indice"] = "/var/task/node_modules/x.js";
+          }
+        }
         reponse.writeHead(statut, auth);
         reponse.end(corps);
       });
@@ -376,12 +415,13 @@ const PAGES = [
   "lien-reinitialisation",
 ] as const;
 const surToutes = (controle: string) => PAGES.map((p) => `${p}:${controle}`);
-// Politique et en-têtes : vérifiés aussi sur les pages « tache » (8.3) et
-// « auth » (1.1).
+// Politique et en-têtes : vérifiés aussi sur les pages « tache » (8.3),
+// « auth » (1.1) et « comptes » (1.3, PR 2).
 const avecTache = (controle: string) => [
   ...surToutes(controle),
   `tache:${controle}`,
   `auth:${controle}`,
+  `comptes:${controle}`,
 ];
 
 test.describe("contrôle après déploiement, serveur factice", () => {
@@ -404,7 +444,11 @@ test.describe("contrôle après déploiement, serveur factice", () => {
   // /mot-de-passe-oublie, de /lien/reinitialisation et du lien de Better
   // Auth (/api/auth/reset-password/<jeton forgé>) ; deux POST de plus, vers la
   // demande et la réinitialisation (docs/features/mot-de-passe.md, section 2).
-  test("serveur conforme : tout passe, des GET et six POST vides vers /api/auth, sans cookie ni Authorization sauf les valeurs forgées", async () => {
+  // 1.3, PR 2 (modifié, signalé) : 27 requêtes par passage. Le POST vers un
+  // chemin inexistant, référence de « comptes:identique », disparaît avec ce
+  // contrôle : les sept POST doivent recevoir le refus d'origine
+  // (docs/features/mot-de-passe.md, section 11).
+  test("serveur conforme : tout passe, des GET et sept POST vides vers /api/auth, sans cookie ni Authorization sauf les valeurs forgées", async () => {
     const factice = await demarrerFactice();
     try {
       const premier = await controlerSite(factice.adresse);
@@ -414,9 +458,9 @@ test.describe("contrôle après déploiement, serveur factice", () => {
       expect(echecs(second)).toEqual([]);
       expect(premier.length).toBeGreaterThan(10);
 
-      expect(factice.requetes).toHaveLength(56);
+      expect(factice.requetes).toHaveLength(54);
       const posts = factice.requetes.filter((r) => r.methode !== "GET");
-      expect(posts).toHaveLength(16);
+      expect(posts).toHaveLength(14);
       for (const requete of posts) {
         expect(requete.methode).toBe("POST");
         expect(requete.chemin).toMatch(/^\/api\/auth\//);
@@ -431,9 +475,7 @@ test.describe("contrôle après déploiement, serveur factice", () => {
           point,
         ).toHaveLength(2);
       }
-      const postsInexistants = posts.filter((r) => /^\/api\/auth\/[0-9a-f]{16}$/.test(r.chemin));
-      expect(postsInexistants).toHaveLength(2);
-      expect(postsInexistants[0]?.chemin).not.toBe(postsInexistants[1]?.chemin);
+      expect(posts.filter((r) => !POINTS_COMPTES.includes(r.chemin))).toEqual([]);
       for (const requete of factice.requetes.filter((r) => r.methode === "GET")) {
         expect(requete.entetes["content-length"]).toBeUndefined();
       }
@@ -520,7 +562,10 @@ test.describe("contrôle après déploiement, serveur factice", () => {
         "auth:anglais",
         "auth:identique",
         "comptes:statut",
-        "comptes:identique",
+        "comptes:refus",
+        "comptes:politique",
+        "comptes:entetes",
+        "comptes:fuite",
       ]);
       expect(
         premier.map((r) => r.nom).filter((n) => /^compte:(identique|gabarit|anglais)$/.test(n)),
@@ -565,23 +610,29 @@ test.describe("contrôle après déploiement, serveur factice", () => {
     ["tache-en-anglais", ["tache:anglais"]],
     ["auth-organisation-ouverte", ["auth:identique", "auth:statut"]],
     ["auth-organisation-distingue", ["auth:identique"]],
-    ["auth-x-powered-by", ["auth:entetes"]],
+    // 1.3, PR 2 : l'en-tête est posé sur toute réponse de /api/auth, les
+    // sept POST des comptes compris.
+    ["auth-x-powered-by", ["auth:entetes", "comptes:entetes"]],
     ["auth-en-anglais", ["auth:anglais"]],
-    ["inscription-ouverte", ["comptes:identique", "comptes:statut"]],
-    ["renvoi-ouvert", ["comptes:identique", "comptes:statut"]],
-    ["connexion-ouverte", ["comptes:identique", "comptes:statut"]],
-    ["deconnexion-ouverte", ["comptes:identique", "comptes:statut"]],
     ["session-ouverte", ["auth:identique", "auth:statut"]],
     ["connexion-500", ["connexion:statut"]],
     ["compte-200", ["compte:statut"]],
     ["compte-distingue", ["compte:identique"]],
     ["gabarit-compte-dans-la-charge", ["compte:gabarit"]],
     // 1.3.
-    ["demande-ouverte", ["comptes:identique", "comptes:statut"]],
-    ["reinitialisation-ouverte", ["comptes:identique", "comptes:statut"]],
     ["lien-reinitialisation-ouvert", ["auth:identique", "auth:statut"]],
     ["mot-de-passe-oublie-500", ["mot-de-passe-oublie:statut"]],
     ["lien-reinitialisation-500", ["lien-reinitialisation:statut"]],
+    // 1.3, PR 2 : comptes refermés (ancienne production), compte créé, refus
+    // autre que celui de l'origine, cookie, type, en-tête, fuite.
+    ["comptes-fermes", ["comptes:refus", "comptes:statut"]],
+    ["inscription-acceptee", ["comptes:refus", "comptes:statut"]],
+    ["renvoi-500", ["comptes:refus", "comptes:statut"]],
+    ["connexion-cookie", ["comptes:refus"]],
+    ["demande-autre-raison", ["comptes:refus"]],
+    ["reinitialisation-texte", ["comptes:refus"]],
+    ["deconnexion-x-powered-by", ["comptes:entetes"]],
+    ["verification-fuite", ["comptes:fuite"]],
   ];
 
   for (const [defaut, attendus] of CAS) {
@@ -643,17 +694,18 @@ test.describe("contrôle après déploiement, serveur factice", () => {
 // déconnexion), mêmes conditions (docs/features/connexion.md, section 10).
 // 1.3 : sept, avec la demande et la réinitialisation, mêmes conditions
 // (docs/features/mot-de-passe.md, section 2.2).
-test.describe("contrôle après déploiement, les huit POST des comptes", () => {
+// 1.3, PR 2 : les sept POST, sans le chemin inexistant ; le factice traite
+// toute requête porteuse d'une Origin, d'un cookie, d'un Authorization ou
+// d'un corps (compte créé), et le contrôle passe parce qu'il n'en envoie
+// aucune (docs/features/mot-de-passe.md, section 11, test 24).
+test.describe("contrôle après déploiement, les sept POST des comptes", () => {
   test("reçus par le serveur : aucun octet de corps, ni Origin, ni Cookie, ni Authorization, ni Content-Type", async () => {
     const factice = await demarrerFactice();
     try {
       await controlerSite(factice.adresse);
       const posts = factice.requetes.filter((r) => r.methode === "POST");
 
-      expect(posts.map((r) => r.chemin.replace(/[0-9a-f]{16}$/, "<inexistant>"))).toEqual([
-        ...POINTS_COMPTES,
-        "/api/auth/<inexistant>",
-      ]);
+      expect(posts.map((r) => r.chemin)).toEqual(POINTS_COMPTES);
       for (const requete of posts) {
         expect(requete.corpsOctets, requete.chemin).toBe(0);
         expect(requete.entetes["content-length"] ?? "0", requete.chemin).toBe("0");
@@ -662,6 +714,30 @@ test.describe("contrôle après déploiement, les huit POST des comptes", () => 
           expect(requete.entetes[interdit], `${requete.chemin} : ${interdit}`).toBeUndefined();
         }
       }
+    } finally {
+      await factice.fermer();
+    }
+  });
+
+  test("témoin : le factice crée un compte pour une requête porteuse d'une Origin, d'un cookie, d'un Authorization ou d'un corps", async () => {
+    const factice = await demarrerFactice();
+    try {
+      for (const [nom, init] of [
+        ["Origin", { headers: { origin: factice.adresse } }],
+        ["cookie", { headers: { cookie: "a=b" } }],
+        ["Authorization", { headers: { authorization: "Bearer x" } }],
+        ["corps", { body: "{}" }],
+      ] as const) {
+        for (const point of POINTS_COMPTES) {
+          const reponse = await fetch(factice.adresse + point, { method: "POST", ...init });
+          expect(reponse.status, `${nom} ${point}`).toBe(200);
+          expect(await reponse.text()).toBe('{"ok":true}');
+        }
+      }
+      const temoin = await fetch(factice.adresse + POINTS_COMPTES[0], { method: "POST" });
+      expect(temoin.status).toBe(403);
+      expect(await temoin.text()).toBe('{"ok":false,"raison":"refuse"}');
+      expect(echecs(await controlerSite(factice.adresse))).toEqual([]);
     } finally {
       await factice.fermer();
     }
@@ -909,6 +985,9 @@ test.describe("contrôle après déploiement, cohérence et site construit", () 
 
   // next start répond comme Vercel : une adresse sans page reçoit la page
   // « introuvable » rendue sur le serveur (fiche, section 5, décision 10).
+  // 1.3, PR 2 (modifié, signalé) : les comptes étant ouverts partout, plus
+  // aucun contrôle n'échoue en local ; les sept POST y reçoivent le refus
+  // d'origine, comme en production.
   // 1.2 (modifié, signalé) : les contrôles « inscription » deviennent
   // « comptes » ; en local, connexion et inscription sont ouvertes.
   // 1.1 (modifié, signalé) : en local, l'inscription est ouverte (elle n'est
@@ -916,11 +995,12 @@ test.describe("contrôle après déploiement, cohérence et site construit", () 
   // les deux contrôles « inscription » y échouent, et eux seuls. C'est le
   // témoin qu'ils voient une inscription ouverte ; la preuve qu'elle est
   // fermée en production vient du contrôle lancé après chaque déploiement.
-  test("site construit en local : tous les contrôles passent, sauf l'inscription, ouverte hors production", async ({
+  test("site construit en local : tous les contrôles passent, comptes compris", async ({
     baseURL,
   }) => {
     const resultats = await controlerSite(baseURL ?? "");
 
-    expect(echecs(resultats)).toEqual(["comptes:identique", "comptes:statut"]);
+    expect(echecs(resultats)).toEqual([]);
+    expect(resultats.filter((r) => r.nom.startsWith("comptes:"))).toHaveLength(5);
   });
 });
