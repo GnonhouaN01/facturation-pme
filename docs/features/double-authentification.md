@@ -1,6 +1,6 @@
 # Fonctionnalité : double authentification et codes de secours
 
-Statut : brouillon du 2026-10-18, à valider. Trois vrais choix sont posés au développeur (section « Questions au développeur ») ; la fiche est écrite avec la recommandation de l'assistant pour chacun. Les autres points suivent la recommandation de l'assistant (section « Décisions par défaut »).
+Statut : validée le 2026-10-18 ; PR 1 en cours. Fiche rédigée le 2026-10-18 ; les vrais choix tranchés par le développeur le même jour (section « Décisions »), les autres points selon la recommandation de l'assistant (section « Décisions par défaut »).
 
 Jalon 1, fonctionnalité 1.4 de `docs/PLAN.md`. Taille M (plutôt haute). Cas d'utilisation : UC-04, UC-02 (étape 3, erreurs 3a, 3b, 4a), UC-03 (« Abus » : la double authentification reste exigée). Exigences : F-003, S-12, S-13, S-10, S-11, S-14 (partie compte), S-15, S-17, S-54, S-55, S-63, S-70 (« connexions sensibles »), S-81, S-82, S-85, S-87, S-88. Menaces : T-02, T-06, T-04 (report de la 1.3), T-01, T-03, T-07, T-39, T-43, T-55, T-65.
 
@@ -48,9 +48,11 @@ Vue d'ensemble :
 | Sept points d'entrée de plus | `src/server/auth/points-entree.ts`, `src/server/auth/double-authentification.ts` | Connexion par code ou code de secours ; activation, confirmation, remplacement, régénération, désactivation |
 | Réglages de Better Auth | `src/server/auth/config.ts` | Options de `twoFactor`, codes de secours sous empreinte, identifiant d'attente sous empreinte |
 | Codes de secours | `src/server/auth/codes-secours.ts` | Génération, normalisation de la saisie, empreinte HMAC |
-| Code QR | `src/server/auth/qr.ts`, `src/components/compte/code-qr.tsx` | Matrice calculée sur le serveur, tracée en SVG par React (question 1) |
+| Code QR | `src/server/auth/qr.ts`, `src/components/compte/code-qr.tsx` | Matrice calculée sur le serveur par `uqr` (décision 1), tracée en SVG par React |
 | Sessions | `src/server/db/sessions.ts` | Autres sessions fermées après un changement du second facteur |
-| Limites | `src/server/debit/limites.ts`, `src/server/auth/gestionnaire.ts` | Par adresse IP (Better Auth), par compte, rejeu, gestion |
+| Anti-rejeu | `src/server/auth/tranche-totp.ts`, `src/server/db/double-authentification.ts` | Dernière tranche de temps acceptée par compte (décision 4) |
+| Récupération manuelle | `docs/exploitation/remise-a-zero-double-authentification.md`, `src/server/journal/actions.ts` | Procédure pas à pas, trace au journal d'audit (décision 2) |
+| Limites | `src/server/debit/limites.ts`, `src/server/auth/gestionnaire.ts` | Par adresse IP (Better Auth), par compte, gestion |
 | Emails | `src/server/auth/emails.ts`, `src/server/email/modeles.ts`, `src/textes/emails.ts` | Six notifications, budget `email.double_auth` |
 | Pages | `src/app/(public)/connexion/`, `src/app/(compte)/compte/`, `src/app/(compte)/compte/double-authentification/` | Étape du code, état sur `/compte`, activation et gestion |
 | Exigence par rôle (PR 2) | `src/server/actions/action.ts`, `src/server/auth/session.ts`, `src/server/autorisation/matrice.ts` | Étape 7 de la chaîne (S-12, S-13, T-02) |
@@ -131,7 +133,7 @@ Les points suivent les étapes de la section 2.2 de `inscription.md` (origine, t
 1. origine, type, taille, schéma ;
 2. **connexion en attente** : l'identifiant est lu dans le cookie `two_factor` (valeur avant la signature, comme `jetonDeSession`), puis la ligne `verification` correspondante (`utilisateurDuDefi`, dépendance liée à `internalAdapter.findVerificationValue`, qui applique l'empreinte de la section 3.3). Absente ou expirée : `connexion_expiree`, Better Auth jamais appelé. La signature reste vérifiée par Better Auth à l'étape 5 ; cette lecture ne sert qu'à connaître le compte visé ;
 3. **limite par compte** (`auth.double_auth_compte`) pour cet utilisateur ;
-4. code de l'application seulement : **rejeu** (`auth.double_auth_rejeu`) pour le couple utilisateur et code ;
+4. code de l'application seulement : **anti-rejeu** (section 6.1) : la tranche du code est calculée et réservée pour ce compte, ou refusée ;
 5. Better Auth : limite par adresse IP, signature, verrou, 5 essais, vérification, consommation, session ;
 6. après le succès : session de l'ancien cookie révoquée (section 8.1), notification si c'est un code de secours.
 
@@ -266,16 +268,28 @@ Toutes les tentatives comptent (`DESIGN.md` 3.1). Valeurs dans `limites.ts` seul
 | `auth.double_auth_codes` | 3 | 15 min | Adresse IP | Better Auth, `/two-factor/generate-backup-codes` |
 | `auth.double_auth_desactivation` | 4 | 15 min | Adresse IP | Better Auth, `/two-factor/disable` |
 | `auth.double_auth_compte` | 20 | 24 h | Utilisateur | Notre gestionnaire, à la connexion (code et code de secours confondus), avant Better Auth |
-| `auth.double_auth_rejeu` | 1 | 3 min | Utilisateur et code | Notre gestionnaire, code de l'application à la connexion, avant Better Auth |
 | `auth.double_auth_gestion` | 10 | 1 h | Utilisateur | Notre gestionnaire, les cinq points de la gestion, avant tout contrôle de mot de passe ou de code |
 
 S'y ajoutent, inchangés et figés par `config.test.ts` : **5 essais par connexion en attente**, et le **verrou de Better Auth** (10 échecs consécutifs, 15 minutes).
 
 - **Effet sur T-06** (le pire cas, un attaquant qui a le mot de passe) : 20 codes par jour sur un compte, quelle que soit la provenance, chacun avec 3 codes acceptés sur 1 000 000 (fenêtre ±1). Environ 6 chances sur 100 000 par jour, 2 % par an d'essais ininterrompus, et une alerte au titulaire chaque jour (section 10). Sans la limite par compte : 960 codes par jour (verrou seul), 23 % par an. Pour un code de secours : 10 codes de 49 bits, hors de portée.
-- **Limite par compte atteinte** : `trop_de_requetes`, et l'email `compte.double_auth_tentatives` planifié, sous les limites par destinataire (au plus une poignée par jour). Le titulaire est bloqué jusqu'à la fin de la fenêtre, même avec le bon code : c'est le prix de la limite, payé seulement face à quelqu'un qui connaît déjà son mot de passe ; l'email l'invite à le changer (question 3, RR-14).
-- **Rejeu** : la clé du compteur est l'empreinte HMAC de `<utilisateur>:<code>` ; la fenêtre de 3 minutes, ancrée sur le premier usage (`limitation-debit.md`, section 5), couvre les 90 secondes de validité d'un code. Un code déjà présenté pour ce compte, juste ou faux, reçoit `code_incorrect` sans appel à Better Auth. Effet de bord accepté : un code dont le premier envoi a échoué (panne) attend le suivant, 30 secondes au plus.
+- **Limite par compte atteinte** : `trop_de_requetes`, et l'email `compte.double_auth_tentatives` planifié, sous les limites par destinataire (au plus une poignée par jour). Le titulaire est bloqué jusqu'à la fin de la fenêtre, même avec le bon code : c'est le prix de la limite, payé seulement face à quelqu'un qui connaît déjà son mot de passe ; l'email l'invite à le changer (décision 3, RR-14).
 - **Gestion** : Better Auth ne limite rien quand une session est présente (section 1). Sans `auth.double_auth_gestion`, une session volée essaierait sans fin des mots de passe ou des codes.
-- **Valeur comptée** : l'identifiant de l'utilisateur, jamais l'entrée (règle 15) ; pour la connexion, celui de la connexion en attente (section 2.1, étape 2). Nouvelle valeur de `Limite.par` : `"utilisateur_code"`.
+- **Valeur comptée** : l'identifiant de l'utilisateur, jamais l'entrée (règle 15) ; pour la connexion, celui de la connexion en attente (section 2.1, étape 2).
+
+#### 6.1 Anti-rejeu : la dernière tranche acceptée (décision 4)
+
+Un code de l'application déjà accepté pour un compte est refusé, même dans sa fenêtre de validité (RFC 6238, section 5.2). Better Auth ne dit pas quelle tranche de 30 secondes a correspondu (`verify` rend un booléen) ; notre passerelle la calcule donc elle-même, **avant** Better Auth, pour tout code de l'application (connexion, confirmation, vérifications de la gestion) :
+
+1. secret du compte lu dans `two_factor` et déchiffré par `symmetricDecrypt` de `better-auth/crypto` avec le `secretConfig` de l'instance (`src/server/auth/tranche-totp.ts`) ; jamais écrit, jamais rendu ;
+2. code calculé par HMAC-SHA-1 (`node:crypto`, RFC 4226) pour les tranches `t - 1`, `t`, `t + 1`, comparé en temps constant ; aucune ne correspond : rien n'est réservé, Better Auth reçoit le code et compte l'échec ;
+3. une tranche `s` correspond : **réservation atomique** (`reserverTranche(utilisateurId, s)`, `src/server/db/double-authentification.ts`), dans une transaction par `db` : `SELECT ... FROM two_factor WHERE user_id = $1 FOR UPDATE` (deux requêtes simultanées d'un même compte passent l'une après l'autre), lecture de la ligne `verification` d'identifiant `double-auth-tranche:<utilisateur>`, refus si sa valeur est supérieure ou égale à `s`, sinon écriture de `s` (suppression de l'ancienne ligne, insertion), échéance à 3 minutes ;
+4. réservation refusée : `code_incorrect`, Better Auth jamais appelé.
+
+- **Aucune migration** : la ligne vit dans `verification` (texte et date d'échéance), sans secret (le numéro d'une tranche n'en dit rien). Son échéance de 3 minutes dépasse la fenêtre d'acceptation (±1 tranche) : quand elle a disparu, tout code encore valable est d'une tranche plus récente. La purge quotidienne `jetons_expires` (1.3) la supprime.
+- **Réservée avant Better Auth** : un code juste refusé ensuite par Better Auth (verrou, 5 essais, bord de tranche entre nos deux calculs) est perdu ; l'utilisateur attend le suivant, 30 secondes au plus. En échange, deux usages simultanés d'un même code ne peuvent jamais réussir tous les deux.
+- **Une tranche plus ancienne** qu'une tranche déjà acceptée est refusée aussi (valeur supérieure ou égale) : un code de la tranche précédente, encore dans la fenêtre, ne passe plus après un code plus récent.
+- Codes de secours non concernés : usage unique par construction (section 1).
 
 ### 7. Récupération en cas de perte du téléphone
 
@@ -290,14 +304,17 @@ S'y ajoutent, inchangés et figés par `config.test.ts` : **5 essais par connexi
 
 #### 7.2 Téléphone et codes perdus
 
-Aucune voie automatique : une récupération par email ferait de la boîte mail le second facteur, et un attaquant qui la détient avec le mot de passe (RR-3) prendrait le compte. **Recommandé (question 2)** : une procédure manuelle du développeur, écrite dans `docs/CONFIGURATION.md` :
+Aucune voie automatique : une récupération par email ferait de la boîte mail le second facteur, et un attaquant qui la détient avec le mot de passe (RR-3) prendrait le compte. **Retenu (décision 2)** : une procédure manuelle du développeur, écrite pas à pas, requêtes SQL exactes comprises, dans `docs/exploitation/remise-a-zero-double-authentification.md` :
 
-1. demande reçue depuis l'adresse du compte, à l'adresse de contact du projet (jamais le compte Gmail d'envoi, RR-9) ;
-2. réponse du développeur à cette même adresse, puis **délai de 72 heures** : un titulaire dont la boîte est compromise a le temps de voir l'échange et de s'y opposer ;
-3. sur Neon, branche `production`, par le développeur seulement (jamais l'assistant) : suppression de la ligne `two_factor` du compte, `two_factor_enabled` à faux, suppression de ses sessions ; requêtes écrites à l'avance dans la procédure, avec l'identifiant du compte ;
-4. le titulaire se connecte avec son mot de passe ; s'il est Propriétaire ou Comptable, la chaîne lui refuse toute donnée jusqu'à la réactivation (PR 2).
+1. **demande** reçue depuis l'adresse du compte, à l'adresse de contact du projet (jamais le compte Gmail d'envoi, RR-9) ; toute autre adresse : refus ;
+2. **email au titulaire à la demande**, à l'adresse du compte, texte fixe de la procédure : la demande est reçue, la remise à zéro aura lieu dans 72 heures sauf opposition ;
+3. **délai de 72 heures** : un titulaire dont la boîte est compromise a le temps de voir l'échange et de s'y opposer ;
+4. **remise à zéro**, sur Neon, branche `production`, par le développeur seulement (jamais l'assistant), dans une seule transaction : ligne `two_factor` supprimée, `two_factor_enabled` à faux, **toutes les sessions** du compte supprimées, ligne d'anti-rejeu supprimée, et une **trace au journal d'audit** de chaque organisation dont le titulaire est membre (action `membre.double_auth_remise_a_zero`, ressource : son adhésion), organisation active fixée par `set_config('app.organisation_id', ..., true)` dans la transaction, comme le fait `executerDansOrganisation` ;
+5. **email au titulaire à la remise à zéro** : texte fixe ; s'il est Propriétaire ou Comptable, la chaîne lui refuse toute donnée jusqu'à la réactivation (PR 2).
 
-Rien de cela n'existe avant l'ouverture des comptes en production ; la procédure est écrite avec la PR 1, éprouvée sur `dev`.
+**Écart assumé avec la règle 9** (« toute écriture au journal passe par `journaliser` ») : l'application n'offre aucun écran d'exploitation, et la remise à zéro est faite à la main ; la requête d'insertion est écrite une fois dans la procédure, avec la seule action de la liste fermée prévue pour elle et des détails vides, et la table reste en ajout seul. Un utilisateur sans organisation (avant la 2.1 : tous) ne reçoit aucune trace d'audit ; les deux emails restent la trace. Les emails sont envoyés par le développeur depuis l'adresse de contact, jamais par l'application : aucun modèle de la porte d'envoi n'y sert.
+
+La procédure est écrite et relue avec la PR 1, et éprouvée sur `dev` par le développeur.
 
 #### 7.3 Rôle exigeant : désactivation impossible
 
@@ -371,9 +388,9 @@ Formulaires affichés après hydratation, `<noscript>` sinon (comme la 1.1). Int
 
 Liste en police à chasse fixe, « Copier les codes » (presse-papiers, aucune requête), case « J'ai conservé mes codes » avant « Terminer ». Ni fichier téléchargé, ni impression proposée : un fichier traîne dans « Téléchargements ».
 
-#### 11.3 Code QR (question 1)
+#### 11.3 Code QR (décision 1)
 
-- **Recommandé** : la matrice est calculée **sur le serveur**, dans la passerelle, par une bibliothèque sans dépendance (`uqr`, question 1), importée seulement par `src/server/auth/qr.ts` (règle ESLint, comme `nodemailer`). Le navigateur ne reçoit que la matrice (section 3.4).
+- **Retenu** : la matrice est calculée **sur le serveur**, dans la passerelle, par une bibliothèque sans dépendance (`uqr` 0.1.3, décision 1), importée seulement par `src/server/auth/qr.ts` (règle ESLint, comme `nodemailer`). Le navigateur ne reçoit que la matrice (section 3.4).
 - **Tracé** par `src/components/compte/code-qr.tsx` : un `<svg>` dont chaque module noir est un rectangle d'un chemin `<path d="...">` construit par React, `viewBox` et marge de 4 modules ; ni `dangerouslySetInnerHTML`, ni attribut `style` (règles O et P), ni image distante. Texte de remplacement : « Code QR à scanner avec votre application d'authentification ».
 - La clé s'affiche à côté pour la saisie à la main (et pour l'accessibilité).
 
@@ -403,11 +420,12 @@ Liste en police à chasse fixe, « Copier les codes » (presse-papiers, aucune r
 | Codes mixtes `[a-zA-Z0-9]` (défaut) | Confusions `l`, `1`, `I`, `O`, `0` et casse à la ressaisie d'un code noté sur papier |
 | Appareil de confiance (`trustDevice`) | Une connexion sans code pendant 30 jours sur un poste volé ; contraire à T-02 |
 | Code par email (`otp`) | La boîte mail devient le second facteur (RR-3) ; budget Gmail (RR-10) |
-| Récupération automatique par email | Même raison ; question 2 |
+| Récupération automatique par email | Même raison ; décision 2 |
 | Remplacement par désactivation puis activation | Un moment sans second facteur ; impossible pour un Propriétaire (section 7.1) |
 | Afficher les codes de secours dès l'étape du code QR | UC-04 les remet après la vérification du code ; un abandon les aurait montrés pour rien |
 | Rendre l'adresse `otpauth://` au navigateur et tracer le QR dans le navigateur | La bibliothèque partirait dans le paquet du navigateur ; l'adresse complète n'y sert à rien |
-| Verrou de Better Auth seul (10 échecs, 15 min) | 960 codes par jour pour qui a le mot de passe (section 6) ; question 3 |
+| Compteur « un code par 3 minutes » sur `compteur_debit` | Compte aussi les codes faux, et ignore l'ordre des tranches ; la décision 4 demande la dernière tranche acceptée |
+| Verrou de Better Auth seul (10 échecs, 15 min) | 960 codes par jour pour qui a le mot de passe (section 6) ; décision 3 |
 | Garder les autres sessions à l'activation | Une session ouverte par un voleur de mot de passe resterait sans second facteur |
 | Révoquer l'ancienne session dès l'étape 1 de la connexion | Un code faux ou abandonné déconnecterait |
 | Distinguer connexion et activation par la présence d'une session sur un seul chemin `verify-totp` | Confusion de comptes dans un navigateur connecté (section 2.1) ; deux chemins explicites, chacun son cookie |
@@ -417,7 +435,7 @@ Liste en police à chasse fixe, « Copier les codes » (presse-papiers, aucune r
 
 - **F-003, UC-04** : activation par code temporaire, dix codes de secours à usage unique remis une fois (section 5).
 - **S-12, S-13, T-02** : PR 2, étape 7 de la chaîne ; désactivation impossible pour un rôle exigeant (sections 7.3, 9).
-- **T-06** : 5 essais par connexion en attente, verrou, 20 codes par jour et par compte, rejeu refusé, code de secours consommé atomiquement (sections 1, 6).
+- **T-06** : 5 essais par connexion en attente, verrou, 20 codes par jour et par compte, code déjà accepté refusé (dernière tranche), code de secours consommé atomiquement (sections 1, 6).
 - **T-04** : la réinitialisation ne touche pas au second facteur (section 4).
 - **T-01, T-07** : connexion inchangée à l'étape 1 ; la réponse `etape: "code"` ne vient qu'après le bon mot de passe.
 - **T-03, S-17** : aucune session avant le code ; autres sessions fermées après un changement du second facteur ; ancienne session du navigateur révoquée après le code (section 8).
@@ -434,13 +452,10 @@ Liste en police à chasse fixe, « Copier les codes » (presse-papiers, aucune r
 
 ## Dépendances nouvelles
 
-**Une, soumise à l'accord du développeur (question 1)** : une bibliothèque de calcul de code QR, côté serveur.
+**`uqr` 0.1.3**, acceptée sous conditions par le développeur (décision 1), vérifiées le 2026-10-18 par `npm view uqr` (lecture seule) : licence MIT ; aucune dépendance ; aucun script `preinstall`, `install` ni `postinstall` (seuls `build`, `dev`, `lint`, `release`, `play`, `test`, `typecheck`) ; dépôt `github.com/unjs/uqr` (organisation unjs) ; mainteneurs `pi0` et `antfu` ; 0.1.3 publiée le 2026-04-03, plus de 14 jours avant. Installée à la version exacte (`"uqr": "0.1.3"`, sans `^`) ; `package-lock.json` ne gagne que ses deux entrées (le npm 11.8 du poste retirait au passage des champs `libc` de quatre paquets natifs : rétablis). Inscrite dans `docs/STACK.md`.
 
-| Proposition | Pourquoi | Alternative |
-|---|---|---|
-| **`uqr`** (projet unjs, licence MIT, aucune dépendance, ESM, version exacte à figer après vérification) | Rend la matrice (`encode`) sans dessin ni DOM ; petite ; aucune dépendance transitive | `qrcode-generator` (licence MIT, aucune dépendance, plus ancienne) ; ou aucune bibliothèque : clé à saisir à la main seulement (UC-04 étape 2 non tenue) |
-
-Existence, éditeur, popularité et version : à vérifier à la main avant l'ajout (S-88), jamais `npm audit fix`. Aucune bibliothèque TOTP : le calcul des codes dans les tests passe par `node:crypto` (HMAC-SHA-1, RFC 6238) ou par `generateTOTP` de Better Auth (appel serveur).
+- **Une seule importation**, `src/server/auth/qr.ts` (`import { encode } from "uqr"`), côté serveur ; règle ESLint `V` (`no-restricted-imports` partout ailleurs, `src/components/` et `src/app/` compris), avec son test dans `regles-import.test.ts`.
+- Jamais `npm audit fix`. Aucune bibliothèque TOTP : le calcul des codes dans les tests passe par `node:crypto` (HMAC-SHA-1, RFC 6238) ou par `generateTOTP` de Better Auth (appel serveur).
 
 ## Migration
 
@@ -474,7 +489,9 @@ Aucune. `two_factor` porte déjà `secret`, `backup_codes`, `user_id`, `verified
 - [ ] Journal du serveur, Vitest et site construit : aucune valeur de la section 3.5.
 - [ ] Contrôle après déploiement : quatorze `POST`, chemins fermés, nouvelle page ; en local, seuls les `comptes:*` échouent.
 - [ ] `/compte/double-authentification` vérifiée à 390 et 1280 px ; captures jointes.
-- [ ] Procédure de récupération manuelle écrite dans `docs/CONFIGURATION.md` et éprouvée sur `dev` (si la question 2 est tranchée ainsi).
+- [ ] Procédure de remise à zéro écrite dans `docs/exploitation/remise-a-zero-double-authentification.md` (requêtes exactes, emails, trace d'audit) ; éprouvée sur `dev` par le développeur.
+- [ ] Un code de l'application accepté une fois est refusé ensuite pour ce compte, de même qu'un code d'une tranche plus ancienne ; deux usages simultanés du même code : un seul réussit.
+- [ ] `uqr` n'est importée que par `src/server/auth/qr.ts` (règle ESLint et son test).
 - [ ] `npm run verifier` et `npm run test:integration` verts, sorties montrées.
 
 ### PR 2
@@ -496,10 +513,10 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 27 relèven
 4. [ ] **Séparation des cookies** — même fichier, Better Auth simulé qui capture la requête : connexion par code ou code de secours : seul `two_factor` transmis (ni `session_token`, ni `trust_device`, ni `dont_remember`, ni autre cookie) ; gestion : seul le cookie de session ; `/sign-in/email` : aucun cookie, même avec `trust_device` reçu.
 5. [ ] **S-82, corps jamais transmis** — même fichier : `200 { token, user }` → `{ ok: true }` et les seuls cookies attendus ; `twoFactorRedirect` → `{ ok: true, etape: "code" }`, seul `two_factor` transmis (effacement du cookie de session retiré) ; `enable` → exactement `{ ok, qr, cle, codes }`, sans `totpURI` ; réponse hors forme (9 codes, code mal formé, `totpURI` absent ou d'un autre schéma) → `erreur` avec incident.
 6. [ ] **Traductions** — `points-entree.test.ts` : `INVALID_CODE`, `INVALID_BACKUP_CODE`, `409`, `TOTP_NOT_ENABLED` à la connexion → `code_incorrect` ; `INVALID_TWO_FACTOR_COOKIE`, `TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE` → `connexion_expiree` ; `ACCOUNT_TEMPORARILY_LOCKED`, `429` → `trop_de_requetes` ; `INVALID_PASSWORD` → `mot_de_passe_incorrect` ; `5xx`, `TOTP_ALREADY_ENABLED`, code inconnu → `erreur`.
-7. [ ] **Ordre de la connexion** — même fichier : attente inconnue → `connexion_expiree`, rien d'autre appelé ; limite par compte avant le rejeu, le rejeu avant Better Auth ; limite refusée → `trop_de_requetes` et alerte planifiée, Better Auth jamais appelé ; rejeu refusé → `code_incorrect` ; code de secours : pas de rejeu compté, l'empreinte (jamais le code) envoyée à Better Auth.
+7. [ ] **Ordre de la connexion** — même fichier : attente inconnue → `connexion_expiree`, rien d'autre appelé ; limite par compte avant l'anti-rejeu, l'anti-rejeu avant Better Auth ; limite refusée → `trop_de_requetes` et alerte planifiée, Better Auth jamais appelé ; tranche refusée → `code_incorrect`, Better Auth jamais appelé ; code faux (aucune tranche) → Better Auth appelé, rien réservé ; code de secours : aucune tranche calculée, l'empreinte (jamais le code) envoyée à Better Auth.
 8. [ ] **Ordre de la gestion** — même fichier : sans session → `connexion_requise` ; limite de gestion avant tout ; désactivation par un rôle exigeant → `double_authentification_obligatoire`, mot de passe jamais vérifié ; mauvais mot de passe → code jamais vérifié ; code faux → opération jamais appelée ; remplacement : `preparerRemplacement` appelé seulement après mot de passe et code justes, puis `enable`.
 9. [ ] **Après le succès** — même fichier : connexion à second facteur : `revoquerSession` jamais appelé à l'étape 1, appelé après un code juste, jamais après un code faux ; activation, remplacement, désactivation : `revoquerAutresSessions` avec le jeton de la nouvelle session (ou du cookie reçu) ; nouveaux codes : jamais ; échec de la révocation : `erreur`, aucun cookie ; emails planifiés selon la section 10.
-10. [ ] **Rejeu et limites, clés** — `limites.test.ts` et `cle.test.ts` : huit limites `auth.double_auth*` et `email.double_auth` présentes, sous 24 h ; aucune règle partagée entre deux limites `auth.*` ; `reglesBetterAuth()` couvre exactement les chemins internes appelés ; somme des budgets d'emails de compte sous `email.application` ; la clé du rejeu ne contient ni l'identifiant ni le code.
+10. [ ] **Limites** — `limites.test.ts` : sept limites `auth.double_auth*` et `email.double_auth` présentes, sous 24 h ; aucune règle partagée entre deux limites `auth.*` ; `reglesBetterAuth()` couvre exactement les chemins internes appelés ; somme des budgets d'emails de compte sous `email.application` .
 11. [ ] **Codes de secours** — `src/server/auth/codes-secours.test.ts` : 10 codes, 10 caractères de l'alphabet, forme `xxxxx-xxxxx`, tous différents, tirés par `randomInt` (simulé : répartition sur tout l'alphabet) ; normalisation (espaces, tirets, majuscules) ; refus hors alphabet ; empreinte `cs1:`, stable, sans le code, différente pour deux codes et pour deux secrets ; `encrypt` idempotent sur une liste d'empreintes, hache une liste de codes, lève sur une liste mêlée d'autre chose ; `decrypt` identité.
 12. [ ] **Empreinte de l'attente** — `src/server/auth/double-authentification.test.ts` : `2fa-<id>` et `2fa-attempts-2fa-<id>` donnent `double-auth:<...>`, sans l'identifiant, stables, différents ; lecture de l'identifiant dans le cookie `two_factor` (signé, encodé, avec `__Secure-`) ; cookie absent ou mal formé : `null`.
 13. [ ] **Code QR et clé** — `src/server/auth/qr.test.ts` : matrice carrée de 0 et 1 pour une adresse `otpauth://` type, déterministe ; clé lue dans `secret`, groupée par 4 ; adresse d'un autre schéma ou sans `secret` : lève. `src/components/compte/code-qr.test.tsx` : un `<svg>` avec `viewBox`, un `<path>`, texte de remplacement, aucun attribut `style`.
@@ -512,7 +529,7 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 27 relèven
 ### Tests d'intégration, avec base (PR 1)
 
 19. [ ] `src/server/db/double-authentification.integration.test.ts` (par `traiterRequeteAuth`, vraie instance, transport `memoire`, planificateur synchrone, codes calculés par le test depuis la clé reçue) : activation complète ; ligne vérifiée ; ni secret ni code en clair dans `two_factor`, `verification` ou `compteur_debit` (recherche des chaînes) ; deux autres sessions ouvertes avant l'activation supprimées, la courante valable ; email.
-20. [ ] Même fichier, **connexion** : étape 1 sans session en base ; code juste : session ; code faux cinq fois puis juste : `connexion_expiree` ; même code juste deux fois en deux connexions : la seconde refusée (rejeu) ; code de secours une fois puis refusé ; **concurrence** : deux `verify-backup-code` simultanés avec le même code, sur deux attentes du même compte : une seule session créée.
+20. [ ] Même fichier, **connexion** : étape 1 sans session en base ; code juste : session ; code faux cinq fois puis juste : `connexion_expiree` ; même code juste deux fois en deux connexions : la seconde refusée (anti-rejeu), et un code de la tranche précédente après un code accepté aussi ; deux connexions simultanées avec le même code juste : une seule session ; code de secours une fois puis refusé ; **concurrence** : deux `verify-backup-code` simultanés avec le même code, sur deux attentes du même compte : une seule session créée.
 21. [ ] Même fichier, **limite par compte** : 20 essais sur un compte depuis 20 adresses IP, le 21e refusé avec le bon code ; email d'alerte ; `compteur_debit` sans valeur en clair. Nettoyage des clés et des comptes.
 22. [ ] Même fichier, **gestion** : nouveaux codes (anciens refusés) ; remplacement (`two_factor_enabled` vrai à chaque étape, ancien secret refusé dès l'étape 3, nouvelle application acceptée) ; désactivation (ligne supprimée, autres sessions supprimées) ; mauvais mot de passe : code de secours toujours valable ensuite.
 23. [ ] Même fichier, **rôle exigeant** (deux organisations, `creerDeuxOrganisations` et `creerMembre`) : Propriétaire de A, Comptable de B : désactivation refusée ; Commercial : acceptée ; `aRoleExigeantDoubleAuth` ne lit que les lignes de l'utilisateur (un autre membre Propriétaire de A ne change rien pour un Lecteur de A).
@@ -548,11 +565,14 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 27 relèven
 | `src/server/auth/session.ts`, `src/server/actions/action.ts`, `src/server/actions/exposer.ts` | `doubleAuthentification` (PR 1 pour `lireComptePourPage`, PR 2 pour l'étape 7) |
 | `src/server/autorisation/matrice.ts` | `ROLES_DOUBLE_AUTH` |
 | `src/server/db/sessions.ts`, `src/server/db/double-authentification.ts` | Nouveaux : `revoquerAutresSessions`, `compterCodesSecours`, `preparerRemplacement`, `aRoleExigeantDoubleAuth`, `adresseUtilisateur` |
-| `src/server/debit/limites.ts`, `src/server/debit/better-auth.ts` | Huit limites, `utilisateur_code`, règles des chemins internes |
+| `src/server/debit/limites.ts`, `src/server/debit/better-auth.ts` | Sept limites `auth.double_auth*` et `email.double_auth`, règles des chemins internes |
 | `src/schemas/double-authentification.ts` | Nouveau |
 | `src/app/(public)/connexion/`, `src/app/(compte)/compte/page.tsx`, `src/app/(compte)/compte/double-authentification/page.tsx`, `src/components/compte/*`, `src/textes/compte.ts` | Étape du code, bloc d'état, page d'activation et de gestion, `code-qr.tsx` |
 | `eslint.config.mjs` | Bibliothèque de QR importable seulement par `src/server/auth/qr.ts` (écrite par script, piège des barres inverses de `CLAUDE.md`) |
-| `package.json`, `package-lock.json` | La dépendance de la question 1, si acceptée |
+| `package.json`, `package-lock.json`, `docs/STACK.md` | `uqr` 0.1.3 (décision 1) |
+| `src/server/auth/tranche-totp.ts` | Nouveau : calcul de la tranche d'un code (décision 4) |
+| `src/server/journal/actions.ts` | Action `membre.double_auth_remise_a_zero` (décision 2) |
+| `docs/exploitation/remise-a-zero-double-authentification.md` | Nouveau : procédure (décision 2) |
 | `src/server/actions/inventaire.test.ts`, tests listés ci-dessus | |
 | `e2e/*.spec.ts`, `e2e/outils.ts` (calcul TOTP par `node:crypto`), `playwright.config.ts` | |
 | `scripts/controle-deploiement.mjs` | Quatorze `POST`, chemins fermés, nouvelle page |
@@ -571,26 +591,25 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 27 relèven
 
 - **Base et `BETTER_AUTH_SECRET` ensemble** donnent tous les secrets TOTP (chiffrement réversible, nécessaire au calcul des codes) et permettent d'essayer les codes de secours hors ligne. Chacun seul ne donne rien.
 - **Changer `BETTER_AUTH_SECRET`** rend illisibles tous les secrets et toutes les empreintes de codes : chaque utilisateur devrait réactiver son second facteur. Better Auth accepte des secrets versionnés pour le chiffrement (enveloppe `$ba$<version>$`), pas nos empreintes HMAC ; à traiter par une fiche si une rotation devient nécessaire (noté dans `CONFIGURATION.md`).
-- **Blocage par qui a le mot de passe** (RR-14, question 3) : 20 codes faux bloquent la connexion du compte 24 heures au plus, même avec le bon code ; le titulaire reçoit l'alerte et change son mot de passe, ce qui arrête l'attaquant à l'étape 1.
-- **Phishing en temps réel** : un site qui relaie mot de passe et code dans les 90 secondes ouvre une session ; le rejeu refusé ne l'empêche pas (seul un facteur lié à l'origine, clé de sécurité, le ferait). Hors du périmètre de F-003.
+- **Blocage par qui a le mot de passe** (RR-14, décision 3) : 20 codes faux bloquent la connexion du compte 24 heures au plus, même avec le bon code ; le titulaire reçoit l'alerte et change son mot de passe, ce qui arrête l'attaquant à l'étape 1.
+- **Phishing en temps réel** : un site qui relaie mot de passe et code dans les 90 secondes ouvre une session ; l'anti-rejeu ne l'empêche pas (seul un facteur lié à l'origine, clé de sécurité, le ferait). Hors du périmètre de F-003.
 - **Activation abandonnée** : la ligne non vérifiée garde un secret chiffré jusqu'à la prochaine activation ou la suppression du compte ; aucune purge par âge sans colonne de date.
 - **Révocation en échec après un changement** : le changement est fait, les autres sessions vivent ; la réponse est `erreur` ; une nouvelle opération ou la 1.5 les ferme.
 - **Rotation de session** : l'activation et la désactivation ouvrent une session de 7 jours à partir de là (section 8.2).
-- **Rejeu après une panne** : un code dont le premier envoi a échoué attend le code suivant, 30 secondes au plus.
+- **Tranche réservée avant Better Auth** : un code juste refusé par Better Auth (verrou, bord de tranche, panne) est perdu ; le suivant arrive dans 30 secondes au plus (section 6.1).
+- **Remise à zéro manuelle** : elle écrit au journal d'audit hors de `journaliser` (section 7.2) ; un utilisateur sans organisation n'y laisse aucune trace d'audit.
 - **Lecture de l'attente hors de la limite par adresse IP** : un cookie `two_factor` forgé fait lire une ligne de `verification` avant toute limite (comme le jeton de la 1.3) ; la ligne n'existe pas, la réponse est `connexion_expiree`.
-- **Téléphone et codes perdus** : récupération manuelle seulement, avec délai (question 2).
-
-## Questions au développeur
-
-Trois vrais choix ; la fiche est écrite avec la recommandation.
-
-1. **Code QR : une dépendance nouvelle ?** Recommandé : **`uqr`** (unjs, MIT, sans dépendance), côté serveur, importé par un seul fichier, après vérification à la main de la version et de l'éditeur. Alternatives : `qrcode-generator` ; ou aucune bibliothèque, clé à saisir à la main seulement (pas de code QR, UC-04 étape 2 non tenue).
-2. **Téléphone et codes de secours perdus.** Recommandé : **procédure manuelle du développeur avec délai de 72 heures** (section 7.2), aucune voie automatique. Alternatives : aucune récupération (le compte est perdu, un nouveau compte est créé) ; ou récupération automatique par email avec délai et notifications (fiche à part, la boîte mail devenant un second facteur de secours).
-3. **Plafond par compte des codes de connexion.** Recommandé : **20 par 24 heures**, avec alerte au titulaire, risque RR-14 inscrit dans `THREATS.md` (blocage d'une journée au plus par qui a le mot de passe). Alternative : verrou de Better Auth seul (10 échecs, 15 minutes), sans blocage long, mais 960 codes par jour pour un attaquant qui a le mot de passe (environ 23 % de réussite en un an d'essais).
+- **Téléphone et codes perdus** : récupération manuelle seulement, avec délai de 72 heures (décision 2).
 
 ## Décisions
 
-À prendre par le développeur (questions 1 à 3).
+Prises par le développeur le 2026-10-18.
+
+1. **`uqr` acceptée sous conditions**, toutes vérifiées par `npm view uqr` (« Dépendances nouvelles ») : version exacte 0.1.3, une seule importation côté serveur, verrouillée par une règle ESLint et son test, inscrite dans `docs/STACK.md`.
+2. **Récupération manuelle** (section 7.2) : demande venant de l'adresse du compte, délai de 72 heures, email au titulaire à la demande et à la remise à zéro, toutes les sessions fermées, trace dans `journal_audit` ; procédure pas à pas, requêtes SQL exactes, dans `docs/exploitation/`.
+3. **Plafond de 20 codes par 24 heures**, alerte au titulaire, et **RR-14** acceptés (section 6).
+4. **Anti-rejeu** : un code déjà accepté pour un compte est refusé, par la dernière tranche de temps acceptée (section 6.1). Sans migration : la ligne vit dans `verification`.
+5. **Décision D de la 1.3** ajoutée à `docs/features/mot-de-passe.md`.
 
 ## Décisions par défaut
 
@@ -607,7 +626,7 @@ Appliquées par l'assistant le 2026-10-18, selon sa recommandation, sauf avis co
 9. **Remplacement sans désactivation**, `two_factor_enabled` toujours vrai (section 7.1).
 10. **Désactivation refusée** à quiconque est Propriétaire ou Comptable dans une organisation, dès la PR 1 (section 7.3).
 11. **Attente de 5 minutes**, aucun appareil de confiance (section 4).
-12. **Limites** de la section 6 : par adresse IP sur chaque chemin interne, 20 codes par jour et par compte (question 3), rejeu refusé 3 minutes, 10 opérations de gestion par heure ; verrou et 5 essais de Better Auth gardés.
+12. **Limites** de la section 6 : par adresse IP sur chaque chemin interne, 20 codes par jour et par compte (décision 3), dernière tranche acceptée (décision 4), 10 opérations de gestion par heure ; verrou et 5 essais de Better Auth gardés.
 13. **Autres sessions fermées** à l'activation, au remplacement et à la désactivation ; révocation de l'ancienne session du navigateur déplacée après le code ; échéance neuve de la rotation acceptée (section 8).
 14. **Six emails**, budget `email.double_auth` de 40 par 24 h ; limites par destinataire pour l'alerte seulement (section 10).
 15. **« Connexions sensibles »** définies (section 12), tracées par email, sans journal d'audit.

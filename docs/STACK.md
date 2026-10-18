@@ -21,6 +21,7 @@ Ce document liste les outils et services retenus, leur rôle, la raison du choix
 | Validation | Zod | Vérifier à l'exécution tout ce qui vient de l'extérieur | Imposé. Schémas partagés entre formulaires et serveur (S-50) |
 | Interface | Tailwind et shadcn/ui | Style et composants accessibles | Imposé. Le code des composants appartient au projet (NF-04) |
 | PDF | @react-pdf/renderer | Générer devis, factures et avoirs | Aucun navigateur lancé, aucune ressource distante chargée (S-87, T-63) |
+| Code QR de la double authentification | `uqr` 0.1.3, version exacte (projet unjs, licence MIT, aucune dépendance, aucun script d'installation ; vérifié par `npm view uqr` le 2026-10-18) | Calculer la matrice du code QR de l'activation (`encode`), sur le serveur | Ajoutée par la 1.4 (`docs/features/double-authentification.md`, décision 1). Importée par le seul fichier `src/server/auth/qr.ts` (règle ESLint V) ; le navigateur ne reçoit que la matrice, tracée en SVG par React |
 | Tests unitaires et d'intégration | Vitest, en environnement Node | Calculs, règles métier, tests d'attaque | Imposé |
 | Tests de bout en bout | Playwright | Parcours complets dans un vrai navigateur, captures d'écran | Imposé |
 

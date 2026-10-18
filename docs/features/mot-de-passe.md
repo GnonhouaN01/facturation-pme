@@ -541,6 +541,7 @@ Prises par le développeur le 2026-10-16.
 - **A. Liens vers des pages fixes dans les emails** (section 6.3) : `lienPage` accepté. Liste fermée de deux pages (`/connexion`, `/mot-de-passe-oublie`), écrite dans le modèle ; adresse toujours construite sur l'origine de l'application ; jamais de page ni de paramètre fournis par l'appelant ; un test prouve qu'une page hors de la liste est refusée. Règle 17 de `CLAUDE.md` et parade de T-65 réécrites.
 - **B. Réinitialisation d'un compte non vérifié** (section 4.3) : le succès marque l'adresse vérifiée. La correction du nom saisi par un tiers est reportée à la 1.5 (« Reporté »).
 - **C. Budget `email.reinitialisation`** (50 par 24 h) et **RR-13** acceptés (section 6.4). Surveillance des lignes `[email] ... "limite"` et conduite à tenir : section 12.3.
+- **D. Ouverture en production différée.** La PR 2 (#52, sections 11 et 12) reste en brouillon et n'est fusionnée qu'après la page `/donnees-personnelles`, publiée en production, et la formalité auprès de l'ARTCI (loi n° 2013-450 relative à la protection des données à caractère personnel) vérifiée ; ces deux conditions s'ajoutent à la liste de contrôle de la section 12. Jusque-là, les comptes restent fermés en production. Base de production vérifiée le 2026-10-18 : 9 migrations, 11 tables, droits conformes, aucun compte (`docs/PLAN.md`, jalon 1).
 
 ## Décisions par défaut
 
