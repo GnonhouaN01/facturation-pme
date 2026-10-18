@@ -62,7 +62,14 @@ Aucun écran métier. Ce jalon construit ce dont toutes les fonctionnalités aur
 
 La tâche quotidienne (8.3) est avancée au jalon 1 : sa route et la purge des compteurs de débit (`purgerCompteurs`, livrée par la 0.5) sont mises en service avant la 1.1, première limitation par adresse IP ou par email (`docs/features/limitation-debit.md`, décision 6). Première version, avec la purge des comptes non vérifiés : `docs/features/tache-quotidienne.md`, avant la PR 2 de la 1.1. Le reste de la 8.3 s'y ajoute ensuite.
 
-La 1.6 livre le mécanisme qu'attend la chaîne de contrôles : jusque-là, toute action déclarée avec `nouvelleAuthentification: true` est refusée (`docs/features/chaine-controles.md`). Elle précède donc les fonctionnalités 2.2, 2.4, 2.5 et 7.2. La 1.4 active, dans la chaîne, l'exigence de double authentification par rôle (S-12, S-13) et écrit le test de T-02.
+La 1.6 livre le mécanisme qu'attend la chaîne de contrôles : jusque-là, toute action déclarée avec `nouvelleAuthentification: true` est refusée (`docs/features/chaine-controles.md`). Elle précède donc les fonctionnalités 2.2, 2.4, 2.5 et 7.2. La 1.4 active, dans la chaîne, l'exigence de double authentification par rôle (S-12, S-13) et écrit le test de T-02 (`docs/features/double-authentification.md`, PR 2).
+
+**Ouverture des comptes en production (décision D de la 1.3).** La PR 2 de la 1.3 (#52, retrait de `COMPTES_OUVERTS_EN_PRODUCTION`, `docs/features/mot-de-passe.md`, sections 11 et 12) est prête, en brouillon. Elle n'est fusionnée qu'après deux conditions, en plus de la liste de contrôle de sa section 12 :
+
+- la page `/donnees-personnelles` (information des utilisateurs sur leurs données, `THREATS.md` section 7), publiée en production ; elle demande sa propre fiche ;
+- la formalité auprès de l'ARTCI, autorité de protection des données de Côte d'Ivoire (loi n° 2013-450 du 19 juin 2013 relative à la protection des données à caractère personnel), vérifiée : nature de la formalité due, et formalité accomplie si elle l'est.
+
+Jusque-là, les comptes restent fermés en production, et les fonctionnalités suivantes du jalon 1 s'y ajoutent fermées. Base de production vérifiée le 2026-10-18 : 9 migrations, 11 tables, droits conformes, aucun compte. Si la 1.4 est fusionnée avant #52, celle-ci passe à quatorze points d'entrée (`docs/features/double-authentification.md`, section 13).
 
 **Démontrable à la fin :** un visiteur crée un compte, le vérifie, active la double authentification et gère ses sessions.
 
@@ -312,7 +319,7 @@ Cette estimation est une fourchette, pas un engagement. Elle repose sur le rythm
 | Envoi d'emails | Un compte Gmail dédié, gratuit et sans nom de domaine. Gmail bloque l'envoi de 1 à 24 heures au-delà de 500 emails par jour (Google, consulté le 2026-10-12). Google peut aussi ralentir un compte qui envoie des messages semblables, ou bloquer la première connexion d'un compte neuf depuis Francfort (RR-10). Un seul compte sert toutes les organisations | Compte créé pour l'application, jamais le compte personnel. Double authentification et mot de passe d'application. Limites internes (0.7) : 200 par 24 heures pour l'application, 40 par organisation, 3 par heure et 10 par jour par destinataire. À partir de 5 organisations actives, la limite de l'application devient le goulot, et une relance de fin de mois peut dépasser 40 : valeurs à revoir aux jalons 6 et 8. Module interchangeable, pour passer à un service spécialisé le jour où un nom de domaine existe (`docs/features/envoi-emails.md`) |
 | Drizzle 1.0 | La version stable n'est pas parue. Une mise à jour pourra modifier le format des migrations | Mise à jour manuelle, dans une PR dédiée, à la sortie de la version |
 | Règles FNE et taux de TVA | Non vérifiés auprès d'une source officielle | À vérifier avant le jalon 5 |
-| Données personnelles | Cadre légal ivoirien non vérifié | À vérifier avant le jalon 3 |
+| Données personnelles | Cadre légal ivoirien non vérifié (loi n° 2013-450, ARTCI) | À vérifier avant l'ouverture des comptes en production (décision D de la 1.3, jalon 1), donc avant le jalon 3 |
 | Tests sur la branche `dev` | Des tests interrompus peuvent y laisser des données | Identifiants aléatoires, nettoyage systématique, branche recréable à tout moment |
 | Durée | Six à onze mois est long pour un projet personnel | Jalons déployés un par un. Arrêt possible après le jalon 5 avec un produit présentable |
 | Limites des offres gratuites | 100 heures de calcul par mois chez Neon ; 500 emails par jour chez Gmail, 200 par 24 heures dans nos limites | À surveiller à partir du jalon 4 |
