@@ -430,3 +430,102 @@ describe("ligne [email] d'une limite atteinte", () => {
     expect(lu.raison).toBe("erreur");
   });
 });
+
+// Fonctionnalité 1.4 : les six notifications de la double authentification,
+// sur le budget email.double_auth ; l'adresse est lue dans la tâche planifiée,
+// après la réponse, jamais reçue de la requête. Seule l'alerte des codes
+// refusés est bornée par destinataire. Fiche :
+// docs/features/double-authentification.md, section 10, test 16.
+describe("emailDoubleAuth : notifications de la double authentification (1.4)", () => {
+  const NOTIFICATIONS = [
+    "compte.double_auth_activee",
+    "compte.double_auth_desactivee",
+    "compte.double_auth_remplacee",
+    "compte.codes_secours_regeneres",
+    "compte.code_secours_utilise",
+  ] as const;
+
+  test.each([...NOTIFICATIONS, "compte.double_auth_tentatives"] as const)(
+    "%s : planifiée, l'adresse lue dans la tâche, aucun paramètre",
+    async (modele) => {
+      const { emails, taches, envois, executer } = banc();
+      const lireAdresse = vi.fn(async () => ADRESSE);
+      emails.emailDoubleAuth(modele, lireAdresse);
+      expect(taches).toHaveLength(1);
+      expect(lireAdresse).not.toHaveBeenCalled();
+      expect(envois).toEqual([]);
+      await executer();
+      expect(lireAdresse).toHaveBeenCalledTimes(1);
+      expect(envois).toEqual([{ modele, destinataire: ADRESSE_NORMALISEE, parametres: {} }]);
+    },
+  );
+
+  test.each(NOTIFICATIONS)(
+    "%s : sans limite par destinataire, double_auth puis application",
+    async (modele) => {
+      const { emails, debits, envois, executer } = banc({
+        limites: { "email.destinataire": false, "email.destinataire_jour": false },
+      });
+      emails.emailDoubleAuth(modele, async () => ADRESSE);
+      await executer();
+      expect(debits.map(([nom]) => nom)).toEqual(["email.double_auth", "email.application"]);
+      expect(envois).toHaveLength(1);
+    },
+  );
+
+  test("compte.double_auth_tentatives : destinataire, destinataire_jour, double_auth, application", async () => {
+    const { emails, debits, executer } = banc();
+    emails.emailDoubleAuth("compte.double_auth_tentatives", async () => ADRESSE);
+    await executer();
+    expect(debits).toEqual([
+      ["email.destinataire", ADRESSE_NORMALISEE],
+      ["email.destinataire_jour", ADRESSE_NORMALISEE],
+      ["email.double_auth", "gmail"],
+      ["email.application", "gmail"],
+    ]);
+  });
+
+  test("budget email.double_auth atteint : rien n'est envoyé, la ligne [email] nomme la limite", async () => {
+    const lignes: unknown[][] = [];
+    vi.spyOn(console, "error").mockImplementation((...valeurs: unknown[]) => {
+      lignes.push(valeurs);
+    });
+    const { emails, envois, executer } = banc({ limites: { "email.double_auth": false } });
+    emails.emailDoubleAuth("compte.double_auth_activee", async () => ADRESSE);
+    await executer();
+    expect(envois).toEqual([]);
+    expect(JSON.parse(String(lignes[0]?.[1]))).toMatchObject({
+      modele: "compte.double_auth_activee",
+      raison: "limite",
+      limite: "email.double_auth",
+    });
+  });
+
+  test("adresse introuvable (compte supprimé entre-temps) : rien n'est compté ni envoyé, rien n'est levé", async () => {
+    const { emails, debits, envois, executer } = banc();
+    emails.emailDoubleAuth("compte.double_auth_activee", async () => null);
+    await executer();
+    expect(debits).toEqual([]);
+    expect(envois).toEqual([]);
+  });
+
+  test("lecture de l'adresse ou planification en échec : rien n'est levé, ni adresse ni identifiant au journal", async () => {
+    const lire = journal();
+    const { emails, executer } = banc();
+    emails.emailDoubleAuth("compte.double_auth_activee", async () => {
+      throw new Error("panne pour awa@exemple.invalid u-123");
+    });
+    await expect(executer()).resolves.toBeUndefined();
+    const avecPlanification = creerEmailsCompte({
+      planifier: () => {
+        throw new Error("after() hors d'une requête");
+      },
+      verifierDebit: async () => true,
+      envoyerEmail: async () => ({ envoye: true }),
+    });
+    expect(() =>
+      avecPlanification.emailDoubleAuth("compte.double_auth_activee", async () => ADRESSE),
+    ).not.toThrow();
+    expect(lire()).not.toMatch(/exemple\.invalid|u-123/u);
+  });
+});

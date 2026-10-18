@@ -436,6 +436,16 @@ describe("pages de la zone compte (1.2)", () => {
     expect(problemesDeLaZoneCompte(sources)).toEqual([]);
   });
 
+  // 1.4 : la page d'activation et de gestion de la double authentification
+  // (docs/features/double-authentification.md, section 11, test 18).
+  test("dépôt : /compte/double-authentification existe dans la zone compte et appelle lireComptePourPage", () => {
+    const sources = sourcesDeApp();
+    expect(sources.map(({ chemin }) => chemin)).toContain(
+      "(compte)/compte/double-authentification/page.tsx",
+    );
+    expect(problemesDeLaZoneCompte(sources)).toEqual([]);
+  });
+
   test.each<[string, Source[], string[]]>([
     [
       "page qui appelle lireComptePourPage",

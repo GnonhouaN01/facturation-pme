@@ -1058,3 +1058,43 @@ describe(
     });
   },
 );
+
+// V. uqr (1.4, décision 1) : une seule importation, côté serveur, dans
+// src/server/auth/qr.ts ; partout ailleurs, composants et pages compris,
+// refusée, chargement dynamique compris. Fiche :
+// docs/features/double-authentification.md, « Dépendances nouvelles ».
+const UQR = `import { encode } from "uqr";
+export const f = encode;
+`;
+const UQR_SOUS_CHEMIN = `import * as u from "uqr/dist/index.mjs";
+export const f = u;
+`;
+const UQR_DYNAMIQUE = `export const f = () => import("uqr");
+`;
+const UQR_REEXPORT = `export { encode } from "uqr";
+`;
+
+describe("V. uqr ne s'importe que dans src/server/auth/qr.ts", { timeout: 60_000 }, () => {
+  test.each([
+    ["un composant", UQR, "src/components/compte/essai.tsx"],
+    ["une page", UQR, "src/app/(compte)/compte/essai/page.tsx"],
+    ["un autre fichier de auth/", UQR, "src/server/auth/double-authentification.ts"],
+    ["le gestionnaire", UQR, "src/server/auth/gestionnaire.ts"],
+    ["auth/config.ts", UQR, "src/server/auth/config.ts"],
+    ["une action", UQR, "src/server/actions/essai.ts"],
+    ["exposer.ts", UQR, "src/server/actions/exposer.ts"],
+    ["db/", UQR, "src/server/db/essai.ts"],
+    ["un test", UQR, "src/server/auth/essai.test.ts"],
+    ["un test de db/", UQR, "src/server/db/essai.integration.test.ts"],
+    ["un sous-chemin", UQR_SOUS_CHEMIN, "src/server/auth/essai.ts"],
+    ["un chargement dynamique", UQR_DYNAMIQUE, "src/server/auth/essai.ts"],
+    ["un chargement dynamique dans qr.ts", UQR_DYNAMIQUE, "src/server/auth/qr.ts"],
+    ["une réexportation", UQR_REEXPORT, "src/server/auth/essai.ts"],
+  ])("%s : refusé", async (_nom, code, fichier) => {
+    expect(await refus(code, fichier)).not.toEqual([]);
+  });
+
+  test("src/server/auth/qr.ts : autorisé", async () => {
+    expect(await refus(UQR, "src/server/auth/qr.ts")).toEqual([]);
+  });
+});

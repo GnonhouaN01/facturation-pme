@@ -39,6 +39,13 @@ const EXEMPLES = {
   // 1.3 (docs/features/mot-de-passe.md, section 6.2).
   "compte.reinitialisation": { jeton: "aB3dE5fG7hJ9kL1mN2pQ4rS6" },
   "compte.mot_de_passe_modifie": {},
+  // 1.4 (docs/features/double-authentification.md, section 10).
+  "compte.double_auth_activee": {},
+  "compte.double_auth_desactivee": {},
+  "compte.double_auth_remplacee": {},
+  "compte.codes_secours_regeneres": {},
+  "compte.code_secours_utilise": {},
+  "compte.double_auth_tentatives": {},
 } as const satisfies Record<ModeleEmail, Record<string, unknown>>;
 
 const NOMS = Object.keys(MODELES_EMAIL) as ModeleEmail[];
@@ -61,13 +68,21 @@ describe("la liste fermée", () => {
   // (docs/features/inscription.md, section 4.5).
   // Modifié en 1.3 : deux modèles de plus, la réinitialisation et la
   // notification (docs/features/mot-de-passe.md, section 6.2).
-  test("1.3 : cinq modèles, l'essai et les quatre emails de compte", () => {
+  // Modifié en 1.4 : onze modèles, avec les six notifications de la double
+  // authentification (docs/features/double-authentification.md, section 10).
+  test("1.4 : onze modèles, l'essai et les dix emails de compte", () => {
     expect(NOMS).toEqual([
       "essai.verification_envoi",
       "compte.verification",
       "compte.existant",
       "compte.reinitialisation",
       "compte.mot_de_passe_modifie",
+      "compte.double_auth_activee",
+      "compte.double_auth_desactivee",
+      "compte.double_auth_remplacee",
+      "compte.codes_secours_regeneres",
+      "compte.code_secours_utilise",
+      "compte.double_auth_tentatives",
     ]);
   });
 
@@ -577,4 +592,64 @@ describe("modèles de la réinitialisation (1.3)", () => {
       expect(cle).toMatch(/^jeton$/u);
     }
   });
+});
+
+// Fonctionnalité 1.4 : notifications de la double authentification. Aucun
+// paramètre ; liens vers des pages fixes de PAGES_LIEN seulement ; ni code,
+// ni clé, ni date, ni adresse IP. Fiche :
+// docs/features/double-authentification.md, section 10, test 16.
+describe("modèles de la double authentification (1.4)", () => {
+  const ATTENDUS = [
+    [
+      "compte.double_auth_activee",
+      "Double authentification activée",
+      [`${ORIGINE}/mot-de-passe-oublie`],
+      "vos autres sessions ont été fermées",
+    ],
+    [
+      "compte.double_auth_desactivee",
+      "Double authentification désactivée",
+      [`${ORIGINE}/mot-de-passe-oublie`],
+      "n'est plus protégé que par votre mot de passe",
+    ],
+    [
+      "compte.double_auth_remplacee",
+      "Application d'authentification remplacée",
+      [`${ORIGINE}/mot-de-passe-oublie`],
+      "ne servent plus",
+    ],
+    [
+      "compte.codes_secours_regeneres",
+      "Nouveaux codes de secours",
+      [`${ORIGINE}/mot-de-passe-oublie`],
+      "ne servent plus",
+    ],
+    [
+      "compte.code_secours_utilise",
+      "Code de secours utilisé",
+      [`${ORIGINE}/mot-de-passe-oublie`],
+      "il ne servira plus",
+    ],
+    [
+      "compte.double_auth_tentatives",
+      "Codes de vérification refusés",
+      [`${ORIGINE}/mot-de-passe-oublie`],
+      "24 heures au plus",
+    ],
+  ] as const;
+
+  test.each(ATTENDUS)(
+    "%s : sujet « %s », seuls liens les pages fixes, texte de la fiche",
+    (nom, sujet, liens, extrait) => {
+      expect(TEXTES_EMAILS.modeles[nom].sujet).toBe(sujet);
+      const { corps } = MODELES_EMAIL[nom].construire({}, { origine: ORIGINE });
+      expect(corps.match(/https?:\/\/\S+/gu)).toEqual([...liens]);
+      expect(corps).toContain(extrait);
+      expect(corps).not.toMatch(/\d{6}/u);
+      expect(corps).not.toMatch(/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/u);
+      expect(corps).not.toMatch(/\d{4}-\d{2}-\d{2}/u);
+      expect(corps).not.toContain("otpauth");
+      expect(MODELES_EMAIL[nom].parametres.safeParse({ code: "123456" }).success).toBe(false);
+    },
+  );
 });

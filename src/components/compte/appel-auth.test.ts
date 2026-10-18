@@ -115,3 +115,67 @@ describe("appelerAuth (1.3)", () => {
     expect(await appelerAuth("/reset-password", {})).toEqual({ ok: false, raison });
   });
 });
+
+// Fonctionnalité 1.4 : cinq raisons nouvelles ; l'étape du code de la
+// connexion ; la remise unique de l'activation (matrice, clé, codes) et des
+// nouveaux codes, lues seulement à la bonne forme. Fiche :
+// docs/features/double-authentification.md, sections 2.4 et 3.4, test 18.
+describe("appelerAuth (1.4)", () => {
+  const CODES = Array.from({ length: 10 }, () => "abcde-fghjk");
+
+  test.each([
+    "code_incorrect",
+    "connexion_expiree",
+    "connexion_requise",
+    "mot_de_passe_incorrect",
+    "double_authentification_obligatoire",
+  ])("%s est une raison reconnue", async (raison) => {
+    repondre({ ok: false, raison }, 400);
+    expect(await appelerAuth("/two-factor/verify-totp", { code: "123456" })).toEqual({
+      ok: false,
+      raison,
+    });
+  });
+
+  test("connexion : etape « code » lue ; toute autre étape ignorée", async () => {
+    repondre({ ok: true, etape: "code" });
+    expect(await appelerAuth("/sign-in/email", {})).toEqual({ ok: true, etape: "code" });
+    repondre({ ok: true, etape: "autre" });
+    expect(await appelerAuth("/sign-in/email", {})).toEqual({ ok: true });
+  });
+
+  test("activation : qr, cle et codes lus à la bonne forme", async () => {
+    repondre({ ok: true, qr: ["101", "010", "111"], cle: "MFRG GZDF", codes: CODES });
+    expect(await appelerAuth("/two-factor/enable", { motDePasse: "x" })).toEqual({
+      ok: true,
+      activation: { qr: ["101", "010", "111"], cle: "MFRG GZDF", codes: CODES },
+    });
+  });
+
+  test.each([
+    ["matrice non carrée", { qr: ["10", "0"], cle: "MFRG", codes: CODES }],
+    ["matrice hors 0 et 1", { qr: ["12", "01"], cle: "MFRG", codes: CODES }],
+    ["clé hors base32", { qr: ["1"], cle: "mfrg<script>", codes: CODES }],
+    ["neuf codes", { qr: ["1"], cle: "MFRG", codes: CODES.slice(1) }],
+    ["code mal formé", { qr: ["1"], cle: "MFRG", codes: [...CODES.slice(1), "<b>x</b>"] }],
+  ])("activation hors forme (%s) : erreur", async (_nom, corps) => {
+    repondre({ ok: true, ...corps });
+    expect(await appelerAuth("/two-factor/enable", { motDePasse: "x" })).toEqual({
+      ok: false,
+      raison: "erreur",
+    });
+  });
+
+  test("nouveaux codes : codes lus ; hors forme : erreur", async () => {
+    repondre({ ok: true, codes: CODES });
+    expect(await appelerAuth("/two-factor/generate-backup-codes", {})).toEqual({
+      ok: true,
+      codes: CODES,
+    });
+    repondre({ ok: true, codes: ["x"] });
+    expect(await appelerAuth("/two-factor/generate-backup-codes", {})).toEqual({
+      ok: false,
+      raison: "erreur",
+    });
+  });
+});

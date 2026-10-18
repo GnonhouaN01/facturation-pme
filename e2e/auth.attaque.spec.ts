@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import {
   adresseConnexion,
+  adresseDoubleAuth,
   connecter,
   creerCompteVerifie,
   MOT_DE_PASSE,
@@ -83,7 +84,13 @@ const CHEMINS_FERMES = [
   `/reset-password/${"aB3dE5fG7hJ9kL1mN2pQ4rS6"}`,
   "/verify-password",
   "/forget-password",
-  "/two-factor/enable",
+  // 1.4 (modifié) : /two-factor/enable et six autres points de la double
+  // authentification sont ouverts en POST ; leur GET est vérifié avec les
+  // autres points ouverts, plus bas. Le secret ne se relit jamais, et aucun
+  // code ne part par email.
+  "/two-factor/get-totp-uri",
+  "/two-factor/send-otp",
+  "/two-factor/verify-otp",
   "/update-user",
   "/change-password",
   "/delete-user",
@@ -147,8 +154,8 @@ test.describe("T-55 : points d'entrée fermés, indiscernables d'une adresse ine
   });
 
   // 1.2 (modifié) : cinq points ouverts au lieu de trois. 1.3 (modifié) :
-  // sept.
-  test("GET des sept points ouverts : fermé (seul POST est admis)", async () => {
+  // sept. 1.4 (modifié) : quatorze.
+  test("GET des quatorze points ouverts : fermé (seul POST est admis)", async () => {
     for (const chemin of [
       "/sign-up/email",
       "/send-verification-email",
@@ -157,6 +164,13 @@ test.describe("T-55 : points d'entrée fermés, indiscernables d'une adresse ine
       "/sign-out",
       "/request-password-reset",
       "/reset-password",
+      "/two-factor/verify-totp",
+      "/two-factor/verify-backup-code",
+      "/two-factor/enable",
+      "/two-factor/confirm-enable",
+      "/two-factor/replace",
+      "/two-factor/generate-backup-codes",
+      "/two-factor/disable",
     ]) {
       expect(await lire(chemin), chemin).toEqual(await lire(inexistant()));
     }
@@ -329,6 +343,24 @@ test.describe("T-01 et S-82 : connexion", () => {
 
     expect(session).toEqual(reference);
     expect(session.corps).toBe("");
+  });
+
+  // 1.4 : le secret TOTP ne se relit jamais, même avec une session valide et
+  // le mot de passe (docs/features/double-authentification.md, section 2.3).
+  test("POST /two-factor/get-totp-uri avec une session valide et le mot de passe : identique à un chemin inexistant", async ({}, info) => {
+    const valeur = await creerCompteVerifie(adresseDoubleAuth(info, "ferme"));
+    const options = {
+      methode: "POST" as const,
+      entetes: {
+        "content-type": "application/json",
+        origin: ADRESSE,
+        cookie: `${NOM_COOKIE}=${valeur}`,
+      },
+      corps: JSON.stringify({ password: MOT_DE_PASSE }),
+    };
+    expect(await lire("/two-factor/get-totp-uri", options)).toEqual(
+      await lire(inexistant(), options),
+    );
   });
 });
 

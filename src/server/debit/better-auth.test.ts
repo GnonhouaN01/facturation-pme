@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import { describe, expect, test, vi } from "vitest";
 
+import { CHEMINS_INTERNES_DOUBLE_AUTH } from "../auth/double-authentification";
 import { POINTS_ENTREE_OUVERTS } from "../auth/points-entree";
 import type { Compteur } from "../db/debit";
 
@@ -46,7 +47,10 @@ describe("reglesBetterAuth : règles par chemin, tirées de LIMITES", () => {
   // (docs/features/connexion.md, section 3, test 11). Modifié en 1.3 : sept,
   // avec la demande et la réinitialisation (docs/features/mot-de-passe.md,
   // section 5, test 16).
-  test("les sept chemins ouverts, chacun avec sa limite", () => {
+  // Modifié en 1.4 : douze chemins, avec les cinq chemins internes de la
+  // double authentification (docs/features/double-authentification.md,
+  // section 6, test 10).
+  test("les douze chemins appelés chez Better Auth, chacun avec sa limite", () => {
     expect(CHEMINS_LIMITES).toEqual({
       "/sign-up/email": "auth.inscription",
       "/send-verification-email": "auth.renvoi_verification",
@@ -55,6 +59,11 @@ describe("reglesBetterAuth : règles par chemin, tirées de LIMITES", () => {
       "/sign-out": "auth.deconnexion",
       "/request-password-reset": "auth.reinitialisation_demande",
       "/reset-password": "auth.reinitialisation",
+      "/two-factor/verify-totp": "auth.double_auth_code",
+      "/two-factor/verify-backup-code": "auth.double_auth_secours",
+      "/two-factor/enable": "auth.double_auth_activation",
+      "/two-factor/generate-backup-codes": "auth.double_auth_codes",
+      "/two-factor/disable": "auth.double_auth_desactivation",
     });
     expect(reglesBetterAuth()).toEqual({
       "/sign-up/email": regle("auth.inscription"),
@@ -64,12 +73,22 @@ describe("reglesBetterAuth : règles par chemin, tirées de LIMITES", () => {
       "/sign-out": regle("auth.deconnexion"),
       "/request-password-reset": regle("auth.reinitialisation_demande"),
       "/reset-password": regle("auth.reinitialisation"),
+      "/two-factor/verify-totp": regle("auth.double_auth_code"),
+      "/two-factor/verify-backup-code": regle("auth.double_auth_secours"),
+      "/two-factor/enable": regle("auth.double_auth_activation"),
+      "/two-factor/generate-backup-codes": regle("auth.double_auth_codes"),
+      "/two-factor/disable": regle("auth.double_auth_desactivation"),
     });
   });
 
-  test("les règles couvrent exactement les points d'entrée ouverts", () => {
+  // Modifié en 1.4 : les points simples, plus les chemins internes appelés par
+  // les sept points composés de la double authentification.
+  test("les règles couvrent exactement les chemins appelés chez Better Auth", () => {
+    const simples = Object.keys(POINTS_ENTREE_OUVERTS).filter(
+      (chemin) => !chemin.startsWith("/two-factor/"),
+    );
     expect(Object.keys(reglesBetterAuth()).sort()).toEqual(
-      Object.keys(POINTS_ENTREE_OUVERTS).sort(),
+      [...simples, ...CHEMINS_INTERNES_DOUBLE_AUTH].sort(),
     );
   });
 

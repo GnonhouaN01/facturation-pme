@@ -7,6 +7,7 @@ import {
   POINTS_ENTREE_OUVERTS,
   reponseInexistante,
 } from "./points-entree";
+import { dependancesDoubleAuthInertes } from "../db/outils-test/double-auth";
 
 // Tests d'attaque de la liste fermée des points d'entrée de /api/auth : T-55
 // (points d'entrée natifs fermés), S-81 (origine), entrée falsifiée,
@@ -108,6 +109,9 @@ function traitement(
     limiterReinitialisation,
     jetonReinitialisationValide,
     motDePasseCompromis,
+    // 1.4 : jamais atteintes ici (docs/features/double-authentification.md) ;
+    // les points /two-factor/* ont leurs propres tests d'attaque.
+    doubleAuth: dependancesDoubleAuthInertes(),
     horloge: { maintenant: () => 0, attendre: async () => {} },
   });
   return {
@@ -167,11 +171,18 @@ function cheminsDeclares(): string[] {
 }
 
 const OUVERTS = Object.keys(POINTS_ENTREE_OUVERTS).sort();
+// 1.4 : les points simples, un appel à Better Auth chacun ; les sept points de
+// la double authentification ont leurs tests dans
+// double-authentification.attaque.test.ts.
+const SIMPLES = OUVERTS.filter((chemin) => !chemin.startsWith("/two-factor/"));
+// Les deux points composés par la passerelle n'existent pas chez Better Auth.
+const COMPOSES = ["/two-factor/confirm-enable", "/two-factor/replace"];
 
 describe("T-55 : liste fermée des points d'entrée", () => {
   // Modifié en 1.3 : sept points au lieu de cinq (docs/features/mot-de-passe.md,
-  // section 2.1).
-  test("les points d'entrée ouverts sont exactement les sept des fiches 1.1 à 1.3, en POST", () => {
+  // section 2.1). Modifié en 1.4 : quatorze, avec les sept de la double
+  // authentification (docs/features/double-authentification.md, section 2.1).
+  test("les points d'entrée ouverts sont exactement les quatorze des fiches 1.1 à 1.4, en POST", () => {
     expect(OUVERTS).toEqual([
       "/request-password-reset",
       "/reset-password",
@@ -179,14 +190,38 @@ describe("T-55 : liste fermée des points d'entrée", () => {
       "/sign-in/email",
       "/sign-out",
       "/sign-up/email",
+      "/two-factor/confirm-enable",
+      "/two-factor/disable",
+      "/two-factor/enable",
+      "/two-factor/generate-backup-codes",
+      "/two-factor/replace",
+      "/two-factor/verify-backup-code",
+      "/two-factor/verify-totp",
       "/verify-email",
     ]);
     for (const point of Object.values(POINTS_ENTREE_OUVERTS)) expect(point.methode).toBe("POST");
   });
 
-  test("chaque point d'entrée ouvert existe dans l'instance de Better Auth", () => {
+  // Modifié en 1.4 : les deux points composés par la passerelle sont absents
+  // de l'instance, et le restent (aucune confusion avec un point natif).
+  test("chaque point d'entrée ouvert existe dans l'instance de Better Auth, sauf les deux composés", () => {
     const declares = cheminsDeclares();
-    for (const chemin of OUVERTS) expect(declares, chemin).toContain(chemin);
+    for (const chemin of OUVERTS.filter((c) => !COMPOSES.includes(c))) {
+      expect(declares, chemin).toContain(chemin);
+    }
+    for (const chemin of COMPOSES) expect(declares, chemin).not.toContain(chemin);
+  });
+
+  test("1.4 : les chemins de la double authentification qui restent fermés existent dans l'instance", () => {
+    const declares = cheminsDeclares();
+    for (const chemin of [
+      "/two-factor/get-totp-uri",
+      "/two-factor/send-otp",
+      "/two-factor/verify-otp",
+    ]) {
+      expect(declares).toContain(chemin);
+      expect(OUVERTS).not.toContain(chemin);
+    }
   });
 
   test("la réponse d'un chemin inexistant est reponseInexistante(), octet pour octet", async () => {
@@ -500,7 +535,9 @@ describe("décision 1 : comptes fermés en production (inscription 1.1, connexio
     expect(inscription).toEqual(fermee);
   });
 
-  test.each(OUVERTS)("témoin hors production, %s : transmis à Better Auth", async (chemin) => {
+  // Modifié en 1.4 : les points simples seulement ; le témoin des sept
+  // points de la double authentification est dans leur propre fichier.
+  test.each(SIMPLES)("témoin hors production, %s : transmis à Better Auth", async (chemin) => {
     const { traiter, gerer } = traitement({ estProduction: false });
     const reponse = await gerer(post(chemin, CORPS_VALIDES[chemin]));
     expect(reponse.status).toBe(200);
@@ -658,12 +695,13 @@ describe("S-82 : le corps de la connexion n'est jamais transmis", () => {
       "200 avec un cookie de session vide",
       reponseBetterAuth(200, { token: "t" }, ["better-auth.session_token=; Max-Age=0; Path=/"]),
     ],
+    // Modifié en 1.4 : twoFactorRedirect n'est plus une erreur, mais l'étape
+    // du code (docs/features/double-authentification.md, section 2.2,
+    // testée dans double-authentification.attaque.test.ts) ; sans cookie
+    // d'attente, il reste une erreur.
     [
-      "200 avec twoFactorRedirect (1.4)",
-      reponseBetterAuth(200, { twoFactorRedirect: true }, [
-        COOKIE_SESSION,
-        "better-auth.two_factor=x; Path=/",
-      ]),
+      "200 avec twoFactorRedirect sans cookie d'attente (1.4)",
+      reponseBetterAuth(200, { twoFactorRedirect: true }, [COOKIE_SESSION]),
     ],
   ] as const)("%s : erreur avec incident, aucun cookie", async (_nom, reponse) => {
     vi.spyOn(console, "error").mockImplementation(() => {});

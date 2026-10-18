@@ -137,3 +137,44 @@ test.describe("gabarit de l'application, navigateur connecté", () => {
     );
   });
 });
+
+// 1.4 : la page de la double authentification, dans la zone compte (sans
+// organisation) : aucun défilement horizontal, champs et boutons de 44 px au
+// moins, avant et après le code QR, captures. Fiche :
+// docs/features/double-authentification.md, section 11, test 27.
+test.describe("page de la double authentification, navigateur connecté", () => {
+  test("aucun défilement horizontal, cibles de 44 px, captures, sans violation", async ({
+    page,
+    context,
+  }, info) => {
+    const { adresseDoubleAuth, NOM_COOKIE } = await import("./compte-verifie");
+    await observerViolations(page);
+    const valeur = await creerCompteVerifie(adresseDoubleAuth(info, "affichage"));
+    await context.addCookies([
+      { name: NOM_COOKIE, value: valeur, url: ADRESSE, httpOnly: true, sameSite: "Lax" },
+    ]);
+    await page.setExtraHTTPHeaders({ "x-forwarded-for": ipAuHasard() });
+    await page.goto("/compte/double-authentification");
+    const textes = TEXTES_COMPTE.doubleAuth;
+    await expect(page.getByLabel(textes.motDePasse)).toBeVisible();
+    const sansDefilement = async () => {
+      const { largeurContenu, largeurFenetre } = await defilementHorizontal(page);
+      expect(largeurContenu).toBeLessThanOrEqual(largeurFenetre);
+    };
+    await sansDefilement();
+    await capturer(page, "double-authentification-mot-de-passe");
+
+    await page.getByLabel(textes.motDePasse).fill(MOT_DE_PASSE);
+    await page.getByRole("button", { name: textes.continuer }).click();
+    await expect(page.getByRole("img", { name: textes.qr })).toBeVisible();
+    await sansDefilement();
+    for (const cible of [
+      page.getByLabel(textes.code),
+      page.getByRole("button", { name: textes.confirmer }),
+    ]) {
+      expect((await cible.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+    await capturer(page, "double-authentification-code-qr");
+    expect(await violations(page)).toEqual([]);
+  });
+});

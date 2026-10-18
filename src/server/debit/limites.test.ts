@@ -31,6 +31,8 @@ describe("LIMITES", () => {
         "adresse_ip",
         "adresse_email",
       ]).toContain(limite.par);
+      // 1.4 : aucune valeur nouvelle ; les limites par compte de la double
+      // authentification comptent l'utilisateur.
     },
   );
 
@@ -230,5 +232,69 @@ describe("limites de la réinitialisation (1.3)", () => {
     expect(LIMITES["auth.reinitialisation_compte"].maximum + 1).toBeLessThanOrEqual(
       LIMITES["email.destinataire"].maximum,
     );
+  });
+});
+
+// Fonctionnalité 1.4. Fiche : docs/features/double-authentification.md,
+// sections 6 et 10, décisions 3 et 4, test 10.
+describe("limites de la double authentification (1.4)", () => {
+  const QUINZE_MINUTES = 15 * 60;
+
+  test("valeurs retenues : par adresse IP sur chaque chemin interne", () => {
+    expect(LIMITES["auth.double_auth_code"]).toStrictEqual({
+      maximum: 12,
+      fenetreSecondes: QUINZE_MINUTES,
+      par: "adresse_ip",
+    });
+    expect(LIMITES["auth.double_auth_secours"]).toStrictEqual({
+      maximum: 8,
+      fenetreSecondes: QUINZE_MINUTES,
+      par: "adresse_ip",
+    });
+    expect(LIMITES["auth.double_auth_activation"]).toStrictEqual({
+      maximum: 6,
+      fenetreSecondes: UNE_HEURE,
+      par: "adresse_ip",
+    });
+    expect(LIMITES["auth.double_auth_codes"]).toStrictEqual({
+      maximum: 3,
+      fenetreSecondes: QUINZE_MINUTES,
+      par: "adresse_ip",
+    });
+    expect(LIMITES["auth.double_auth_desactivation"]).toStrictEqual({
+      maximum: 4,
+      fenetreSecondes: QUINZE_MINUTES,
+      par: "adresse_ip",
+    });
+  });
+
+  test("décision 3 : 20 codes par 24 heures et par compte ; 10 opérations de gestion par heure", () => {
+    expect(LIMITES["auth.double_auth_compte"]).toStrictEqual({
+      maximum: 20,
+      fenetreSecondes: UN_JOUR,
+      par: "utilisateur",
+    });
+    expect(LIMITES["auth.double_auth_gestion"]).toStrictEqual({
+      maximum: 10,
+      fenetreSecondes: UNE_HEURE,
+      par: "utilisateur",
+    });
+  });
+
+  test("budget d'emails propre, et les trois budgets de compte sous celui de l'application", () => {
+    expect(LIMITES["email.double_auth"]).toStrictEqual({
+      maximum: 40,
+      fenetreSecondes: UN_JOUR,
+      par: "application",
+    });
+    expect(
+      LIMITES["email.compte"].maximum +
+        LIMITES["email.reinitialisation"].maximum +
+        LIMITES["email.double_auth"].maximum,
+    ).toBeLessThanOrEqual(LIMITES["email.application"].maximum);
+  });
+
+  test("pas de compteur de rejeu : l'anti-rejeu tient la dernière tranche acceptée (décision 4)", () => {
+    expect(Object.keys(LIMITES).filter((nom) => nom.includes("rejeu"))).toEqual([]);
   });
 });

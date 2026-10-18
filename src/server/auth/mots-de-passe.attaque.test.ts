@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { optionsAuth } from "./config";
 import { creerTraitementAuth } from "./points-entree";
+import { dependancesDoubleAuthInertes } from "../db/outils-test/double-auth";
 
 // S-10 et décision 2 : mots de passe compromis par Have I Been Pwned, refus
 // si le service ne répond pas, et aucun appel au vrai service depuis un test.
@@ -71,6 +72,8 @@ function instance() {
     limiterReinitialisation: async () => true,
     jetonReinitialisationValide: async () => false,
     motDePasseCompromis: async () => false,
+    // 1.4 : jamais atteintes par ces tests.
+    doubleAuth: dependancesDoubleAuthInertes(),
     horloge: { maintenant: () => 0, attendre: async () => {} },
   });
 }

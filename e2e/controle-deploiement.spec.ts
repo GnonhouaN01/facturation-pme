@@ -92,9 +92,14 @@ type Defaut =
   | "reinitialisation-ouverte"
   | "lien-reinitialisation-ouvert"
   | "mot-de-passe-oublie-500"
-  | "lien-reinitialisation-500";
+  | "lien-reinitialisation-500"
+  // Double authentification (1.4).
+  | "double-auth-ouverte"
+  | "totp-uri-ouvert"
+  | "double-authentification-200"
+  | "double-authentification-distingue";
 
-// Les sept points d'entrée ouverts hors production, en POST (1.1 à 1.3).
+// Les quatorze points d'entrée ouverts hors production, en POST (1.1 à 1.4).
 const POINTS_COMPTES = [
   "/api/auth/sign-up/email",
   "/api/auth/send-verification-email",
@@ -103,6 +108,14 @@ const POINTS_COMPTES = [
   "/api/auth/sign-out",
   "/api/auth/request-password-reset",
   "/api/auth/reset-password",
+  // 1.4 (docs/features/double-authentification.md, section 13).
+  "/api/auth/two-factor/verify-totp",
+  "/api/auth/two-factor/verify-backup-code",
+  "/api/auth/two-factor/enable",
+  "/api/auth/two-factor/confirm-enable",
+  "/api/auth/two-factor/replace",
+  "/api/auth/two-factor/generate-backup-codes",
+  "/api/auth/two-factor/disable",
 ];
 
 type Factice = { adresse: string; requetes: Requete[]; fermer: () => Promise<void> };
@@ -232,7 +245,8 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
           (defaut === "connexion-ouverte" && chemin === "/api/auth/sign-in/email") ||
           (defaut === "deconnexion-ouverte" && chemin === "/api/auth/sign-out") ||
           (defaut === "demande-ouverte" && chemin === "/api/auth/request-password-reset") ||
-          (defaut === "reinitialisation-ouverte" && chemin === "/api/auth/reset-password"))
+          (defaut === "reinitialisation-ouverte" && chemin === "/api/auth/reset-password") ||
+          (defaut === "double-auth-ouverte" && chemin === "/api/auth/two-factor/verify-totp"))
       ) {
         statut = 403;
         json('{"ok":false,"raison":"refuse"}');
@@ -245,6 +259,11 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
       ) {
         statut = 302;
         auth.Location = "/?token=x";
+      }
+      // 1.4 : le secret TOTP, s'il se relisait.
+      if (defaut === "totp-uri-ouvert" && chemin === "/api/auth/two-factor/get-totp-uri") {
+        statut = 200;
+        json('{"totpURI":"otpauth://totp/x"}');
       }
       if (defaut === "session-ouverte" && chemin === "/api/auth/get-session") {
         statut = 200;
@@ -273,7 +292,9 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
     // 1.3 : pages publiques du mot de passe oublié.
     const oubli = chemin === "/mot-de-passe-oublie";
     const lienReinitialisation = chemin === "/lien/reinitialisation";
-    const compte = chemin === "/compte";
+    // 1.4 : la page de la double authentification, servie comme /compte.
+    const doubleAuth = chemin === "/compte/double-authentification";
+    const compte = chemin === "/compte" || doubleAuth;
     const tableau = chemin === "/tableau-de-bord";
     const lien = chemin.startsWith("/lien/devis/");
     const inexistante = chemin.startsWith("/adresse-inexistante-");
@@ -337,11 +358,18 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
     }
     // Zone (compte), 1.2 : comme le tableau de bord, notFound() sans session.
     if (compte) {
-      corps = defaut === "compte-distingue" && requete.headers.cookie ? INTROUVABLE_FR : "";
+      corps =
+        requete.headers.cookie &&
+        ((defaut === "compte-distingue" && !doubleAuth) ||
+          (defaut === "double-authentification-distingue" && doubleAuth))
+          ? INTROUVABLE_FR
+          : "";
     }
     if (lien && defaut === "lien-distingue") corps += `<p>${randomBytes(4).toString("hex")}</p>`;
     const statutPage =
-      (tableau && defaut === "tableau-de-bord-200") || (compte && defaut === "compte-200")
+      (tableau && defaut === "tableau-de-bord-200") ||
+      (compte && !doubleAuth && defaut === "compte-200") ||
+      (doubleAuth && defaut === "double-authentification-200")
         ? 200
         : 404;
     reponse.writeHead(statutPage, entetes);
@@ -414,9 +442,13 @@ test.describe("contrôle après déploiement, serveur factice", () => {
       expect(echecs(second)).toEqual([]);
       expect(premier.length).toBeGreaterThan(10);
 
-      expect(factice.requetes).toHaveLength(56);
+      // 1.4 (modifié, signalé) : 40 requêtes par passage. Sept POST de plus
+      // (double authentification) ; GET de /compte/double-authentification
+      // sans cookie et avec le cookie forgé, et des trois chemins fermés
+      // /two-factor/get-totp-uri, /send-otp, /verify-otp.
+      expect(factice.requetes).toHaveLength(80);
       const posts = factice.requetes.filter((r) => r.methode !== "GET");
-      expect(posts).toHaveLength(16);
+      expect(posts).toHaveLength(30);
       for (const requete of posts) {
         expect(requete.methode).toBe("POST");
         expect(requete.chemin).toMatch(/^\/api\/auth\//);
@@ -454,8 +486,10 @@ test.describe("contrôle après déploiement, serveur factice", () => {
       expect(avecCookie.map((r) => r.chemin)).toEqual([
         "/tableau-de-bord",
         "/compte",
+        "/compte/double-authentification",
         "/tableau-de-bord",
         "/compte",
+        "/compte/double-authentification",
       ]);
       const valeurs = avecCookie.map((r) => {
         const trouve =
@@ -465,7 +499,7 @@ test.describe("contrôle après déploiement, serveur factice", () => {
         expect(trouve, r.entetes.cookie).not.toBeNull();
         return trouve?.[1];
       });
-      expect(valeurs[0]).not.toBe(valeurs[2]);
+      expect(valeurs[0]).not.toBe(valeurs[3]);
 
       const chemins = factice.requetes.map((r) => r.chemin);
       const inexistantes = chemins.filter((c) => /^\/adresse-inexistante-[0-9a-f]{16}$/.test(c));
@@ -476,6 +510,7 @@ test.describe("contrôle après déploiement, serveur factice", () => {
       expect(chemins.filter((c) => c === "/mot-de-passe-oublie")).toHaveLength(2);
       expect(chemins.filter((c) => c === "/lien/reinitialisation")).toHaveLength(2);
       expect(chemins.filter((c) => c === "/compte")).toHaveLength(4);
+      expect(chemins.filter((c) => c === "/compte/double-authentification")).toHaveLength(4);
       expect(inexistantes).toHaveLength(2);
       expect(inexistantes[0]).not.toBe(inexistantes[1]);
       expect(new Set(liens).size).toBe(4);
@@ -502,6 +537,10 @@ test.describe("contrôle après déploiement, serveur factice", () => {
         2,
       );
       expect(auth.filter((c) => c === "/api/auth/get-session")).toHaveLength(2);
+      // 1.4 : les trois chemins de la double authentification qui restent fermés.
+      for (const ferme of ["get-totp-uri", "send-otp", "verify-otp"]) {
+        expect(auth.filter((c) => c === `/api/auth/two-factor/${ferme}`)).toHaveLength(2);
+      }
       // 1.3 : le lien de Better Auth, jeton forgé de la forme de generateId(24),
       // tiré à chaque passage.
       const liensBetterAuth = auth.filter((c) =>
@@ -525,6 +564,16 @@ test.describe("contrôle après déploiement, serveur factice", () => {
       expect(
         premier.map((r) => r.nom).filter((n) => /^compte:(identique|gabarit|anglais)$/.test(n)),
       ).toEqual(["compte:anglais", "compte:gabarit", "compte:identique"]);
+      expect(
+        premier
+          .map((r) => r.nom)
+          .filter((n) => /^double-authentification:(identique|gabarit|anglais|statut)$/.test(n)),
+      ).toEqual([
+        "double-authentification:statut",
+        "double-authentification:anglais",
+        "double-authentification:gabarit",
+        "double-authentification:identique",
+      ]);
     } finally {
       await factice.fermer();
     }
@@ -582,6 +631,11 @@ test.describe("contrôle après déploiement, serveur factice", () => {
     ["lien-reinitialisation-ouvert", ["auth:identique", "auth:statut"]],
     ["mot-de-passe-oublie-500", ["mot-de-passe-oublie:statut"]],
     ["lien-reinitialisation-500", ["lien-reinitialisation:statut"]],
+    // 1.4.
+    ["double-auth-ouverte", ["comptes:identique", "comptes:statut"]],
+    ["totp-uri-ouvert", ["auth:identique", "auth:statut"]],
+    ["double-authentification-200", ["double-authentification:statut"]],
+    ["double-authentification-distingue", ["double-authentification:identique"]],
   ];
 
   for (const [defaut, attendus] of CAS) {
@@ -643,7 +697,9 @@ test.describe("contrôle après déploiement, serveur factice", () => {
 // déconnexion), mêmes conditions (docs/features/connexion.md, section 10).
 // 1.3 : sept, avec la demande et la réinitialisation, mêmes conditions
 // (docs/features/mot-de-passe.md, section 2.2).
-test.describe("contrôle après déploiement, les huit POST des comptes", () => {
+// 1.4 : quatorze, avec la double authentification, mêmes conditions
+// (docs/features/double-authentification.md, section 13).
+test.describe("contrôle après déploiement, les quinze POST des comptes", () => {
   test("reçus par le serveur : aucun octet de corps, ni Origin, ni Cookie, ni Authorization, ni Content-Type", async () => {
     const factice = await demarrerFactice();
     try {

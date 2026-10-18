@@ -165,3 +165,19 @@ export function demanderReinitialisation(
 ): Promise<Response> {
   return poster("/request-password-reset", { email }, entetes);
 }
+
+// Double authentification (1.4) : rangs 24 à 29 des adresses de
+// l'exécution. Fiche : docs/features/double-authentification.md, tests 26
+// et 27.
+export const RANGS_DOUBLE_AUTH = {
+  parcours: 24,
+  secours: 25,
+  essais: 26,
+  rejeu: 27,
+  affichage: 28,
+  ferme: 29,
+} as const;
+
+export function adresseDoubleAuth(info: TestInfo, rang: keyof typeof RANGS_DOUBLE_AUTH): string {
+  return adresseE2E(info.project.name, RANGS_DOUBLE_AUTH[rang], info.retry, info.repeatEachIndex);
+}
