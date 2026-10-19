@@ -2,12 +2,18 @@ import "server-only";
 
 import { isPasswordCompromised } from "better-auth/plugins";
 
+import * as requetesDoubleAuth from "../db/double-authentification";
+import { revoquerAutresSessions } from "../db/sessions";
 import { verifierDebit } from "../debit/debit";
 import { adressePourCompteur } from "../email/adresse";
 import { configurationEmail, env } from "../env";
 
+import { empreinteCodeSecours } from "./codes-secours";
 import { auth } from "./config";
+import { creerDependancesDoubleAuth } from "./dependances-double-auth";
+import { planifierEmailDoubleAuth } from "./emails";
 import { creerTraitementAuth, jetonDeSession } from "./points-entree";
+import { matriceQr } from "./qr";
 
 // Le gestionnaire de /api/auth lié à l'application : Better Auth
 // (auth.handler), l'origine de BETTER_AUTH_URL, et la production lue de
@@ -27,7 +33,10 @@ import { creerTraitementAuth, jetonDeSession } from "./points-entree";
 // connexion ; le jeton est lu par l'adaptateur interne (findVerificationValue,
 // qui applique l'empreinte) sans être consommé ; le mot de passe compromis
 // est vérifié par la fonction de l'extension Have I Been Pwned. Fiche :
-// docs/features/mot-de-passe.md, sections 3.3 et 5.
+// docs/features/mot-de-passe.md, sections 3.3 et 5. Double authentification
+// (1.4) : dépendances liées par creerDependancesDoubleAuth, lectures par
+// l'adaptateur interne, requêtes de db/double-authentification.ts et
+// db/sessions.ts. Fiche : docs/features/double-authentification.md.
 export const traiterRequeteAuth = creerTraitementAuth({
   traiter: (requete) => auth.handler(requete),
   origine: env.BETTER_AUTH_URL,
@@ -51,4 +60,13 @@ export const traiterRequeteAuth = creerTraitementAuth({
     return ligne !== null && ligne.expiresAt > new Date();
   },
   motDePasseCompromis: isPasswordCompromised,
+  doubleAuth: creerDependancesDoubleAuth({
+    contexte: () => auth.$context,
+    verifierDebit,
+    requetes: requetesDoubleAuth,
+    revoquerAutresSessions,
+    empreinteCodeSecours,
+    matriceQr,
+    emailDoubleAuth: planifierEmailDoubleAuth,
+  }),
 });

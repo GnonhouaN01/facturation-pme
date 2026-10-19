@@ -1,6 +1,6 @@
 # Fonctionnalité : double authentification et codes de secours
 
-Statut : validée le 2026-10-18 ; PR 1 en cours. Fiche rédigée le 2026-10-18 ; les vrais choix tranchés par le développeur le même jour (section « Décisions »), les autres points selon la recommandation de l'assistant (section « Décisions par défaut »).
+Statut : validée le 2026-10-18 ; PR 1 implémentée le 2026-10-19 (« Notes de l'implémentation »), essai sur la prévisualisation à faire par le développeur ; PR 2 à venir. Fiche rédigée le 2026-10-18 ; les vrais choix tranchés par le développeur le même jour (section « Décisions »), les autres points selon la recommandation de l'assistant (section « Décisions par défaut »).
 
 Jalon 1, fonctionnalité 1.4 de `docs/PLAN.md`. Taille M (plutôt haute). Cas d'utilisation : UC-04, UC-02 (étape 3, erreurs 3a, 3b, 4a), UC-03 (« Abus » : la double authentification reste exigée). Exigences : F-003, S-12, S-13, S-10, S-11, S-14 (partie compte), S-15, S-17, S-54, S-55, S-63, S-70 (« connexions sensibles »), S-81, S-82, S-85, S-87, S-88. Menaces : T-02, T-06, T-04 (report de la 1.3), T-01, T-03, T-07, T-39, T-43, T-55, T-65.
 
@@ -633,3 +633,39 @@ Appliquées par l'assistant le 2026-10-18, selon sa recommandation, sauf avis co
 16. **UC-02 4a et S-12 seconde phrase** reportés à la 2.1 et à la 2.2 (section 9).
 17. **Deux PR** : le compte, puis l'exigence par rôle (« Découpage en PR »).
 18. **Aucune migration** ; arrêt si un besoin apparaît (« Migration »).
+
+## Notes de l'implémentation
+
+### PR 1, les 2026-10-18 et 2026-10-19
+
+Branche `feat/1.4-double-authentification` : commits `docs(1.4): fiche`, `docs(1.4): décisions`, `test(1.4)` (phase rouge), `feat(1.4)`.
+
+**Dépendance** : `uqr` 0.1.3, vérifiée par `npm view uqr` avant l'installation (décision 1, « Dépendances nouvelles »). Le npm 11.8 du poste retirait au passage les champs `libc` de quatre paquets natifs de `package-lock.json` : rétablis, le fichier ne gagne que les deux entrées de `uqr`.
+
+**Phase rouge** (commit `test(1.4)`). Unitaires : 192 tests en échec dans 18 fichiers, dont 7 non chargés (modules `tranche-totp`, `codes-secours`, `qr`, `double-authentification`, `code-qr` absents ; `config.test.ts`, `better-auth.test.ts` et le test de la version installée les importent). Chaque échec tient à l'absence du code : points `/two-factor/*` inconnus (404 au lieu des réponses attendues), modèles, limites, action d'audit, règle ESLint V, page absente. Intégration (sur `dev`) : 1 fichier non chargé (`tranche-totp` absent). Bout en bout (site construit avant le code, tests remisés le temps de la construction, base jetable) : 16 échecs, 444 réussis (parcours de la double authentification et affichage de sa page, contrôle après déploiement sans les nouveaux contrôles).
+
+**Passaient avant le code, et pourquoi** : les sept points fermés en production et en `GET` (inconnus, donc déjà la réponse inexistante : garde de non-régression, avec un témoin hors production qui échouait) ; `/sign-in/email` ne transmet aucun cookie (comportement de la 1.2) ; `twoFactorRedirect` sans cookie d'attente reste une erreur ; `qr.ts` autorisé à importer `uqr` (aucune règle encore) ; aucune limite de rejeu (absence voulue, décision 4) ; `GET` des quatorze points et `get-totp-uri` fermés de bout en bout (inconnus avant le code).
+
+**Tests modifiés, sans changer ce qu'ils prouvent** :
+
+- Listes des fiches précédentes : sept points ouverts deviennent quatorze (`points-entree.attaque.test.ts`, `auth.attaque.spec.ts`), douze règles de débit au lieu de sept (`better-auth.test.ts`, la couverture compare aux points simples plus les chemins internes), onze modèles d'email au lieu de cinq (`modeles.test.ts`), deux surcharges de `storeIdentifier` au lieu d'une (`config.test.ts`), 30 rangs d'adresses de bout en bout au lieu de 24, 80 requêtes du contrôle au lieu de 56 et quinze `POST` au lieu de huit (`controle-deploiement.spec.ts`), une action d'audit de plus (`actions.test.ts`, `audit.test.ts`).
+- `points-entree.attaque.test.ts` : « `200` avec `twoFactorRedirect` : erreur » devient « sans cookie d'attente : erreur » ; avec le cookie, c'est l'étape du code (section 2.2), testée dans `double-authentification.attaque.test.ts`. Les deux points composés sont vérifiés absents de l'instance de Better Auth.
+- Appels de `creerTraitementAuth` des tests de la 1.1 à la 1.3 : nouvelle dépendance `doubleAuth` exigée par le type, inerte (`outils-test/double-auth.ts`, qui lève si une dépendance est atteinte).
+- `gestionnaire.test.ts` : délai de 30 s au lieu de 10 s. Chaque test recharge le gestionnaire et tous ses modules ; le premier dépassait 10 s sous la charge de la suite complète (déjà 10,1 s seul sur `main`). Rien de ce qui est vérifié ne change.
+- Erreurs de mise en place de mes propres tests de la phase rouge, corrigées sans changer ce qu'ils vérifient : adresse du compteur attendue sous sa forme normalisée (`emails.test.ts`, comme les tests de la 1.1) ; `confirm-enable` testé pendant une activation en cours, seul état où il existe (`double-authentification.attaque.test.ts`) ; une surcharge qui gardait son entrée du journal des appels (`double-authentification.test.ts`) ; l'instance du test de la version installée ouvre deux sessions (inscription puis connexion), la rotation se vérifie sur la session du cookie (`double-authentification-better-auth.test.ts`). Typage du résultat de `enableTwoFactor` (union de Better Auth) : `as Activation`, sans changer les assertions.
+- `e2e/double-authentification.spec.ts` : la recherche d'un code dans les adresses du navigateur se fait sur les valeurs mêmes (clé, code envoyé, codes de secours) ; le motif général de la phase rouge prenait aussi le nom des fichiers statiques de Next.js, son paramètre `_rsc` aléatoire et « ouble-authe » du chemin `/compte/double-authentification`.
+- `e2e/controle-deploiement.spec.ts` : la nouvelle page est servie par le serveur factice comme `/compte` ; elle rejoint donc la liste des pages des défauts communs (en-têtes, politique, nonce, anglais, gabarit), et `--detail` affiche 14 lignes et quatre comparaisons de documents au lieu de 11 et trois.
+- `double-authentification.integration.test.ts` : délai de 180 s pour le test des 21 essais (5 connexions et 21 vérifications, chacune avec plusieurs allers-retours vers Neon).
+
+**Écarts avec la fiche** :
+
+- `lireComptePourPage` est inchangée (elle ne rend que l'identifiant) : les pages `/compte` et `/compte/double-authentification` lisent l'état du second facteur par `lireEtatDoubleAuth` (`exposer.ts`, puis `src/server/auth/etat-double-auth.ts`), pour l'utilisateur de la session seulement. `SessionLue` ne change qu'en PR 2.
+- Le test T-04 (report de la 1.3) est dans `double-authentification.integration.test.ts`, qui a le banc et les aides de la double authentification, et non dans `reinitialisation.integration.test.ts`.
+- La fabrique `creerDependancesDoubleAuth` (`src/server/auth/dependances-double-auth.ts`) lie les dépendances pour `gestionnaire.ts` et pour le banc d'intégration : une seule liaison, testée par le banc sur la vraie base. Lectures par l'adaptateur interne de Better Auth (jamais `auth.api`, constat de la 1.2) ; le mot de passe est vérifié par `password.verify` du contexte, sur le compte `credential`.
+- L'anti-rejeu s'applique à tout code de l'application : connexion, confirmation et vérifications de la gestion (section 6.1).
+- Le code QR porte un fond `#ffffff` et des modules `#000000` écrits dans le composant, et non des variables du thème (règle 1 de la compétence `interface`) : un code inversé en thème sombre se lit mal par l'appareil photo.
+- Non faits, à reprendre : le passage complet avec capture du journal du serveur sur le site construit (test 17 et `erreurs.attaque.spec.ts`, serveur en panne à l'étape du code). Sous Vitest, une exception d'une dépendance donne une seule ligne `[auth]` sans code ni identifiant (`double-authentification.test.ts`).
+
+**Vérifications** : voir la description de la PR (sorties de `npm run verifier` et de `npm run test:integration` sur `dev`).
+
+**À faire par le développeur avant la fusion** : l'essai sur la prévisualisation (« Vérifications manuelles ») ; l'essai de la procédure de remise à zéro sur `dev` (`docs/exploitation/remise-a-zero-double-authentification.md`, section 4).

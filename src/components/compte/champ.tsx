@@ -13,6 +13,8 @@ type Proprietes = {
   aide?: string;
   erreur?: string | null;
   desactive?: boolean;
+  // 1.4 : clavier numérique pour le code de l'application.
+  inputMode?: "numeric" | "text";
 };
 
 export function Champ({
@@ -24,6 +26,7 @@ export function Champ({
   aide,
   erreur,
   desactive,
+  inputMode,
 }: Proprietes) {
   const idAide = `${id}-aide`;
   const idErreur = `${id}-erreur`;
@@ -38,6 +41,7 @@ export function Champ({
         name={nom}
         type={type}
         autoComplete={autoComplete}
+        inputMode={inputMode}
         disabled={desactive}
         aria-invalid={erreur ? true : undefined}
         aria-describedby={decrit || undefined}

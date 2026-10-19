@@ -473,9 +473,14 @@ describe("ordre des contrôles de la gestion (section 2.1)", () => {
 
   test("limite de gestion atteinte : trop_de_requetes avant tout mot de passe ou code", async () => {
     const journal = nouveauJournal();
-    const recue = await gerer(journal, { deps: { limiterGestion: async () => false } })(
-      post("/two-factor/disable", { motDePasse: MOT_DE_PASSE, code: "123456" }),
-    );
+    const recue = await gerer(journal, {
+      deps: {
+        limiterGestion: async () => {
+          journal.appels.push("limiterGestion");
+          return false;
+        },
+      },
+    })(post("/two-factor/disable", { motDePasse: MOT_DE_PASSE, code: "123456" }));
     expect(await recue.json()).toEqual({ ok: false, raison: "trop_de_requetes" });
     expect(journal.appels).toEqual(["lireSession", "limiterGestion"]);
   });

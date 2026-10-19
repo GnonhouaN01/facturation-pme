@@ -37,6 +37,8 @@ vi.mock("../env", () => ({
 }));
 
 type Ligne = Record<string, unknown>;
+// La réponse de enableTwoFactor, pour la méthode totp (la seule ouverte).
+type Activation = { totpURI?: string; backupCodes?: string[] };
 const ORIGINE = "http://localhost:3000";
 const ADRESSE = "awa@exemple.invalid";
 const MOT_DE_PASSE = "une-phrase-de-passe-solide";
@@ -98,10 +100,10 @@ async function instance() {
 async function activer() {
   const outils = await instance();
   const { auth, cookieSession } = outils;
-  const activation = await auth.api.enableTwoFactor({
+  const activation = (await auth.api.enableTwoFactor({
     headers: new Headers({ cookie: cookieSession }),
     body: { password: MOT_DE_PASSE },
-  });
+  })) as Activation;
   const uri = new URL(activation.totpURI ?? "");
   const secret = base32(uri.searchParams.get("secret") ?? "");
   const confirmation = await auth.api.verifyTOTP({
@@ -177,10 +179,10 @@ describe("activation", () => {
   test("avant le code : ligne non vérifiée, second facteur inactif ; après : actif, session remplacée (jeton neuf)", async () => {
     const outils = await instance();
     const { auth, base, cookieSession } = outils;
-    const activation = await auth.api.enableTwoFactor({
+    const activation = (await auth.api.enableTwoFactor({
       headers: new Headers({ cookie: cookieSession }),
       body: { password: MOT_DE_PASSE },
-    });
+    })) as Activation;
     expect(base.twoFactor?.[0]?.verified).toBe(false);
     expect(base.user?.[0]?.twoFactorEnabled).toBe(false);
     const avant = (base.session ?? []).map((s) => s.token);
@@ -192,10 +194,18 @@ describe("activation", () => {
     expect(base.twoFactor?.[0]?.verified).toBe(true);
     expect(base.user?.[0]?.twoFactorEnabled).toBe(true);
     const apres = (base.session ?? []).map((s) => s.token);
-    expect(apres).toHaveLength(1);
-    expect(avant).not.toContain(apres[0]);
+    // Une session remplacée par une neuve : même nombre, la session du
+    // cookie absente, un jeton nouveau présent.
+    const jetonCookie = decodeURIComponent(
+      /session_token=([^;]+)/u.exec(cookieSession)?.[1] ?? "",
+    ).split(".")[0];
+    expect(apres).toHaveLength(avant.length);
+    expect(apres).not.toContain(jetonCookie);
+    const neuves = apres.filter((jeton) => !avant.includes(jeton));
+    expect(neuves).toHaveLength(1);
     // Échéance neuve de 7 jours (section 8.2).
-    const echeance = new Date(base.session?.[0]?.expiresAt as Date).getTime();
+    const neuve = (base.session ?? []).find((s) => s.token === neuves[0]);
+    const echeance = new Date(neuve?.expiresAt as Date).getTime();
     expect(echeance - Date.now()).toBeGreaterThan(7 * 24 * 3600 * 1000 - 60_000);
   });
 
@@ -209,10 +219,10 @@ describe("activation", () => {
     ).rejects.toMatchObject({ body: { code: "TOTP_ALREADY_ENABLED" } });
     const ligne = base.twoFactor?.[0];
     if (ligne) ligne.verified = false;
-    const nouvelle = await auth.api.enableTwoFactor({
+    const nouvelle = (await auth.api.enableTwoFactor({
       headers: new Headers({ cookie: cookieConfirme }),
       body: { password: MOT_DE_PASSE },
-    });
+    })) as Activation;
     expect(nouvelle.backupCodes).toHaveLength(10);
     expect(base.user?.[0]?.twoFactorEnabled).toBe(true);
   });

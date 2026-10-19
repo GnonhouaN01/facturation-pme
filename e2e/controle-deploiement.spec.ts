@@ -400,6 +400,8 @@ const PAGES = [
   "lien",
   "connexion",
   "compte",
+  // 1.4 : servie par le serveur factice comme /compte.
+  "double-authentification",
   "mot-de-passe-oublie",
   "lien-reinitialisation",
 ] as const;
@@ -596,7 +598,13 @@ test.describe("contrôle après déploiement, serveur factice", () => {
     ["tableau-de-bord-200", ["tableau-de-bord:statut"]],
     [
       "introuvable-en-anglais",
-      ["compte:anglais", "inexistante:anglais", "lien:anglais", "tableau-de-bord:anglais"],
+      [
+        "compte:anglais",
+        "double-authentification:anglais",
+        "inexistante:anglais",
+        "lien:anglais",
+        "tableau-de-bord:anglais",
+      ],
     ],
     ["cookie-distingue", ["tableau-de-bord:identique"]],
     ["lien-distingue", ["lien:identique"]],
@@ -624,7 +632,9 @@ test.describe("contrôle après déploiement, serveur factice", () => {
     ["connexion-500", ["connexion:statut"]],
     ["compte-200", ["compte:statut"]],
     ["compte-distingue", ["compte:identique"]],
-    ["gabarit-compte-dans-la-charge", ["compte:gabarit"]],
+    // 1.4 (modifié) : la page de la double authentification est servie comme
+    // /compte par le serveur factice, son gabarit fuit avec lui.
+    ["gabarit-compte-dans-la-charge", ["compte:gabarit", "double-authentification:gabarit"]],
     // 1.3.
     ["demande-ouverte", ["comptes:identique", "comptes:statut"]],
     ["reinitialisation-ouverte", ["comptes:identique", "comptes:statut"]],
@@ -807,7 +817,9 @@ test.describe("contrôle après déploiement, ligne de commande", () => {
       // Trois comparaisons détaillées : 5 lignes, puis 3 pour les liens
       // identiques et 3 pour /compte (1.2, modifié) ; aucune autre ligne en
       // retrait.
-      expect(lignes.filter((l) => /^ {9}\S/.test(l))).toHaveLength(11);
+      // 1.4 (modifié) : 14 lignes, la comparaison de la page de la double
+      // authentification s'ajoute aux trois autres.
+      expect(lignes.filter((l) => /^ {9}\S/.test(l))).toHaveLength(14);
 
       const l = await lancer(lien.adresse, "--detail");
       expect(l.code, l.sortie).toBe(1);
@@ -816,7 +828,9 @@ test.describe("contrôle après déploiement, ligne de commande", () => {
 
       const c = await lancer(conforme.adresse, "--detail");
       expect(c.code, c.sortie).toBe(0);
-      expect(c.sortie.match(/documents normalisés identiques/g)).toHaveLength(3);
+      // 1.4 (modifié) : quatre comparaisons de documents, avec la page de la
+      // double authentification.
+      expect(c.sortie.match(/documents normalisés identiques/g)).toHaveLength(4);
     } finally {
       await cookie.fermer();
       await lien.fermer();

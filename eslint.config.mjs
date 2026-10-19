@@ -31,6 +31,7 @@ const EMAILS_AUTH = "src/server/auth/emails.ts";
 // purges (règle U, docs/features/tache-quotidienne.md).
 const TACHES = "src/server/taches/**";
 const ROUTE_TACHES = "src/app/api/taches/*/route.ts";
+const QR = "src/server/auth/qr.ts";
 // Écrans : pages et composants, où s'affiche le texte (règle R). Les
 // composants de ui/, générés par shadcn, ne portent pas de texte affiché.
 const ECRANS = ["src/app/**", "src/components/**"];
@@ -473,6 +474,17 @@ const SYNTAXE_U_COMPTES_DB = chargementsDynamiques(
 const IMPORTS_U = [IMPORTS_U_TACHES, IMPORTS_U_COMPTES, IMPORTS_U_PURGER];
 const SYNTAXE_U = [SYNTAXE_U_TACHES, SYNTAXE_U_COMPTES];
 
+// V. uqr (1.4, décision 1) : une seule importation, côté serveur, dans
+// src/server/auth/qr.ts ; partout ailleurs, tests compris, refusée, chargement
+// dynamique compris. Fiche : docs/features/double-authentification.md,
+// « Dépendances nouvelles ».
+const MESSAGE_V =
+  "uqr ne s'importe que dans src/server/auth/qr.ts (docs/features/double-authentification.md, règle V).";
+const IMPORTS_V = {
+  patterns: [{ regex: "^uqr(/|$)", message: MESSAGE_V }],
+};
+const SYNTAXE_V = chargementsDynamiques("/^uqr(\\u002F.*)?$/", MESSAGE_V);
+
 const restreindreImports = (...listes) => [
   "error",
   {
@@ -556,7 +568,15 @@ const eslintConfig = defineConfig([
       EMAILS_AUTH,
       TACHES,
       ROUTE_TACHES,
+      QR,
     ],
+    rules: {
+      "no-restricted-imports": restreindreImports(IMPORTS_V, ...IMPORTS_GENERAUX),
+    },
+  },
+  // Le code QR de l'activation (1.4) : le cas général, sauf uqr (règle V).
+  {
+    files: [QR],
     rules: {
       "no-restricted-imports": restreindreImports(...IMPORTS_GENERAUX),
     },
@@ -566,6 +586,7 @@ const eslintConfig = defineConfig([
     files: [TACHES],
     rules: {
       "no-restricted-imports": restreindreImports(
+        IMPORTS_V,
         ...IMPORTS_GENERAUX.filter(
           (liste) => liste !== IMPORTS_U_COMPTES && liste !== IMPORTS_U_PURGER,
         ),
@@ -578,6 +599,7 @@ const eslintConfig = defineConfig([
     files: [ROUTE_TACHES],
     rules: {
       "no-restricted-imports": restreindreImports(
+        IMPORTS_V,
         ...IMPORTS_GENERAUX.filter((liste) => liste !== IMPORTS_U_TACHES),
       ),
     },
@@ -587,6 +609,7 @@ const eslintConfig = defineConfig([
     files: [PORTE],
     rules: {
       "no-restricted-imports": restreindreImports(
+        IMPORTS_V,
         ...IMPORTS_GENERAUX.filter((liste) => liste !== IMPORTS_T_MODULES),
       ),
     },
@@ -597,6 +620,7 @@ const eslintConfig = defineConfig([
     files: [EMAILS_AUTH],
     rules: {
       "no-restricted-imports": restreindreImports(
+        IMPORTS_V,
         ...IMPORTS_GENERAUX.filter((liste) => liste !== IMPORTS_T_ENVOYER),
       ),
     },
@@ -606,6 +630,7 @@ const eslintConfig = defineConfig([
     files: [SMTP],
     rules: {
       "no-restricted-imports": restreindreImports(
+        IMPORTS_V,
         ...IMPORTS_GENERAUX.filter((liste) => liste !== IMPORTS_T_NODEMAILER),
       ),
     },
@@ -615,7 +640,7 @@ const eslintConfig = defineConfig([
   {
     files: [PROXY],
     rules: {
-      "no-restricted-imports": restreindreImports(...IMPORTS_GENERAUX, IMPORTS_S),
+      "no-restricted-imports": restreindreImports(IMPORTS_V, ...IMPORTS_GENERAUX, IMPORTS_S),
     },
   },
   {
@@ -623,6 +648,7 @@ const eslintConfig = defineConfig([
     ignores: [TESTS],
     rules: {
       "no-restricted-imports": restreindreImports(
+        IMPORTS_V,
         IMPORTS_A,
         IMPORTS_B,
         IMPORTS_D,
@@ -642,6 +668,7 @@ const eslintConfig = defineConfig([
     ignores: [TESTS, ACTION, EXPOSER],
     rules: {
       "no-restricted-imports": restreindreImports(
+        IMPORTS_V,
         IMPORTS_A,
         IMPORTS_B,
         IMPORTS_D,
@@ -662,6 +689,7 @@ const eslintConfig = defineConfig([
     files: [ACTION],
     rules: {
       "no-restricted-imports": restreindreImports(
+        IMPORTS_V,
         IMPORTS_A,
         IMPORTS_B,
         IMPORTS_D,
@@ -680,6 +708,7 @@ const eslintConfig = defineConfig([
     files: [EXPOSER],
     rules: {
       "no-restricted-imports": restreindreImports(
+        IMPORTS_V,
         IMPORTS_A,
         IMPORTS_B,
         IMPORTS_D,
@@ -699,6 +728,7 @@ const eslintConfig = defineConfig([
     files: [JOURNAL_AUDIT],
     rules: {
       "no-restricted-imports": restreindreImports(
+        IMPORTS_V,
         IMPORTS_A,
         IMPORTS_B,
         IMPORTS_D,
@@ -717,6 +747,7 @@ const eslintConfig = defineConfig([
     files: [CONFIG_AUTH],
     rules: {
       "no-restricted-imports": restreindreImports(
+        IMPORTS_V,
         IMPORTS_A,
         IMPORTS_B,
         IMPORTS_D,
@@ -734,12 +765,15 @@ const eslintConfig = defineConfig([
   {
     files: [TESTS],
     ignores: [DB],
-    rules: { "no-restricted-imports": restreindreImports(IMPORTS_A, IMPORTS_B, IMPORTS_E) },
+    rules: {
+      "no-restricted-imports": restreindreImports(IMPORTS_V, IMPORTS_A, IMPORTS_B, IMPORTS_E),
+    },
   },
   {
     files: [ENV],
     rules: {
       "no-restricted-imports": restreindreImports(
+        IMPORTS_V,
         IMPORTS_A,
         IMPORTS_D,
         IMPORTS_E,
@@ -759,6 +793,7 @@ const eslintConfig = defineConfig([
     ignores: [TESTS, OUTILS_TEST, DB_DEBIT],
     rules: {
       "no-restricted-imports": restreindreImports(
+        IMPORTS_V,
         IMPORTS_B,
         IMPORTS_D,
         IMPORTS_F,
@@ -778,6 +813,7 @@ const eslintConfig = defineConfig([
     files: [DB_DEBIT],
     rules: {
       "no-restricted-imports": restreindreImports(
+        IMPORTS_V,
         IMPORTS_B,
         IMPORTS_D,
         IMPORTS_F,
@@ -792,7 +828,7 @@ const eslintConfig = defineConfig([
   },
   {
     files: [TESTS_DB, OUTILS_TEST],
-    rules: { "no-restricted-imports": restreindreImports(IMPORTS_B) },
+    rules: { "no-restricted-imports": restreindreImports(IMPORTS_V, IMPORTS_B) },
   },
   // Propriétés interdites, dont la lecture de process.env (B).
   {
@@ -809,7 +845,7 @@ const eslintConfig = defineConfig([
   {
     files: [SRC],
     ignores: [DB, ENV, TESTS, ACTIONS, APP_ACTIONS, PROXY, SMTP, ...ECRANS],
-    rules: { "no-restricted-syntax": restreindreSyntaxe(...SYNTAXE_GENERALE) },
+    rules: { "no-restricted-syntax": restreindreSyntaxe(SYNTAXE_V, ...SYNTAXE_GENERALE) },
   },
   // Le transport SMTP (PR 2) : la syntaxe générale, sauf nodemailer et
   // smtp.gmail.com (règle T).
@@ -817,6 +853,7 @@ const eslintConfig = defineConfig([
     files: [SMTP],
     rules: {
       "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_V,
         ...SYNTAXE_GENERALE.filter(
           (liste) => liste !== SYNTAXE_T_NODEMAILER && liste !== SYNTAXE_T_HOTE,
         ),
@@ -827,23 +864,31 @@ const eslintConfig = defineConfig([
   {
     files: [PROXY],
     rules: {
-      "no-restricted-syntax": restreindreSyntaxe(...SYNTAXE_GENERALE, SYNTAXE_B_PROXY, SYNTAXE_S),
+      "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_V,
+        ...SYNTAXE_GENERALE,
+        SYNTAXE_B_PROXY,
+        SYNTAXE_S,
+      ),
     },
   },
   {
     files: ECRANS,
     ignores: [TESTS, APP_ACTIONS, UI],
-    rules: { "no-restricted-syntax": restreindreSyntaxe(...SYNTAXE_GENERALE, SYNTAXE_R) },
+    rules: {
+      "no-restricted-syntax": restreindreSyntaxe(SYNTAXE_V, ...SYNTAXE_GENERALE, SYNTAXE_R),
+    },
   },
   {
     files: [UI],
     ignores: [TESTS],
-    rules: { "no-restricted-syntax": restreindreSyntaxe(...SYNTAXE_GENERALE) },
+    rules: { "no-restricted-syntax": restreindreSyntaxe(SYNTAXE_V, ...SYNTAXE_GENERALE) },
   },
   {
     files: [APP_ACTIONS],
     rules: {
       "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_V,
         SYNTAXE_O,
         SYNTAXE_P,
         SYNTAXE_A,
@@ -868,6 +913,7 @@ const eslintConfig = defineConfig([
     ignores: [TESTS, ACTION, EXPOSER],
     rules: {
       "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_V,
         SYNTAXE_O,
         SYNTAXE_P,
         SYNTAXE_A,
@@ -892,6 +938,7 @@ const eslintConfig = defineConfig([
     files: [ACTION],
     rules: {
       "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_V,
         SYNTAXE_O,
         SYNTAXE_P,
         SYNTAXE_A,
@@ -915,6 +962,7 @@ const eslintConfig = defineConfig([
     files: [EXPOSER],
     rules: {
       "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_V,
         SYNTAXE_O,
         SYNTAXE_P,
         SYNTAXE_A,
@@ -938,6 +986,7 @@ const eslintConfig = defineConfig([
     ignores: [DB],
     rules: {
       "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_V,
         SYNTAXE_O,
         SYNTAXE_P,
         SYNTAXE_A,
@@ -952,6 +1001,7 @@ const eslintConfig = defineConfig([
     files: [ENV],
     rules: {
       "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_V,
         SYNTAXE_O,
         SYNTAXE_P,
         SYNTAXE_A,
@@ -974,6 +1024,7 @@ const eslintConfig = defineConfig([
     ignores: [TESTS, OUTILS_TEST, CLIENT, ISOLATION],
     rules: {
       "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_V,
         SYNTAXE_O,
         SYNTAXE_P,
         SYNTAXE_B,
@@ -996,6 +1047,7 @@ const eslintConfig = defineConfig([
     files: [CLIENT, ISOLATION],
     rules: {
       "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_V,
         SYNTAXE_O,
         SYNTAXE_P,
         SYNTAXE_B,
@@ -1017,6 +1069,7 @@ const eslintConfig = defineConfig([
     files: [OUTILS_TEST],
     rules: {
       "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_V,
         SYNTAXE_O,
         SYNTAXE_P,
         SYNTAXE_B,
@@ -1031,6 +1084,7 @@ const eslintConfig = defineConfig([
     files: [TESTS_DB],
     rules: {
       "no-restricted-syntax": restreindreSyntaxe(
+        SYNTAXE_V,
         SYNTAXE_O,
         SYNTAXE_P,
         SYNTAXE_B,

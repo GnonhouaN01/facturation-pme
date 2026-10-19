@@ -129,7 +129,8 @@ test.describe("double authentification, parcours UC-04 puis UC-02", () => {
     expect(restant).toBeLessThanOrEqual(300 + 5);
 
     // Le code de l'activation a pris la tranche courante : le suivant sert.
-    const reponse = await envoyerCode(page, codeTotp(cle, 1));
+    const codeConnexion = codeTotp(cle, 1);
+    const reponse = await envoyerCode(page, codeConnexion);
     expect(reponse.status()).toBe(200);
     await expect(page).toHaveURL(`${ADRESSE}/compte`);
     expect((await context.cookies()).find((c) => c.name === NOM_COOKIE)).toBeDefined();
@@ -154,9 +155,12 @@ test.describe("double authentification, parcours UC-04 puis UC-02", () => {
       page.getByRole("alert").filter({ hasText: CONNEXION.codeIncorrect }),
     ).toBeVisible();
 
+    // Aucune adresse demandée par le navigateur ne porte un code envoyé, un
+    // code de secours ou la clé : on cherche ces valeurs mêmes (un motif
+    // général prendrait aussi « ouble-authe » ou une empreinte de fichier).
+    const secrets = [cle.replaceAll(" ", ""), codeConnexion, ...codes];
     for (const adresse of vus.adresses) {
-      expect(adresse).not.toMatch(/\d{6}|[a-z2-9]{5}-[a-z2-9]{5}/u);
-      expect(adresse).not.toContain(cle.replaceAll(" ", ""));
+      for (const secret of secrets) expect(adresse).not.toContain(secret);
     }
     for (const corps of vus.corps) {
       expect(corps).not.toContain("otpauth");

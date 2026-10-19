@@ -296,6 +296,8 @@ describe("connexion à deux étapes (UC-02, 3a et 3b)", () => {
 });
 
 describe("limite par compte (décision 3)", () => {
+  // Délai de 180 s : 21 essais et 5 connexions, chacun avec plusieurs
+  // allers-retours vers Neon (dev), et 800 ms de plancher par connexion.
   test("le 21e code en 24 heures, depuis des adresses IP différentes : trop_de_requetes et alerte ; aucune valeur en clair", async () => {
     const actif = await activer();
     const juste = code(actif.secret);
@@ -323,7 +325,7 @@ describe("limite par compte (décision 3)", () => {
       .where(like(compteurDebit.cle, "auth.double_auth_compte:%"));
     expect(cles.length).toBeGreaterThan(0);
     expect(JSON.stringify(cles)).not.toContain(actif.id);
-  });
+  }, 180_000);
 });
 
 describe("gestion (UC-04, section 5)", () => {

@@ -46,6 +46,15 @@ export const LIMITES_TEST = {
   "auth.reinitialisation_compte": { maximum: 2, fenetreSecondes: 3_600, par: "adresse_email" },
   "auth.reinitialisation": { maximum: 6, fenetreSecondes: 900, par: "adresse_ip" },
   "email.reinitialisation": { maximum: 50, fenetreSecondes: 86_400, par: "application" },
+  // 1.4 : même raison.
+  "auth.double_auth_code": { maximum: 12, fenetreSecondes: 900, par: "adresse_ip" },
+  "auth.double_auth_secours": { maximum: 8, fenetreSecondes: 900, par: "adresse_ip" },
+  "auth.double_auth_activation": { maximum: 6, fenetreSecondes: 3_600, par: "adresse_ip" },
+  "auth.double_auth_codes": { maximum: 3, fenetreSecondes: 900, par: "adresse_ip" },
+  "auth.double_auth_desactivation": { maximum: 4, fenetreSecondes: 900, par: "adresse_ip" },
+  "auth.double_auth_compte": { maximum: 20, fenetreSecondes: 86_400, par: "utilisateur" },
+  "auth.double_auth_gestion": { maximum: 10, fenetreSecondes: 3_600, par: "utilisateur" },
+  "email.double_auth": { maximum: 40, fenetreSecondes: 86_400, par: "application" },
 } as const satisfies Record<NomLimite, Limite>;
 
 const NOMS = Object.keys(LIMITES_TEST) as NomLimite[];

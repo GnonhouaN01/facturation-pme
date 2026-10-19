@@ -14,3 +14,23 @@ export const LONGUEUR_MAX_NOM = 100;
 // Lu par la page /lien/reinitialisation dans le fragment, et par le schéma du
 // serveur. Fiche : docs/features/mot-de-passe.md, sections 2.1 et 3.4.
 export const JETON_REINITIALISATION = /^[A-Za-z0-9]{24}$/u;
+
+// Double authentification (1.4). Code de l'application : 6 chiffres ASCII.
+// Codes de secours : 10 caractères d'un alphabet sans confusion à la lecture
+// (ni i, l, o, 0, 1), présentés xxxxx-xxxxx ; la saisie admet espaces,
+// tirets et majuscules, normalisés ici, côté navigateur comme côté serveur.
+// Fiche : docs/features/double-authentification.md, sections 2.1 et 3.2.
+export const CODE_TOTP = /^[0-9]{6}$/u;
+export const ALPHABET_CODES_SECOURS = "abcdefghjkmnpqrstuvwxyz23456789";
+export const CODE_SECOURS = /^[a-hjkmnp-z2-9]{5}-[a-hjkmnp-z2-9]{5}$/u;
+export const LONGUEUR_MAX_CODE_SAISI = 20;
+
+// Forme canonique xxxxx-xxxxx d'un code de secours saisi, ou null.
+export function normaliserCodeSecours(saisie: string): string | null {
+  const brut = saisie.replaceAll(/[\s-]/gu, "").toLowerCase();
+  if (brut.length !== 10) return null;
+  for (const caractere of brut) {
+    if (!ALPHABET_CODES_SECOURS.includes(caractere)) return null;
+  }
+  return `${brut.slice(0, 5)}-${brut.slice(5)}`;
+}

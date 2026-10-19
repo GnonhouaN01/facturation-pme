@@ -6,9 +6,12 @@ import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { isPasswordCompromised } from "better-auth/plugins";
 import { inArray } from "drizzle-orm";
 
+import { empreinteCodeSecours } from "../../auth/codes-secours";
 import { optionsAuth } from "../../auth/config";
+import { creerDependancesDoubleAuth } from "../../auth/dependances-double-auth";
 import { creerEmailsCompte } from "../../auth/emails";
 import { creerTraitementAuth, jetonDeSession } from "../../auth/points-entree";
+import { matriceQr } from "../../auth/qr";
 import { creerApresReinitialisation } from "../../auth/reinitialisation";
 import { creerStockageBetterAuth } from "../../debit/better-auth";
 import { creerVerificateur } from "../../debit/debit";
@@ -19,7 +22,9 @@ import { env } from "../../env";
 import { creerTransportMemoire, type TransportMemoire } from "../../modules/email/memoire";
 import { db } from "../client";
 import { creerCompteur, type Compteur } from "../debit";
+import * as requetesDoubleAuth from "../double-authentification";
 import { marquerAdresseVerifiee, supprimerJetonsReinitialisation } from "../reinitialisation";
+import { revoquerAutresSessions } from "../sessions";
 import { user, verification } from "../schema/auth";
 import { compteurDebit } from "../schema/technique";
 
@@ -145,6 +150,18 @@ export function bancInscription(options: { adresses: number }): BancInscription 
         return ligne !== null && ligne.expiresAt > new Date();
       },
       motDePasseCompromis: isPasswordCompromised,
+      // 1.4, comme gestionnaire.ts : même fabrique, sur cette instance, ce
+      // compteur et ces emails (docs/features/double-authentification.md,
+      // tests 19 à 25).
+      doubleAuth: creerDependancesDoubleAuth({
+        contexte: () => auth.$context,
+        verifierDebit: verificateur.verifierDebit,
+        requetes: requetesDoubleAuth,
+        revoquerAutresSessions,
+        empreinteCodeSecours,
+        matriceQr,
+        emailDoubleAuth: emails.emailDoubleAuth,
+      }),
     }),
     transport,
     lireSession: async (entetes) => {
@@ -167,6 +184,15 @@ export function bancInscription(options: { adresses: number }): BancInscription 
         await db.select({ id: user.id }).from(user).where(inArray(user.email, adresses))
       ).map((ligne) => ligne.id);
       if (ids.length > 0) await db.delete(verification).where(inArray(verification.value, ids));
+      // 1.4 : lignes d'anti-rejeu (identifiant double-auth-tranche:<id>).
+      if (ids.length > 0) {
+        await db.delete(verification).where(
+          inArray(
+            verification.identifier,
+            ids.map((id) => `double-auth-tranche:${id}`),
+          ),
+        );
+      }
       await db.delete(user).where(inArray(user.email, adresses));
       const liste = [...cles];
       if (liste.length > 0) await db.delete(compteurDebit).where(inArray(compteurDebit.cle, liste));

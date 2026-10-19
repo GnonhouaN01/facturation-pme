@@ -477,9 +477,10 @@ describe("emailDoubleAuth : notifications de la double authentification (1.4)", 
     const { emails, debits, executer } = banc();
     emails.emailDoubleAuth("compte.double_auth_tentatives", async () => ADRESSE);
     await executer();
+    // Adresse du compteur, variantes Gmail confondues (comme en 1.1).
     expect(debits).toEqual([
-      ["email.destinataire", ADRESSE_NORMALISEE],
-      ["email.destinataire_jour", ADRESSE_NORMALISEE],
+      ["email.destinataire", "awa.kone@exemple.invalid"],
+      ["email.destinataire_jour", "awa.kone@exemple.invalid"],
       ["email.double_auth", "gmail"],
       ["email.application", "gmail"],
     ]);

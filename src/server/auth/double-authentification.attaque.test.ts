@@ -343,7 +343,9 @@ describe("séparation des cookies : un cookie par usage", () => {
       const { gerer, appels } = traitement({
         session: {
           utilisateurId: "u-a",
-          doubleAuthentification: chemin !== "/two-factor/enable",
+          // confirm-enable n'existe que pendant une activation en cours.
+          doubleAuthentification:
+            chemin !== "/two-factor/enable" && chemin !== "/two-factor/confirm-enable",
           jeton: "jeton-session-a",
         },
       });
