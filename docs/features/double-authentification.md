@@ -1,6 +1,6 @@
 # Fonctionnalité : double authentification et codes de secours
 
-Statut : validée le 2026-10-18 ; PR 1 implémentée le 2026-10-19 (« Notes de l'implémentation »), essai sur la prévisualisation à faire par le développeur ; PR 2 à venir. Fiche rédigée le 2026-10-18 ; les vrais choix tranchés par le développeur le même jour (section « Décisions »), les autres points selon la recommandation de l'assistant (section « Décisions par défaut »).
+Statut : validée le 2026-10-18 ; PR 1 implémentée le 2026-10-19 et fusionnée (#58) ; PR 2 implémentée le 2026-10-19 (« Notes de l'implémentation ») ; preuve manuelle regroupée des deux PR à faire par le développeur (« Vérifications manuelles »). Fiche rédigée le 2026-10-18 ; les vrais choix tranchés par le développeur le même jour (section « Décisions »), les autres points selon la recommandation de l'assistant (section « Décisions par défaut »).
 
 Jalon 1, fonctionnalité 1.4 de `docs/PLAN.md`. Taille M (plutôt haute). Cas d'utilisation : UC-04, UC-02 (étape 3, erreurs 3a, 3b, 4a), UC-03 (« Abus » : la double authentification reste exigée). Exigences : F-003, S-12, S-13, S-10, S-11, S-14 (partie compte), S-15, S-17, S-54, S-55, S-63, S-70 (« connexions sensibles »), S-81, S-82, S-85, S-87, S-88. Menaces : T-02, T-06, T-04 (report de la 1.3), T-01, T-03, T-07, T-39, T-43, T-55, T-65.
 
@@ -349,6 +349,8 @@ La procédure est écrite et relue avec la PR 1, et éprouvée sur `dev` par le 
 - **Pages** : le refus reste la page « introuvable » de `lirePourPage` (S-02 inchangé). **UC-02 4a** (« amène à UC-04 ») : aucun utilisateur n'a d'organisation avant la 2.1, et la connexion mène à `/compte` (1.2) ; le renvoi vers l'activation est reporté à la 2.1, qui choisit la page d'arrivée et lit les adhésions (« Reporté »). `/compte/double-authentification` dit dès la PR 1 : « Obligatoire pour les Propriétaires et les Comptables. »
 - **S-12, seconde phrase** (« un Propriétaire peut l'imposer à toute son organisation ») : réglage de l'organisation, reporté à la 2.2.
 - **Matrice** : aucune ligne nouvelle (`THREATS.md` section 6, « chaque utilisateur gère son propre compte »). Le test exhaustif de la matrice est inchangé ; un test propre à l'étape 7 la parcourt pour chaque rôle.
+- **Ordre** : l'étape 7 suit l'étape 6. Un rôle refusé par la matrice reste refusé à l'étape 6 ; l'étape 7 ne concerne qu'un membre que la matrice laisse passer. Les deux refus sont la même réponse `refuse` (S-02).
+- **Outillage des tests** : `creerMembre` (`src/server/db/outils-test/membres.ts`) gagne l'option `doubleAuthentification`, **vraie par défaut** : un Propriétaire ou un Comptable réel a son second facteur, et les tests des fiches précédentes gardent leur sens ; les tests de l'étape 7 passent `false`. De bout en bout, le gabarit connecté (`e2e/affichage-connecte.spec.ts`) active d'abord la double authentification par l'interface, puis rattache le compte comme Propriétaire ; les étapes du parcours d'activation passent dans `e2e/double-auth.ts`, partagé par les deux fichiers.
 
 ### 10. Les emails (règle 17, S-55, T-65)
 
@@ -464,7 +466,7 @@ Aucune. `two_factor` porte déjà `secret`, `backup_codes`, `user_id`, `verified
 ## Découpage en PR
 
 1. **PR 1, double authentification du compte** (branche `feat/1.4-double-authentification`) : sections 1 à 8 et 10 à 13. Fermée en production comme le reste des comptes (`COMPTES_OUVERTS_EN_PRODUCTION`) ; aucune variable de Vercel. Essai recommandé sur la prévisualisation avec une vraie application d'authentification (section « Vérifications manuelles »).
-2. **PR 2, exigence par rôle** (branche `feat/1.4-exigence-role`) : section 9. Petite : `SessionLue`, étape 7, `ROLES_DOUBLE_AUTH`, test de T-02, documents de la chaîne.
+2. **PR 2, exigence par rôle** (branche `feat/1.4-exigence-par-role`) : section 9. Petite : `SessionLue`, étape 7, `ROLES_DOUBLE_AUTH`, test de T-02, documents de la chaîne. Elle reprend aussi le report de la PR 1 : le journal du site construit (tests 32 et 33).
 
 ## Critères d'acceptation
 
@@ -499,11 +501,12 @@ Aucune. `two_factor` porte déjà `secret`, `backup_codes`, `user_id`, `verified
 - [ ] Propriétaire et Comptable sans second facteur : `refuse` sur toute action et page « introuvable » sur toute page de `(app)/`, quelle que soit l'entrée ; acceptés après activation ; Commercial et Lecteur non concernés.
 - [ ] Promotion en Comptable d'un membre sans second facteur, ou second facteur retiré en base : refus dès la requête suivante.
 - [ ] Le refus de l'étape 7 précède la validation de l'entrée (une entrée invalide reçoit `refuse`, pas `invalide`).
+- [ ] Report de la PR 1 : passage complet sur le site construit (activation, connexion par code et par code de secours, nouveaux codes, désactivation) sans aucune valeur de la section 3.5 dans la sortie du serveur ; serveur en panne à l'étape du code : texte fixe et incident affichés, ligne `[auth]` fixe portant cet incident, sans le code.
 - [ ] `npm run verifier` et `npm run test:integration` verts, sorties montrées.
 
 ## Tests à écrire
 
-Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 27 relèvent de la PR 1, 28 à 31 de la PR 2.
+Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 27 relèvent de la PR 1, 28 à 33 de la PR 2 (32 et 33 : report de la PR 1).
 
 ### Tests d'attaque, puis unitaires (PR 1)
 
@@ -547,10 +550,12 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 27 relèven
 29. [ ] `src/server/db/chaine.attaque.integration.test.ts`, ajout : Propriétaire réel sans second facteur : refusé, transaction annulée, rien écrit ; `two_factor_enabled` passé à vrai en base : accepté à la requête suivante ; repassé à faux : refusé ; Commercial promu Comptable en base : refusé à la requête suivante (S-13).
 30. [ ] `src/server/auth/session.test.ts` : `doubleAuthentification` vrai seulement si `twoFactorEnabled === true`.
 31. [ ] `e2e/zones.attaque.spec.ts` (outil `e2e/organisation-e2e.ts`) : Propriétaire sans second facteur, `/tableau-de-bord` : même document que sans session ; après activation : le gabarit s'affiche.
+32. [ ] **Report de la PR 1, test 17 sur le site construit** — `e2e/double-authentification.spec.ts` : passage complet (activation, connexion par code, par code de secours, nouveaux codes, désactivation), puis lecture de la sortie du serveur (`JOURNAL_SITE_E2E`) : ni la clé (groupée ou non), ni un code envoyé, ni un code de secours (anciens et nouveaux), ni l'adresse, ni `otpauth`, ni la valeur d'un cookie de session ou d'attente ; chaque ligne `[auth]` a la forme fixe.
+33. [ ] **Report de la PR 1, serveur en panne à l'étape du code** — `e2e/erreurs.attaque.spec.ts` : sur le second serveur, l'étape du code atteinte (réponse de `/sign-in/email` simulée dans le navigateur, cookie d'attente au format signé), code envoyé : `500`, texte fixe et incident affichés, ligne `[auth]` fixe portant cet incident dans `JOURNAL_PANNE_E2E`, sans le code ni l'identifiant d'attente.
 
 ### Vérifications manuelles (développeur)
 
-- [ ] PR 1, prévisualisation, adresse propre du déploiement (section 2.4 de la 1.1) : activation avec une vraie application (Google Authenticator, Aegis ou équivalent) en scannant le code QR ; connexion par code ; par code de secours ; remplacement sur un second téléphone (ou une seconde application) ; désactivation. Emails de notification reçus (variables d'envoi limitées à la branche, comme la section 13 de la 1.3 ; prévoir les limites par destinataire). Journaux du déploiement sans code, clé ni adresse.
+- [ ] **Preuve regroupée des PR 1 et 2**, sur la prévisualisation de la PR 2, adresse propre du déploiement (section 2.4 de la 1.1), avec une vraie application d'authentification : plan pas à pas dans la description de la PR 2 (activation en scannant le code QR ; connexion par code ; par code de secours ; nouveaux codes ; remplacement sur une seconde application ; désactivation ; refus de la désactivation et de `/tableau-de-bord` pour un Propriétaire). Emails reçus, au plus 3 par heure et par boîte (`email.destinataire`), sur deux boîtes. Journaux du déploiement sans code, clé ni adresse.
 
 ## Fichiers concernés
 
