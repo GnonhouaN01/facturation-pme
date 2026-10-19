@@ -257,6 +257,8 @@ Depuis le 2026-10-08, Better Auth est configuré avec `generateId: "uuid"` : ide
 
 **Résultat.** Huit tables créées. Le rôle de l'application accède à neuf tables. Better Auth lit la table `user`.
 
+**Double authentification (1.4).** Le secret TOTP de chaque compte est chiffré par une clé tirée de `BETTER_AUTH_SECRET`, et les empreintes des codes de secours par une clé dérivée du même secret. **Changer `BETTER_AUTH_SECRET` rend illisibles tous les seconds facteurs** : chaque utilisateur devrait réactiver le sien. Une rotation demande donc sa propre fiche (secrets versionnés de Better Auth pour le chiffrement, nouvelle étiquette pour les empreintes). Un titulaire qui a perdu téléphone et codes de secours suit la procédure manuelle de `docs/exploitation/remise-a-zero-double-authentification.md`, exécutée par le développeur seulement (`docs/features/double-authentification.md`, sections 7.2 et « Limites connues »).
+
 **Décision.** La route `/api/auth` n'est pas créée à ce stade : elle exposerait l'inscription sans les règles de sécurité des comptes.
 
 **Erreurs rencontrées.**

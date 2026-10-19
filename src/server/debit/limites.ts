@@ -74,6 +74,21 @@ export const LIMITES = {
   // sous email.application (RR-13, décision C). Fiche :
   // docs/features/mot-de-passe.md, section 6.4.
   "email.reinitialisation": { maximum: 50, fenetreSecondes: 24 * 60 * 60, par: "application" },
+  // Double authentification (1.4, S-11, T-06) : par adresse IP dans Better
+  // Auth, une règle par chemin interne ; par compte dans notre passerelle :
+  // 20 codes de connexion par 24 heures (décision 3, RR-14) et 10 opérations
+  // de gestion par heure, comptés pour l'utilisateur, avant tout contrôle de
+  // code ou de mot de passe. Budget d'emails propre, sous email.application
+  // avec email.compte et email.reinitialisation. Fiche :
+  // docs/features/double-authentification.md, sections 6 et 10.
+  "auth.double_auth_code": { maximum: 12, fenetreSecondes: 15 * 60, par: "adresse_ip" },
+  "auth.double_auth_secours": { maximum: 8, fenetreSecondes: 15 * 60, par: "adresse_ip" },
+  "auth.double_auth_activation": { maximum: 6, fenetreSecondes: 60 * 60, par: "adresse_ip" },
+  "auth.double_auth_codes": { maximum: 3, fenetreSecondes: 15 * 60, par: "adresse_ip" },
+  "auth.double_auth_desactivation": { maximum: 4, fenetreSecondes: 15 * 60, par: "adresse_ip" },
+  "auth.double_auth_compte": { maximum: 20, fenetreSecondes: 24 * 60 * 60, par: "utilisateur" },
+  "auth.double_auth_gestion": { maximum: 10, fenetreSecondes: 60 * 60, par: "utilisateur" },
+  "email.double_auth": { maximum: 40, fenetreSecondes: 24 * 60 * 60, par: "application" },
 } as const satisfies Record<string, Limite>;
 
 // Valeur comptée par les limites « par application » : un seul compte Gmail

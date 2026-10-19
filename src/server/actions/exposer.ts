@@ -6,6 +6,10 @@ import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import type { z } from "zod";
 
+import {
+  lireEtatDoubleAuth as lireEtat,
+  type EtatDoubleAuthCompte,
+} from "../auth/etat-double-auth";
 import { lireSession } from "../auth/session";
 import type { Droit } from "../autorisation/matrice";
 import type { ActionJournal } from "../journal/actions";
@@ -138,4 +142,12 @@ export function traduireLecture<T>(resultat: ResultatLecture<T>): T {
   if (resultat.raison === "refuse" || resultat.raison === "connexion_requise") notFound();
   if (resultat.raison === "erreur") throw new ErreurPage(resultat.incident);
   throw new ErreurPage(randomUUID());
+}
+
+// Page de la double authentification (1.4) : son état, pour l'utilisateur que
+// lireComptePourPage a lu dans la session, jamais pour un identifiant reçu.
+// Fiche : docs/features/double-authentification.md, section 11.
+export type { EtatDoubleAuthCompte };
+export function lireEtatDoubleAuth(compte: ContexteCompte): Promise<EtatDoubleAuthCompte> {
+  return lireEtat(compte.utilisateurId);
 }

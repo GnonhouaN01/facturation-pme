@@ -7,6 +7,7 @@ import { adaptateurSur, basePanne, cookieSessionSigne } from "../db/outils-test/
 
 import { optionsAuth } from "./config";
 import { creerTraitementAuth } from "./points-entree";
+import { dependancesDoubleAuthInertes } from "../db/outils-test/double-auth";
 
 // T-39 : base en panne pendant une lecture de Better Auth. Aucun jeton de
 // session, aucune adresse, aucune requête SQL ne doit paraître dans ce
@@ -184,6 +185,8 @@ describe("T-39 : inscription pendant une panne de la base", { timeout: 30_000 },
       limiterReinitialisation: async () => true,
       jetonReinitialisationValide: async () => false,
       motDePasseCompromis: async () => false,
+      // 1.4 : jamais atteintes par ces tests.
+      doubleAuth: dependancesDoubleAuthInertes(),
       horloge: { maintenant: () => 0, attendre: async () => {} },
     });
     const email = `victime-${randomUUID()}@exemple.invalid`;

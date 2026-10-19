@@ -45,5 +45,49 @@ export const TEXTES_EMAILS = {
         "Le mot de passe de votre compte Facturation PME vient d'être modifié, et toutes vos sessions ont été fermées. Si vous êtes à l'origine de ce changement, aucune action n'est attendue.",
       oubli: "Sinon, choisissez sans attendre un nouveau mot de passe depuis cette page :",
     },
+    // 1.4 (docs/features/double-authentification.md, section 10).
+    "compte.double_auth_activee": {
+      sujet: "Double authentification activée",
+      corps:
+        "La double authentification vient d'être activée sur votre compte Facturation PME, et vos autres sessions ont été fermées. Chaque connexion demandera désormais le code de votre application d'authentification.",
+      oubli:
+        "Si vous n'êtes pas à l'origine de ce changement, choisissez sans attendre un nouveau mot de passe depuis cette page :",
+    },
+    "compte.double_auth_desactivee": {
+      sujet: "Double authentification désactivée",
+      corps:
+        "La double authentification vient d'être désactivée sur votre compte Facturation PME, et vos autres sessions ont été fermées. Votre compte n'est plus protégé que par votre mot de passe.",
+      oubli:
+        "Si vous n'êtes pas à l'origine de ce changement, choisissez sans attendre un nouveau mot de passe depuis cette page :",
+    },
+    "compte.double_auth_remplacee": {
+      sujet: "Application d'authentification remplacée",
+      corps:
+        "L'application d'authentification de votre compte Facturation PME vient d'être remplacée, et vos autres sessions ont été fermées. L'ancienne application et les anciens codes de secours ne servent plus.",
+      oubli:
+        "Si vous n'êtes pas à l'origine de ce changement, choisissez sans attendre un nouveau mot de passe depuis cette page :",
+    },
+    "compte.codes_secours_regeneres": {
+      sujet: "Nouveaux codes de secours",
+      corps:
+        "De nouveaux codes de secours viennent d'être créés pour votre compte Facturation PME. Les anciens codes ne servent plus.",
+      oubli:
+        "Si vous n'êtes pas à l'origine de ce changement, choisissez sans attendre un nouveau mot de passe depuis cette page :",
+    },
+    "compte.code_secours_utilise": {
+      sujet: "Code de secours utilisé",
+      corps:
+        "Un code de secours vient de servir à vous connecter à Facturation PME ; il ne servira plus. Si vous avez perdu votre téléphone, remplacez l'application d'authentification depuis la page de votre compte.",
+      oubli:
+        "Si ce n'est pas vous, choisissez sans attendre un nouveau mot de passe depuis cette page :",
+    },
+    "compte.double_auth_tentatives": {
+      sujet: "Codes de vérification refusés",
+      corps:
+        "De nombreux codes de vérification ont été saisis après le mot de passe de votre compte Facturation PME.",
+      oubli:
+        "Si ce n'est pas vous, quelqu'un connaît votre mot de passe : changez-le sans attendre depuis cette page :",
+      suspension: "La connexion à votre compte reste suspendue 24 heures au plus.",
+    },
   },
 } as const;

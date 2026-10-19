@@ -25,6 +25,13 @@ export const CHEMINS_LIMITES = {
   // 1.3 (docs/features/mot-de-passe.md, section 5).
   "/request-password-reset": "auth.reinitialisation_demande",
   "/reset-password": "auth.reinitialisation",
+  // 1.4 : chemins internes appelés par les points de la double
+  // authentification (docs/features/double-authentification.md, section 6).
+  "/two-factor/verify-totp": "auth.double_auth_code",
+  "/two-factor/verify-backup-code": "auth.double_auth_secours",
+  "/two-factor/enable": "auth.double_auth_activation",
+  "/two-factor/generate-backup-codes": "auth.double_auth_codes",
+  "/two-factor/disable": "auth.double_auth_desactivation",
 } as const satisfies Record<string, NomLimite>;
 
 export type RegleBetterAuth = { window: number; max: number };

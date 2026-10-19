@@ -22,8 +22,10 @@ const PROJETS = ["mobile-390", "ordinateur-1280"] as const;
 // pas le suivant. 1.2 : 18 rangs au lieu de 10, pour les comptes de la
 // connexion (rangs 8 à 17, docs/features/connexion.md, section 8.1). 1.3 :
 // 24 rangs, pour les comptes du mot de passe oublié (rangs 18 à 23,
-// docs/features/mot-de-passe.md).
-export const RANGS = 24;
+// docs/features/mot-de-passe.md). 1.4 : 30 rangs, pour les comptes de la
+// double authentification (rangs 24 à 29,
+// docs/features/double-authentification.md).
+export const RANGS = 30;
 export const ESSAIS_MAX = 3;
 export const REPETITIONS_MAX = 5;
 

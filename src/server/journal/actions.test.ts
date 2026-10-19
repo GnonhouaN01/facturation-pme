@@ -20,6 +20,10 @@ const ATTENDUES: Record<string, string> = {
   "membre.role_modifie": "membre",
   "membre.retire": "membre",
   "membre.parti": "membre",
+  // 1.4 (décision 2) : remise à zéro manuelle de la double authentification
+  // d'un membre, écrite par la procédure d'exploitation
+  // (docs/exploitation/remise-a-zero-double-authentification.md).
+  "membre.double_auth_remise_a_zero": "membre",
 };
 
 const TYPES_RESSOURCE = ["organisation", "invitation", "membre"];

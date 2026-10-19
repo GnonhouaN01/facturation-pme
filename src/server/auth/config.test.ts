@@ -15,6 +15,8 @@ import {
   planifierEmailVerification,
 } from "./emails";
 import { consignerAuth } from "./journal";
+import { creerStockageCodesSecours, genererCodesSecours } from "./codes-secours";
+import { empreinteAttenteDoubleAuth } from "./double-authentification";
 import { apresReinitialisation, empreinteJetonReinitialisation } from "./reinitialisation";
 
 // Le module testUtils de Better Auth crée des sessions sans mot de passe : il
@@ -206,11 +208,17 @@ describe("1.3 : réinitialisation du mot de passe", () => {
     expect(options.onPasswordReset).toBe(apresReinitialisation);
   });
 
-  test("jeton stocké haché (S-15) : une seule surcharge, pour reset-password:, par notre empreinte", () => {
+  // Modifié en 1.4 : une seconde surcharge, pour les lignes de la connexion
+  // en attente du code (docs/features/double-authentification.md,
+  // section 3.3) ; celle de reset-password: est inchangée.
+  test("jeton stocké haché (S-15) : deux surcharges, reset-password: et 2fa-, chacune par notre empreinte", () => {
     const stockage = optionsAuth.verification?.storeIdentifier;
     expect(stockage).toEqual({
       default: "plain",
-      overrides: { "reset-password:": { hash: empreinteJetonReinitialisation } },
+      overrides: {
+        "reset-password:": { hash: empreinteJetonReinitialisation },
+        "2fa-": { hash: empreinteAttenteDoubleAuth },
+      },
     });
   });
 
@@ -225,5 +233,65 @@ describe("1.3 : réinitialisation du mot de passe", () => {
     const contexte = await auth.$context;
     expect(contexte.options.emailAndPassword?.revokeSessionsOnPasswordReset).toBe(true);
     expect(contexte.options.emailAndPassword?.resetPasswordTokenExpiresIn).toBe(1800);
+  });
+});
+
+// Fonctionnalité 1.4 : double authentification. Fiche :
+// docs/features/double-authentification.md, sections 1, 3 et 4, test 14.
+describe("1.4 : double authentification", () => {
+  type OptionsDoubleAuth = {
+    issuer?: unknown;
+    twoFactorCookieMaxAge?: unknown;
+    backupCodeOptions?: {
+      amount?: unknown;
+      length?: unknown;
+      customBackupCodesGenerate?: unknown;
+      storeBackupCodes?: unknown;
+    };
+    otpOptions?: unknown;
+    skipVerificationOnEnable?: unknown;
+    allowPasswordless?: unknown;
+    accountLockout?: unknown;
+    totpOptions?: unknown;
+    trustDeviceMaxAge?: unknown;
+  };
+
+  function options(): OptionsDoubleAuth {
+    const extension = (optionsAuth.plugins as readonly { id: string; options?: unknown }[]).find(
+      (plugin) => plugin.id === "two-factor",
+    );
+    expect(extension).toBeDefined();
+    return (extension?.options ?? {}) as OptionsDoubleAuth;
+  }
+
+  test("émetteur « Facturation PME » ; attente du code de 5 minutes", () => {
+    expect(options().issuer).toBe("Facturation PME");
+    expect(options().twoFactorCookieMaxAge).toBe(300);
+  });
+
+  test("codes de secours : les nôtres, 10, sous empreinte (storeBackupCodes à nos deux fonctions)", async () => {
+    const codes = options().backupCodeOptions;
+    expect(codes?.amount).toBe(10);
+    expect(codes?.customBackupCodesGenerate).toBe(genererCodesSecours);
+    const stockage = codes?.storeBackupCodes as { encrypt: (s: string) => Promise<string> };
+    expect(Object.keys(stockage).sort()).toEqual(["decrypt", "encrypt"]);
+    // Même comportement que notre stockage : une liste de codes devient des
+    // empreintes cs1:.
+    const stocke = JSON.parse(await stockage.encrypt(JSON.stringify(["abcde-fghjk"]))) as string[];
+    expect(stocke[0]).toMatch(/^cs1:/u);
+    expect(typeof creerStockageCodesSecours).toBe("function");
+  });
+
+  test("ni code par email, ni activation sans vérification, ni mot de passe facultatif, ni réglage du TOTP", () => {
+    const lues = options();
+    expect(lues.otpOptions).toBeUndefined();
+    expect(lues.skipVerificationOnEnable).toBeUndefined();
+    expect(lues.allowPasswordless).toBeUndefined();
+    expect(lues.totpOptions).toBeUndefined();
+    expect(lues.trustDeviceMaxAge).toBeUndefined();
+  });
+
+  test("verrou du compte de Better Auth : réglages par défaut gardés (actif, 10 échecs, 15 minutes)", () => {
+    expect(options().accountLockout).toBeUndefined();
   });
 });

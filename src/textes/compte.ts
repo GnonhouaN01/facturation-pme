@@ -7,7 +7,10 @@
 // compte non vérifié, sans les distinguer. Fiche : docs/features/connexion.md,
 // sections 2.1 et 5. Mot de passe oublié (1.3) : la confirmation de la
 // demande est la même pour toute adresse (T-07). Fiche :
-// docs/features/mot-de-passe.md, section 7.
+// docs/features/mot-de-passe.md, section 7. Double authentification (1.4) :
+// étape du code de la connexion, état sur la page de compte, activation et
+// gestion. Fiche : docs/features/double-authentification.md, sections 4, 5
+// et 11.
 
 export const TEXTES_COMPTE = {
   inscription: {
@@ -63,6 +66,18 @@ export const TEXTES_COMPTE = {
     creerCompte: "Créer un compte",
     motDePasseOublie: "Mot de passe oublié ?",
     sansJavaScript: "Activez JavaScript dans votre navigateur pour vous connecter.",
+    // 1.4 : étape du code (UC-02, étape 3 et erreurs 3a, 3b).
+    introductionCode:
+      "Saisissez le code à six chiffres affiché par votre application d'authentification.",
+    codeLibelle: "Code de vérification",
+    secoursLibelle: "Code de secours",
+    verifier: "Vérifier le code",
+    verificationEnCours: "Vérification en cours",
+    utiliserSecours: "Utiliser un code de secours",
+    utiliserApplication: "Utiliser le code de l'application",
+    codeIncorrect: "Code incorrect.",
+    codeVide: "Saisissez le code.",
+    connexionExpiree: "Votre connexion a expiré. Reprenez depuis le début.",
   },
   motDePasseOublie: {
     titre: "Mot de passe oublié",
@@ -94,6 +109,56 @@ export const TEXTES_COMPTE = {
   compte: {
     titre: "Votre compte",
     connecte: "Vous êtes connecté.",
+    // 1.4.
+    doubleAuthTitre: "Double authentification",
+    doubleAuthActive: "Activée",
+    doubleAuthInactive: "Non activée",
+    activer: "Activer la double authentification",
+    gerer: "Gérer la double authentification",
+  },
+  doubleAuth: {
+    titre: "Double authentification",
+    introduction:
+      "Chaque connexion demandera, après votre mot de passe, un code affiché par une application d'authentification sur votre téléphone.",
+    obligatoire: "Obligatoire pour les Propriétaires et les Comptables.",
+    motDePasse: "Mot de passe",
+    continuer: "Continuer",
+    qr: "Code QR à scanner avec votre application d'authentification",
+    etapeQr: "Scannez ce code QR avec votre application d'authentification.",
+    cle: "Ou saisissez cette clé dans l'application :",
+    code: "Code affiché par l'application",
+    confirmer: "Activer la double authentification",
+    confirmerRemplacement: "Confirmer la nouvelle application",
+    codesTitre: "Codes de secours",
+    codesAide:
+      "Chaque code ne sert qu'une fois, si vous n'avez plus votre téléphone. Gardez-les en lieu sûr : ils ne seront plus affichés.",
+    copier: "Copier les codes",
+    copies: "Codes copiés.",
+    conserve: "J'ai conservé mes codes",
+    terminer: "Terminer",
+    activee: "La double authentification est activée.",
+    codesRestants: "Codes de secours restants :",
+    gestionCode: "Code de l'application ou code de secours",
+    nouveauxCodes: "Créer de nouveaux codes",
+    remplacer: "Remplacer l'application",
+    desactiver: "Désactiver la double authentification",
+    nouveauxCodesTitre: "Créer de nouveaux codes de secours",
+    remplacerTitre: "Remplacer l'application d'authentification",
+    desactiverTitre: "Désactiver la double authentification",
+    desactiverAvertissement:
+      "Votre compte ne sera plus protégé que par votre mot de passe, et vos autres sessions seront fermées.",
+    remplacerAide:
+      "Utilisez un code de secours si vous n'avez plus l'ancienne application. Les anciens codes de secours ne serviront plus.",
+    annuler: "Annuler",
+    envoiEnCours: "Envoi en cours",
+    desactivee: "La double authentification est désactivée.",
+    motDePasseIncorrect: "Mot de passe incorrect.",
+    codeIncorrect: "Code incorrect.",
+    codeVide: "Saisissez le code.",
+    obligatoireRefus:
+      "La double authentification ne peut pas être désactivée : votre rôle dans une organisation l'impose.",
+    sansJavaScript:
+      "Activez JavaScript dans votre navigateur pour gérer la double authentification.",
   },
   deconnexion: {
     bouton: "Se déconnecter",

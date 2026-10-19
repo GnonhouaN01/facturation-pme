@@ -304,6 +304,12 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     await lire(origine, "/compte"),
     await lire(origine, "/compte", cookieForge()),
   ];
+  // 1.4 : la page de la double authentification, sans session et avec un
+  // cookie forgé, comme /compte.
+  const [doubleAuth, doubleAuthForge] = [
+    await lire(origine, "/compte/double-authentification"),
+    await lire(origine, "/compte/double-authentification", cookieForge()),
+  ];
   // 1.3 : les pages publiques du mot de passe oublié.
   const [oubli, lienReinitialisation] = [
     await lire(origine, "/mot-de-passe-oublie"),
@@ -323,10 +329,15 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     await lire(origine, "/api/auth/get-session"),
     // 1.3 : le lien de Better Auth, jeton dans le chemin, reste fermé.
     await lire(origine, `/api/auth/reset-password/${jetonReinitialisation()}?callbackURL=%2F`),
+    // 1.4 : le secret TOTP ne se relit jamais ; aucun code par email.
+    await lire(origine, "/api/auth/two-factor/get-totp-uri"),
+    await lire(origine, "/api/auth/two-factor/send-otp"),
+    await lire(origine, "/api/auth/two-factor/verify-otp"),
     await lire(origine, authInconnu()),
   ];
-  // Décision 1 de la 1.1, étendue par la 1.2 et la 1.3 : en production, les
-  // sept POST des comptes répondent comme un chemin inexistant de /api/auth.
+  // Décision 1 de la 1.1, étendue par la 1.2, la 1.3 et la 1.4 : en
+  // production, les quatorze POST des comptes répondent comme un chemin
+  // inexistant de /api/auth.
   const comptes = [];
   for (const chemin of [
     "/api/auth/sign-up/email",
@@ -336,6 +347,13 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     "/api/auth/sign-out",
     "/api/auth/request-password-reset",
     "/api/auth/reset-password",
+    "/api/auth/two-factor/verify-totp",
+    "/api/auth/two-factor/verify-backup-code",
+    "/api/auth/two-factor/enable",
+    "/api/auth/two-factor/confirm-enable",
+    "/api/auth/two-factor/replace",
+    "/api/auth/two-factor/generate-backup-codes",
+    "/api/auth/two-factor/disable",
     authInconnu(),
   ]) {
     comptes.push(await lire(origine, chemin, undefined, undefined, "POST"));
@@ -359,6 +377,7 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     ["lien", lien1, 404, [lien1, lien2]],
     ["connexion", connexion, 200, [connexion]],
     ["compte", compte, 404, [compte, compteForge]],
+    ["double-authentification", doubleAuth, 404, [doubleAuth, doubleAuthForge]],
     ["mot-de-passe-oublie", oubli, 200, [oubli]],
     ["lien-reinitialisation", lienReinitialisation, 200, [lienReinitialisation]],
   ];
@@ -385,6 +404,7 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     ["tableau-de-bord", [tableau, tableauForge]],
     ["inexistante", [absente]],
     ["compte", [compte, compteForge]],
+    ["double-authentification", [doubleAuth, doubleAuthForge]],
   ]) {
     controler(`${nom}:gabarit`, lues, (...r) => {
       const trouves = TEXTES_GABARIT.filter((texte) => r.some((x) => x.corps.includes(texte)));
@@ -413,6 +433,13 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     "compte:identique",
     compte,
     compteForge,
+    ["sans cookie", "cookie forgé"],
+    "statut ou document différent avec un cookie de session forgé",
+  );
+  identique(
+    "double-authentification:identique",
+    doubleAuth,
+    doubleAuthForge,
     ["sans cookie", "cookie forgé"],
     "statut ou document différent avec un cookie de session forgé",
   );
@@ -460,7 +487,7 @@ export async function controlerSite(adresse, { detail = false } = {}) {
   controler("auth:identique", auths, (...r) =>
     r.every((x) => forme(x) === forme(r[0]))
       ? null
-      : "réponse différente pour un point d'entrée fermé (/organization/*, /get-session) et un chemin inexistant",
+      : "réponse différente pour un point d'entrée fermé (/organization/*, /get-session, /two-factor/get-totp-uri) et un chemin inexistant",
   );
   controler("comptes:statut", comptes, premierProbleme(statut(404)));
   controler("comptes:identique", comptes, (...r) =>

@@ -113,6 +113,11 @@ afterEach(() => {
   vi.doUnmock("../debit/debit");
 });
 
+// Modifié en 1.4 : délai de 30 s au lieu de 10 s. Chaque test recharge le
+// gestionnaire et tous ses modules (vi.resetModules) ; avec la double
+// authentification, le premier dépassait 10 s sous la charge de la suite
+// complète (constaté aussi sur main, à 10,1 s seul). Rien de ce qui est
+// vérifié ne change.
 describe("gestionnaire de /api/auth, liaison", () => {
   // Modifié en 1.2 : cinq POST au lieu de trois (connexion et déconnexion).
   test("en production : les cinq POST des comptes répondent comme un chemin fermé, Better Auth jamais appelé", async () => {
@@ -126,7 +131,7 @@ describe("gestionnaire de /api/auth, liaison", () => {
     expect(traiter).not.toHaveBeenCalled();
     expect(verifierDebit).not.toHaveBeenCalled();
     expect(findSession).not.toHaveBeenCalled();
-  }, 10_000);
+  }, 30_000);
 
   test("témoin, hors production : chacun atteint Better Auth, avec l'origine de BETTER_AUTH_URL", async () => {
     const { traiterRequeteAuth } = await charger(false);
@@ -139,7 +144,7 @@ describe("gestionnaire de /api/auth, liaison", () => {
     for (const [requete] of traiter.mock.calls) {
       expect(new URL(requete.url).origin).toBe(ORIGINE);
     }
-  }, 10_000);
+  }, 30_000);
 
   test("hors production, une autre origine que BETTER_AUTH_URL est refusée", async () => {
     const { traiterRequeteAuth } = await charger(false);
@@ -150,7 +155,7 @@ describe("gestionnaire de /api/auth, liaison", () => {
 
     expect(reponse.status).toBe(403);
     expect(traiter).not.toHaveBeenCalled();
-  }, 10_000);
+  }, 30_000);
 });
 
 describe("gestionnaire de /api/auth, liaison de la connexion (1.2)", () => {
@@ -159,7 +164,7 @@ describe("gestionnaire de /api/auth, liaison de la connexion (1.2)", () => {
     await traiterRequeteAuth(post("/sign-in/email", POINTS[3]?.[1]));
     expect(verifierDebit).toHaveBeenCalledTimes(1);
     expect(verifierDebit).toHaveBeenCalledWith("auth.connexion_compte", "awa.kone@exemple.invalid");
-  }, 10_000);
+  }, 30_000);
 
   test("limite atteinte : Better Auth jamais appelé", async () => {
     const { traiterRequeteAuth } = await charger(false);
@@ -167,7 +172,7 @@ describe("gestionnaire de /api/auth, liaison de la connexion (1.2)", () => {
     const reponse = await traiterRequeteAuth(post("/sign-in/email", POINTS[3]?.[1]));
     expect(reponse.status).toBe(429);
     expect(traiter).not.toHaveBeenCalled();
-  }, 10_000);
+  }, 30_000);
 
   test("déconnexion : la session est relue par l'adaptateur, avec le jeton du cookie reçu", async () => {
     const { traiterRequeteAuth } = await charger(false);
@@ -184,7 +189,7 @@ describe("gestionnaire de /api/auth, liaison de la connexion (1.2)", () => {
     expect(reponse.status).toBe(200);
     expect(findSession).toHaveBeenCalledTimes(1);
     expect(findSession).toHaveBeenCalledWith("jeton");
-  }, 10_000);
+  }, 30_000);
 
   test("déconnexion : une session encore lue donne une erreur", async () => {
     const { traiterRequeteAuth } = await charger(false);
@@ -203,7 +208,7 @@ describe("gestionnaire de /api/auth, liaison de la connexion (1.2)", () => {
     );
     expect(reponse.status).toBe(500);
     vi.restoreAllMocks();
-  }, 10_000);
+  }, 30_000);
 });
 
 describe("gestionnaire de /api/auth, révocation de l'ancienne session (correctif 1.2)", () => {
@@ -227,14 +232,14 @@ describe("gestionnaire de /api/auth, révocation de l'ancienne session (correcti
     expect(reponse.status).toBe(200);
     expect(deleteSession).toHaveBeenCalledTimes(1);
     expect(deleteSession).toHaveBeenCalledWith("ancien");
-  }, 10_000);
+  }, 30_000);
 
   test("connexion réussie sans cookie : rien à révoquer", async () => {
     const { traiterRequeteAuth } = await charger(false);
     const reponse = await traiterRequeteAuth(connexion());
     expect(reponse.status).toBe(200);
     expect(deleteSession).not.toHaveBeenCalled();
-  }, 10_000);
+  }, 30_000);
 });
 
 // Fonctionnalité 1.3. Fiche : docs/features/mot-de-passe.md, sections 3.3 et
@@ -275,7 +280,7 @@ describe("gestionnaire de /api/auth, liaison de la réinitialisation (1.3)", () 
     expect(traiter).not.toHaveBeenCalled();
     expect(verifierDebit).not.toHaveBeenCalled();
     expect(findVerificationValue).not.toHaveBeenCalled();
-  }, 10_000);
+  }, 30_000);
 
   test("limite de la demande : verifierDebit(auth.reinitialisation_compte), adresse normalisée comme pour les emails", async () => {
     const { traiterRequeteAuth } = await charger(false);
@@ -286,7 +291,7 @@ describe("gestionnaire de /api/auth, liaison de la réinitialisation (1.3)", () 
       "auth.reinitialisation_compte",
       "awa.kone@exemple.invalid",
     );
-  }, 10_000);
+  }, 30_000);
 
   test("jeton lu sans être consommé, sous l'identifiant de Better Auth ; puis Have I Been Pwned ; puis Better Auth", async () => {
     const { traiterRequeteAuth } = await charger(false);
@@ -296,7 +301,7 @@ describe("gestionnaire de /api/auth, liaison de la réinitialisation (1.3)", () 
     expect(findVerificationValue).toHaveBeenCalledWith(`reset-password:${JETON_REINITIALISATION}`);
     expect(appels).toEqual(["api.pwnedpasswords.com"]);
     expect(traiter).toHaveBeenCalledTimes(1);
-  }, 10_000);
+  }, 30_000);
 
   test.each([
     ["jeton absent", null],
@@ -331,7 +336,7 @@ describe("gestionnaire de /api/auth, liaison de la réinitialisation (1.3)", () 
     expect(reponse.status).toBe(400);
     expect(await reponse.json()).toEqual({ ok: false, raison: "mot_de_passe_compromis" });
     expect(traiter).not.toHaveBeenCalled();
-  }, 10_000);
+  }, 30_000);
 
   test("Have I Been Pwned en panne : erreur, Better Auth jamais appelé", async () => {
     const { traiterRequeteAuth } = await charger(false);
@@ -341,7 +346,7 @@ describe("gestionnaire de /api/auth, liaison de la réinitialisation (1.3)", () 
     expect(reponse.status).toBe(500);
     expect(traiter).not.toHaveBeenCalled();
     vi.restoreAllMocks();
-  }, 10_000);
+  }, 30_000);
 
   test("vérification réussie avec un cookie : deleteSession avec le jeton de l'ancienne session (report de la 1.2)", async () => {
     const { traiterRequeteAuth } = await charger(false);
@@ -358,5 +363,5 @@ describe("gestionnaire de /api/auth, liaison de la réinitialisation (1.3)", () 
     );
     expect(reponse.status).toBe(200);
     expect(deleteSession).toHaveBeenCalledWith("ancien");
-  }, 10_000);
+  }, 30_000);
 });

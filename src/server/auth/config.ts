@@ -16,6 +16,8 @@ import {
   planifierEmailReinitialisation,
   planifierEmailVerification,
 } from "./emails";
+import { OPTIONS_DOUBLE_AUTH } from "./codes-secours";
+import { empreinteAttenteDoubleAuth } from "./double-authentification";
 import { consignerAuth } from "./journal";
 import { apresReinitialisation, empreinteJetonReinitialisation } from "./reinitialisation";
 
@@ -78,14 +80,19 @@ export const optionsAuth = {
     revokeSessionsOnPasswordReset: true,
     onPasswordReset: apresReinitialisation,
   },
-  // Jeton de réinitialisation stocké sous son empreinte (S-15), seule
-  // surcharge : la vérification de l'adresse n'écrit aucune ligne (JWT), et la
-  // 1.4 choisira pour ses codes. Fiche : docs/features/mot-de-passe.md,
-  // section 3.2.
+  // Jeton de réinitialisation stocké sous son empreinte (S-15) ; la
+  // vérification de l'adresse n'écrit aucune ligne (JWT). Fiche :
+  // docs/features/mot-de-passe.md, section 3.2. 1.4 : les lignes de la
+  // connexion en attente du code (2fa-...) aussi ; les codes de secours
+  // restent dans two_factor, sous empreinte HMAC (codes-secours.ts). Fiche :
+  // docs/features/double-authentification.md, sections 3.2 et 3.3.
   verification: {
     storeIdentifier: {
       default: "plain",
-      overrides: { "reset-password:": { hash: empreinteJetonReinitialisation } },
+      overrides: {
+        "reset-password:": { hash: empreinteJetonReinitialisation },
+        "2fa-": { hash: empreinteAttenteDoubleAuth },
+      },
     },
   },
   emailVerification: {
@@ -96,7 +103,9 @@ export const optionsAuth = {
   },
   // haveIBeenPwned : mots de passe compromis (S-10), refus si le service ne
   // répond pas ; aucun interrupteur (décision 2).
-  plugins: [twoFactor(), organization(), haveIBeenPwned(), nextCookies()],
+  // twoFactor (1.4) : nos options, docs/features/double-authentification.md,
+  // section 1.
+  plugins: [twoFactor(OPTIONS_DOUBLE_AUTH), organization(), haveIBeenPwned(), nextCookies()],
 } satisfies BetterAuthOptions;
 
 export const auth = betterAuth(optionsAuth);

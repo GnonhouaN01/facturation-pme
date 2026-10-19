@@ -10,6 +10,8 @@ import { adressePourCompteur } from "../email/adresse";
 import { envoyerEmail, type DemandeEmail, type ResultatEnvoi } from "../email/envoi";
 import type { ModeleEmail } from "../email/modeles";
 
+import type { ModeleDoubleAuth } from "./double-authentification";
+
 // Les rappels d'envoi de Better Auth (vérification de l'adresse, compte
 // existant). Chacun planifie l'envoi après la réponse et rend la main
 // aussitôt : la durée de la réponse ne dépend pas de l'envoi, et une erreur
@@ -43,6 +45,10 @@ export type EmailsCompte = {
   // notification planifiée par le rappel d'après réinitialisation.
   emailReinitialisation: (donnees: DonneesVerification, requete?: unknown) => Promise<void>;
   emailMotDePasseModifie: (donnees: DonneesCompteExistant, requete?: unknown) => Promise<void>;
+  // 1.4 : notifications de la double authentification. L'adresse est lue
+  // dans la tâche planifiée, après la réponse (docs/features/
+  // double-authentification.md, section 10). Ne lève jamais.
+  emailDoubleAuth: (modele: ModeleDoubleAuth, lireAdresse: () => Promise<string | null>) => void;
 };
 
 // Les limites de chaque modèle de compte, dans l'ordre : destinataire, puis
@@ -78,6 +84,36 @@ const LIMITES_MODELE: Readonly<Partial<Record<ModeleEmail, Comptage>>> = {
     ["email.reinitialisation", "application"],
     ["email.application", "application"],
   ],
+  // 1.4 : budget email.double_auth. Les notifications de changement et du
+  // code de secours suivent une preuve de mot de passe et de second facteur
+  // (bornées par auth.double_auth_gestion ou par les dix codes) : sans limite
+  // par destinataire, qui ferait taire l'alerte. L'alerte des codes refusés,
+  // que déclenche qui a le mot de passe, est bornée par destinataire.
+  "compte.double_auth_activee": [
+    ["email.double_auth", "application"],
+    ["email.application", "application"],
+  ],
+  "compte.double_auth_desactivee": [
+    ["email.double_auth", "application"],
+    ["email.application", "application"],
+  ],
+  "compte.double_auth_remplacee": [
+    ["email.double_auth", "application"],
+    ["email.application", "application"],
+  ],
+  "compte.codes_secours_regeneres": [
+    ["email.double_auth", "application"],
+    ["email.application", "application"],
+  ],
+  "compte.code_secours_utilise": [
+    ["email.double_auth", "application"],
+    ["email.application", "application"],
+  ],
+  "compte.double_auth_tentatives": [
+    ...PAR_DESTINATAIRE,
+    ["email.double_auth", "application"],
+    ["email.application", "application"],
+  ],
 };
 
 // Journal technique : le modèle, une raison fermée, le nom de la limite
@@ -99,11 +135,14 @@ function consigner(modele: ModeleEmail, raison: "limite" | "erreur", limite?: No
 export function creerEmailsCompte(dependances: DependancesEmailsCompte): EmailsCompte {
   async function envoyer(
     modele: ModeleEmail,
-    destinataire: string,
+    destinataire: string | (() => Promise<string | null>),
     parametres: Record<string, unknown>,
   ): Promise<void> {
     try {
-      const compteur = adressePourCompteur(destinataire);
+      const adresse = typeof destinataire === "string" ? destinataire : await destinataire();
+      // Compte supprimé entre-temps : rien à envoyer.
+      if (adresse === null) return;
+      const compteur = adressePourCompteur(adresse);
       // Un modèle sans limites déclarées n'est jamais envoyé.
       const limites = LIMITES_MODELE[modele];
       if (limites === undefined) throw new Error("modèle sans limites");
@@ -115,7 +154,7 @@ export function creerEmailsCompte(dependances: DependancesEmailsCompte): EmailsC
         }
       }
       // La porte consigne elle-même un échec du transport (code et statut).
-      await dependances.envoyerEmail({ modele, destinataire, parametres });
+      await dependances.envoyerEmail({ modele, destinataire: adresse, parametres });
     } catch {
       consigner(modele, "erreur");
     }
@@ -123,7 +162,7 @@ export function creerEmailsCompte(dependances: DependancesEmailsCompte): EmailsC
 
   function planifier(
     modele: ModeleEmail,
-    destinataire: string,
+    destinataire: string | (() => Promise<string | null>),
     parametres: Record<string, unknown>,
   ): void {
     try {
@@ -146,6 +185,9 @@ export function creerEmailsCompte(dependances: DependancesEmailsCompte): EmailsC
     emailMotDePasseModifie: async (donnees) => {
       planifier("compte.mot_de_passe_modifie", donnees.user.email, {});
     },
+    emailDoubleAuth: (modele, lireAdresse) => {
+      planifier(modele, lireAdresse, {});
+    },
   };
 }
 
@@ -159,3 +201,4 @@ export const planifierEmailVerification = emails.emailVerification;
 export const planifierEmailCompteExistant = emails.emailCompteExistant;
 export const planifierEmailReinitialisation = emails.emailReinitialisation;
 export const planifierEmailMotDePasseModifie = emails.emailMotDePasseModifie;
+export const planifierEmailDoubleAuth = emails.emailDoubleAuth;

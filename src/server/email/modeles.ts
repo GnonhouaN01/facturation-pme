@@ -146,6 +146,100 @@ export const MODELES_EMAIL = {
       };
     },
   },
+  // Double authentification (1.4) : six notifications, aucun paramètre ; un
+  // seul lien, la page fixe « mot de passe oublié ». Ni code, ni clé, ni
+  // date, ni adresse IP. Fiche : docs/features/double-authentification.md,
+  // section 10.
+  "compte.double_auth_activee": {
+    parametres: z.strictObject({}),
+    construire: (
+      parametres: Record<string, unknown>,
+      contexte: { origine: string },
+    ): Construction => {
+      void parametres;
+      const textes = TEXTES_EMAILS.modeles["compte.double_auth_activee"];
+      const lien = lienPage(contexte.origine, "mot-de-passe-oublie");
+      return {
+        sujet: textes.sujet,
+        corps: corpsAvecFin(`${textes.corps}\n\n${textes.oubli}\n${lien}`),
+      };
+    },
+  },
+  "compte.double_auth_desactivee": {
+    parametres: z.strictObject({}),
+    construire: (
+      parametres: Record<string, unknown>,
+      contexte: { origine: string },
+    ): Construction => {
+      void parametres;
+      const textes = TEXTES_EMAILS.modeles["compte.double_auth_desactivee"];
+      const lien = lienPage(contexte.origine, "mot-de-passe-oublie");
+      return {
+        sujet: textes.sujet,
+        corps: corpsAvecFin(`${textes.corps}\n\n${textes.oubli}\n${lien}`),
+      };
+    },
+  },
+  "compte.double_auth_remplacee": {
+    parametres: z.strictObject({}),
+    construire: (
+      parametres: Record<string, unknown>,
+      contexte: { origine: string },
+    ): Construction => {
+      void parametres;
+      const textes = TEXTES_EMAILS.modeles["compte.double_auth_remplacee"];
+      const lien = lienPage(contexte.origine, "mot-de-passe-oublie");
+      return {
+        sujet: textes.sujet,
+        corps: corpsAvecFin(`${textes.corps}\n\n${textes.oubli}\n${lien}`),
+      };
+    },
+  },
+  "compte.codes_secours_regeneres": {
+    parametres: z.strictObject({}),
+    construire: (
+      parametres: Record<string, unknown>,
+      contexte: { origine: string },
+    ): Construction => {
+      void parametres;
+      const textes = TEXTES_EMAILS.modeles["compte.codes_secours_regeneres"];
+      const lien = lienPage(contexte.origine, "mot-de-passe-oublie");
+      return {
+        sujet: textes.sujet,
+        corps: corpsAvecFin(`${textes.corps}\n\n${textes.oubli}\n${lien}`),
+      };
+    },
+  },
+  "compte.code_secours_utilise": {
+    parametres: z.strictObject({}),
+    construire: (
+      parametres: Record<string, unknown>,
+      contexte: { origine: string },
+    ): Construction => {
+      void parametres;
+      const textes = TEXTES_EMAILS.modeles["compte.code_secours_utilise"];
+      const lien = lienPage(contexte.origine, "mot-de-passe-oublie");
+      return {
+        sujet: textes.sujet,
+        corps: corpsAvecFin(`${textes.corps}\n\n${textes.oubli}\n${lien}`),
+      };
+    },
+  },
+  "compte.double_auth_tentatives": {
+    parametres: z.strictObject({}),
+    construire: (
+      parametres: Record<string, unknown>,
+      contexte: { origine: string },
+    ): Construction => {
+      void parametres;
+      const textes = TEXTES_EMAILS.modeles["compte.double_auth_tentatives"];
+      const lien = lienPage(contexte.origine, "mot-de-passe-oublie");
+      return {
+        sujet: textes.sujet,
+        corps: corpsAvecFin(`${textes.corps}\n\n${textes.oubli}\n${lien}\n\n${textes.suspension}`),
+      };
+    },
+  },
 } as const satisfies Record<string, DefinitionModele>;
 
 export type ModeleEmail = keyof typeof MODELES_EMAIL;

@@ -88,6 +88,9 @@ export default defineConfig({
         // 1.3 : mot de passe oublié, aux deux largeurs
         // (docs/features/mot-de-passe.md, « Tests de bout en bout »).
         /(^|\W)mot-de-passe\.spec\.ts$/,
+        // 1.4 : double authentification, aux deux largeurs
+        // (docs/features/double-authentification.md, test 26).
+        /(^|\W)double-authentification\.spec\.ts$/,
       ],
       use: { ...devices["Desktop Chrome"], viewport: { width: 390, height: 844 } },
     },

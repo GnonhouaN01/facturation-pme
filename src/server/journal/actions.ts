@@ -45,6 +45,11 @@ const DEFINITIONS = {
   "membre.role_modifie": { ressource: "membre", details: SANS_DETAILS },
   "membre.retire": { ressource: "membre", details: SANS_DETAILS },
   "membre.parti": { ressource: "membre", details: SANS_DETAILS },
+  // 1.4 (décision 2) : remise à zéro manuelle de la double authentification
+  // d'un membre, écrite par la procédure d'exploitation, une ligne par
+  // organisation du titulaire ; ressource_id : son adhésion
+  // (docs/exploitation/remise-a-zero-double-authentification.md).
+  "membre.double_auth_remise_a_zero": { ressource: "membre", details: SANS_DETAILS },
 } as const satisfies Record<string, DefinitionAction>;
 
 export type ActionJournal = keyof typeof DEFINITIONS;
