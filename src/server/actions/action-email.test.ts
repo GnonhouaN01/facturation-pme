@@ -133,7 +133,11 @@ function action(
 beforeEach(() => {
   etapes = [];
   etat = {
-    session: { utilisateurId: randomUUID(), organisationActiveId: randomUUID() },
+    session: {
+      utilisateurId: randomUUID(),
+      organisationActiveId: randomUUID(),
+      doubleAuthentification: true,
+    },
     adhesion: { membreId: randomUUID(), role: "proprietaire" },
     debit: {},
     envoi: { envoye: true },

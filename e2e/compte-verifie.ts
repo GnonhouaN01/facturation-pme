@@ -166,16 +166,19 @@ export function demanderReinitialisation(
   return poster("/request-password-reset", { email }, entetes);
 }
 
-// Double authentification (1.4) : rangs 24 à 29 des adresses de
-// l'exécution. Fiche : docs/features/double-authentification.md, tests 26
-// et 27.
+// Double authentification (1.4) : rangs 24 à 30 des adresses de
+// l'exécution. PR 2 : le rang 25, qui n'avait pas servi, porte le passage
+// complet relu dans le journal ; le rang 30, le Propriétaire de la zone
+// application. Fiche : docs/features/double-authentification.md, tests 26,
+// 27, 31 et 32.
 export const RANGS_DOUBLE_AUTH = {
   parcours: 24,
-  secours: 25,
+  journal: 25,
   essais: 26,
   rejeu: 27,
   affichage: 28,
   ferme: 29,
+  proprietaire: 30,
 } as const;
 
 export function adresseDoubleAuth(info: TestInfo, rang: keyof typeof RANGS_DOUBLE_AUTH): string {

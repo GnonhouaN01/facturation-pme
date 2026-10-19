@@ -38,6 +38,11 @@ export type OptionsMembre = {
   role: string;
   // Par défaut organisationId ; null possible.
   organisationActive?: string | null;
+  // user.two_factor_enabled, vrai par défaut : un Propriétaire ou un
+  // Comptable réel a son second facteur (étape 7 de la chaîne). false pour
+  // les tests de l'étape 7 (docs/features/double-authentification.md,
+  // section 9).
+  doubleAuthentification?: boolean;
 };
 
 // Utilisateurs créés par ce fichier de test (un module par fichier sous
@@ -55,6 +60,7 @@ export async function creerMembre(options: OptionsMembre): Promise<Membre> {
     // Un vrai membre a vérifié son adresse : sans elle, lireSession ne lit
     // aucune session (docs/features/inscription.md, section 4.6).
     emailVerified: true,
+    twoFactorEnabled: options.doubleAuthentification ?? true,
   });
 
   const [adhesion] = await db

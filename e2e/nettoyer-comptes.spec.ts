@@ -129,8 +129,9 @@ test.describe("nettoyage des comptes de bout en bout", () => {
   // Modifié par le correctif de la 1.2 : 18 rangs (redirection, reconnexion).
   // Modifié en 1.3 : 24 rangs (comptes du mot de passe oublié, rangs 18 à 23).
   // Modifié en 1.4 : 30 rangs (double authentification, rangs 24 à 29).
-  test("RANGS : 30 rangs par projet, essai et répétition (1.4)", () => {
-    expect(RANGS).toBe(30);
+  // Modifié en 1.4, PR 2 : 31 rangs (rang 30, Propriétaire de la zone application).
+  test("RANGS : 31 rangs par projet, essai et répétition (1.4)", () => {
+    expect(RANGS).toBe(31);
   });
   test("la liste : toutes les adresses que les tests peuvent créer, toutes en .invalid, sans caractère de motif", () => {
     const attendues = ["mobile-390", "ordinateur-1280"].flatMap((projet) =>
