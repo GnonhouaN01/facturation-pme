@@ -485,6 +485,29 @@ const IMPORTS_V = {
 };
 const SYNTAXE_V = chargementsDynamiques("/^uqr(\\u002F.*)?$/", MESSAGE_V);
 
+// W. Tirage sans biais (1.4, PR 2, CodeQL js/biased-cryptographic-random) :
+// aucun opérateur % (ni %=) dont un opérande appelle randomBytes,
+// getRandomValues ou Math.random. Le reste d'une division favorise les
+// petites valeurs ; randomInt(min, max) de node:crypto tire sans biais. Sur
+// tout le dépôt, e2e/ et scripts/ compris : restreindreSyntaxe ajoute W à
+// chaque liste, et un bloc couvre les fichiers hors de src/.
+const MESSAGE_W =
+  "Tirage biaisé : pas de % sur randomBytes, getRandomValues ou Math.random. Utiliser randomInt(min, max) de node:crypto (règle W).";
+const APPELS_ALEATOIRES_W = [
+  "CallExpression[callee.name='randomBytes']",
+  "CallExpression[callee.property.name='randomBytes']",
+  "CallExpression[callee.name='getRandomValues']",
+  "CallExpression[callee.property.name='getRandomValues']",
+  "CallExpression[callee.object.name='Math'][callee.property.name='random']",
+];
+const SYNTAXE_W = ["BinaryExpression[operator='%']", "AssignmentExpression[operator='%=']"].flatMap(
+  (operation) =>
+    APPELS_ALEATOIRES_W.map((appel) => ({
+      selector: `${operation}:has(${appel})`,
+      message: MESSAGE_W,
+    })),
+);
+
 const restreindreImports = (...listes) => [
   "error",
   {
@@ -493,7 +516,9 @@ const restreindreImports = (...listes) => [
   },
 ];
 
-const restreindreSyntaxe = (...listes) => ["error", ...listes.flat()];
+// Toute liste de syntaxe porte aussi W : pour un fichier, seul le dernier
+// bloc qui déclare no-restricted-syntax s'applique.
+const restreindreSyntaxe = (...listes) => ["error", ...listes.flat(), ...SYNTAXE_W];
 
 // Restrictions d'import du cas général de src/ : le bloc général et celui de
 // src/proxy.ts. Une interdiction ajoutée ici s'applique aux deux.
@@ -544,6 +569,12 @@ const SYNTAXE_GENERALE = [
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  // W. Tout le dépôt : e2e/, scripts/, tests, configurations. Les blocs de
+  // src/ qui suivent remplacent cette liste par la leur, qui contient W.
+  {
+    files: ["**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}"],
+    rules: { "no-restricted-syntax": restreindreSyntaxe() },
+  },
   // Aucun commentaire (eslint-disable, eslint-enable, /* eslint ... */) ne
   // suspend ni ne modifie une règle dans src/ : une exception passe par ce
   // fichier, donc par une PR (docs/features/chaine-controles.md, section 7).

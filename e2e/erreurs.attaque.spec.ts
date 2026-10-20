@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { connect } from "node:net";
 
@@ -410,7 +410,7 @@ test.describe("identifiant d'incident, étape du code sur le serveur en panne", 
     if (!chemin) throw new Error("JOURNAL_PANNE_E2E absent : playwright.config.ts doit le poser.");
     const attente = cookieSessionSigne();
     const identifiant = decodeURIComponent(attente).split(".")[0] ?? attente;
-    const code = String(100_000 + (randomBytes(4).readUInt32BE() % 900_000));
+    const code = String(randomInt(100_000, 1_000_000));
 
     await page.route(`${ADRESSE_PANNE}/api/auth/sign-in/email`, (route) =>
       route.fulfill({
