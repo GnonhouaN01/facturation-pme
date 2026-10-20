@@ -7,6 +7,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { optionsAuth } from "./config";
 import { creerTraitementAuth } from "./points-entree";
 import { dependancesDoubleAuthInertes } from "../db/outils-test/double-auth";
+import { dependancesNouvelleAuthentificationInertes } from "../db/outils-test/nouvelle-authentification";
 import { dependancesProfilInertes } from "../db/outils-test/profil";
 
 // S-10 et décision 2 : mots de passe compromis par Have I Been Pwned, refus
@@ -76,6 +77,7 @@ function instance() {
     // 1.4 : jamais atteintes par ces tests.
     doubleAuth: dependancesDoubleAuthInertes(),
     profil: dependancesProfilInertes(),
+    nouvelleAuthentification: dependancesNouvelleAuthentificationInertes(),
     horloge: { maintenant: () => 0, attendre: async () => {} },
   });
 }

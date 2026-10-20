@@ -51,6 +51,8 @@ const SCHEMA_VIDE = z.strictObject({});
 type Etat = {
   session: SessionLue | null;
   adhesion: AdhesionLue | null;
+  // 1.6 : une preuve de nouvelle authentification de la session à consommer.
+  preuve: boolean;
 };
 
 let etat: Etat;
@@ -91,6 +93,12 @@ function dependances() {
   const journaliser = vi.fn(async () => {
     etapes.push("journal");
   });
+  const consommerNouvelleAuthentification = vi.fn<
+    DependancesChaine["consommerNouvelleAuthentification"]
+  >(async () => {
+    etapes.push("preuve");
+    return etat.preuve;
+  });
   const deps: DependancesChaine = {
     origineAttendue: ORIGINE,
     lireSession,
@@ -100,8 +108,16 @@ function dependances() {
     journaliser,
     verifierDebit: vi.fn(async () => true),
     envoyerEmail: async () => ({ envoye: false, raison: "non_autorise" }),
+    consommerNouvelleAuthentification,
   };
-  return { deps, lireSession, executerDansOrganisation, lireAdhesion, journaliser };
+  return {
+    deps,
+    lireSession,
+    executerDansOrganisation,
+    lireAdhesion,
+    journaliser,
+    consommerNouvelleAuthentification,
+  };
 }
 
 function requete(entetes: Record<string, string> = { origin: ORIGINE }) {
@@ -138,6 +154,7 @@ beforeEach(() => {
   etat = {
     session: sessionValide(),
     adhesion: { membreId: randomUUID(), role: "proprietaire" },
+    preuve: false,
   };
   espionErreur = vi.spyOn(console, "error").mockImplementation(() => undefined);
 });
@@ -450,28 +467,136 @@ describe("étape 7 : double authentification par rôle", () => {
   });
 });
 
-describe("étape 8 : nouvelle authentification (fermée en 0.4)", () => {
+// Modifié en 1.6 (remplace « fermée en 0.4 ») : une action sensible exige
+// une preuve de nouvelle authentification de la session, consommée dans la
+// transaction de l'action, après le droit (étapes 6 et 7) et avant l'entrée
+// (étape 9). Fiche : docs/features/nouvelle-authentification.md, section 4,
+// test 1.
+describe("étape 8 : nouvelle authentification (1.6)", () => {
+  const NOUVELLE_AUTH = { ok: false, raison: "nouvelle_authentification_requise" } as const;
+  const SCHEMA_VALEUR = z.strictObject({ valeur: z.string() });
+
   test.each(["proprietaire", "comptable", "commercial", "lecteur"])(
-    "%s : refuse, service non appelé",
+    "%s sans preuve : nouvelle_authentification_requise, service non appelé",
     async (role) => {
       etat.adhesion = { membreId: randomUUID(), role };
-      const { deps } = dependances();
+      const { deps, consommerNouvelleAuthentification } = dependances();
       const decl = declaration({ nouvelleAuthentification: true });
 
       const resultat = await creerChaine(deps).executerChaine(decl, requete(), {});
 
-      expect(resultat).toStrictEqual(REFUS);
+      expect(resultat).toStrictEqual(NOUVELLE_AUTH);
       expect(decl.executer).not.toHaveBeenCalled();
+      expect(consommerNouvelleAuthentification).toHaveBeenCalledTimes(1);
+      expect(consommerNouvelleAuthentification).toHaveBeenCalledWith(
+        tx,
+        etat.session?.utilisateurId,
+        etat.session?.sessionId,
+      );
     },
   );
 
-  test("entrée invalide : refuse, pas invalide", async () => {
+  test("avec preuve : service appelé, preuve consommée après l'adhésion, avant le service", async () => {
+    etat.preuve = true;
     const { deps } = dependances();
     const decl = declaration({ nouvelleAuthentification: true });
+    const organisationId = etat.session?.organisationActiveId;
+
+    const resultat = await creerChaine(deps).executerChaine(decl, requete(), {});
+
+    expect(resultat).toStrictEqual({ ok: true, donnees: "fait" });
+    expect(etapes).toEqual([
+      "session",
+      `transaction:${organisationId}`,
+      "adhesion",
+      "preuve",
+      "service",
+      "validation",
+    ]);
+  });
+
+  test.each([
+    ["non-membre", () => (etat.adhesion = null)],
+    [
+      "droit refusé par la matrice",
+      () => (etat.adhesion = { membreId: randomUUID(), role: "lecteur" }),
+    ],
+    [
+      "Propriétaire sans second facteur",
+      () => (etat.session = { ...sessionValide(), doubleAuthentification: false }),
+    ],
+  ])("%s : refuse, preuve ni lue ni consommée", async (_nom, preparer) => {
+    etat.preuve = true;
+    preparer();
+    const { deps, consommerNouvelleAuthentification } = dependances();
+    const decl = declaration({ nouvelleAuthentification: true, droit: "organisation.supprimer" });
+
+    const resultat = await creerChaine(deps).executerChaine(decl, requete(), {});
+
+    expect(resultat).toStrictEqual(REFUS);
+    expect(consommerNouvelleAuthentification).not.toHaveBeenCalled();
+    expect(decl.executer).not.toHaveBeenCalled();
+  });
+
+  test("entrée invalide sans preuve : nouvelle_authentification_requise, pas invalide", async () => {
+    const { deps } = dependances();
+    const decl = declaration({ nouvelleAuthentification: true, entree: SCHEMA_VALEUR });
 
     const resultat = await creerChaine(deps).executerChaine(decl, requete(), { inattendu: 1 });
 
+    expect(resultat).toStrictEqual(NOUVELLE_AUTH);
+  });
+
+  test("entrée invalide avec preuve : invalide, transaction annulée (la preuve reste)", async () => {
+    etat.preuve = true;
+    const { deps } = dependances();
+    const decl = declaration({ nouvelleAuthentification: true, entree: SCHEMA_VALEUR });
+
+    const resultat = await creerChaine(deps).executerChaine(decl, requete(), { valeur: 3 });
+
+    expect(resultat).toStrictEqual({ ok: false, raison: "invalide", champs: ["valeur"] });
+    expect(etapes).toContain("annulation");
+    expect(etapes).not.toContain("validation");
+  });
+
+  test("service qui refuse avec preuve : refuse, transaction annulée (la preuve reste)", async () => {
+    etat.preuve = true;
+    const { deps } = dependances();
+    const decl = declaration({
+      nouvelleAuthentification: true,
+      executer: async (ctx) => ctx.introuvable(),
+    });
+
+    const resultat = await creerChaine(deps).executerChaine(decl, requete(), {});
+
     expect(resultat).toStrictEqual(REFUS);
+    // Témoin : le refus vient bien du service, après la preuve.
+    expect(etapes).toEqual(expect.arrayContaining(["preuve", "annulation"]));
+  });
+
+  test("lecture de la preuve en panne : erreur avec incident, service non appelé", async () => {
+    const { deps, consommerNouvelleAuthentification } = dependances();
+    consommerNouvelleAuthentification.mockRejectedValueOnce(new Error("panne"));
+    const decl = declaration({ nouvelleAuthentification: true });
+
+    const resultat = await creerChaine(deps).executerChaine(decl, requete(), {});
+
+    expect(resultat).toStrictEqual(ERREUR);
+    expect(decl.executer).not.toHaveBeenCalled();
+  });
+
+  test("nouvelleAuthentification: false, et lectures des pages : aucune preuve lue", async () => {
+    etat.preuve = true;
+    const { deps, consommerNouvelleAuthentification } = dependances();
+    const chaine = creerChaine(deps);
+
+    expect(await chaine.executerChaine(declaration(), requete(), {})).toStrictEqual({
+      ok: true,
+      donnees: "fait",
+    });
+    const lue = await chaine.etablirContexte(requete(), "organisation.membres.voir", async () => 1);
+    expect(lue).toStrictEqual({ ok: true, donnees: 1 });
+    expect(consommerNouvelleAuthentification).not.toHaveBeenCalled();
   });
 });
 

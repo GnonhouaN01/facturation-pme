@@ -8,6 +8,7 @@ import {
   reponseInexistante,
 } from "./points-entree";
 import { dependancesDoubleAuthInertes } from "../db/outils-test/double-auth";
+import { dependancesNouvelleAuthentificationInertes } from "../db/outils-test/nouvelle-authentification";
 import { dependancesProfilInertes } from "../db/outils-test/profil";
 
 // Tests d'attaque de la liste fermée des points d'entrée de /api/auth : T-55
@@ -114,6 +115,7 @@ function traitement(
     // les points /two-factor/* ont leurs propres tests d'attaque.
     doubleAuth: dependancesDoubleAuthInertes(),
     profil: dependancesProfilInertes(),
+    nouvelleAuthentification: dependancesNouvelleAuthentificationInertes(),
     horloge: { maintenant: () => 0, attendre: async () => {} },
   });
   return {
@@ -186,8 +188,10 @@ describe("T-55 : liste fermée des points d'entrée", () => {
   // section 2.1). Modifié en 1.4 : quatorze, avec les sept de la double
   // authentification (docs/features/double-authentification.md, section 2.1).
   // Modifié en 1.5 : dix-huit, avec les quatre du profil et des sessions
-  // (docs/features/profil-sessions.md, section 2.1).
-  test("les points d'entrée ouverts sont exactement les dix-huit des fiches 1.1 à 1.5, en POST", () => {
+  // (docs/features/profil-sessions.md, section 2.1). Modifié en 1.6 :
+  // dix-neuf, avec la nouvelle authentification
+  // (docs/features/nouvelle-authentification.md, section 2).
+  test("les points d'entrée ouverts sont exactement les dix-neuf des fiches 1.1 à 1.6, en POST", () => {
     expect(OUVERTS).toEqual([
       "/change-password",
       "/request-password-reset",
@@ -207,6 +211,7 @@ describe("T-55 : liste fermée des points d'entrée", () => {
       "/two-factor/verify-totp",
       "/update-user",
       "/verify-email",
+      "/verify-password",
     ]);
     for (const point of Object.values(POINTS_ENTREE_OUVERTS)) expect(point.methode).toBe("POST");
   });
@@ -934,7 +939,9 @@ describe("T-55 (1.3) : ce qui reste fermé autour de la réinitialisation", () =
     ["GET de la réinitialisation", "GET", "/reset-password"],
     ["GET de la demande", "GET", "/request-password-reset"],
     ["POST sur le chemin du lien", "POST", `/reset-password/${JETON_REINITIALISATION}`],
-    ["vérification du mot de passe (serveur)", "POST", "/verify-password"],
+    // Modifié en 1.6 : le POST de /verify-password est ouvert
+    // (nouvelle-authentification.attaque.test.ts), le GET reste fermé.
+    ["GET de la vérification du mot de passe", "GET", "/verify-password"],
     // Modifié en 1.5 : le POST est ouvert (profil.attaque.test.ts), le GET
     // reste fermé.
     ["GET du changement du mot de passe", "GET", "/change-password"],

@@ -344,3 +344,17 @@ describe("limites du profil et des sessions (1.5)", () => {
     ]);
   });
 });
+
+// Fonctionnalité 1.6 : nouvelle authentification. Par utilisateur dans notre
+// passerelle, avant le mot de passe : Better Auth ne limite ni le mot de passe
+// ni le code vérifiés avec une session. Fiche :
+// docs/features/nouvelle-authentification.md, section 5, test 4.
+describe("limite de la nouvelle authentification (1.6)", () => {
+  test("10 essais par 24 heures et par utilisateur", () => {
+    expect(LIMITES["auth.nouvelle_authentification"]).toStrictEqual({
+      maximum: 10,
+      fenetreSecondes: UN_JOUR,
+      par: "utilisateur",
+    });
+  });
+});

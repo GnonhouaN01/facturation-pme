@@ -104,7 +104,7 @@ type Defaut =
   | "profil-200"
   | "sessions-distingue";
 
-// Les dix-huit points d'entrée ouverts hors production, en POST (1.1 à 1.5).
+// Les dix-neuf points d'entrée ouverts hors production, en POST (1.1 à 1.6).
 const POINTS_COMPTES = [
   "/api/auth/sign-up/email",
   "/api/auth/send-verification-email",
@@ -126,6 +126,8 @@ const POINTS_COMPTES = [
   "/api/auth/revoke-other-sessions",
   "/api/auth/change-password",
   "/api/auth/update-user",
+  // 1.6 (docs/features/nouvelle-authentification.md, section 10).
+  "/api/auth/verify-password",
 ];
 
 type Factice = { adresse: string; requetes: Requete[]; fermer: () => Promise<void> };
@@ -477,9 +479,11 @@ test.describe("contrôle après déploiement, serveur factice", () => {
       // (profil et sessions) ; GET de /compte/profil et de /compte/sessions
       // sans cookie et avec le cookie forgé, et du chemin fermé
       // /list-sessions.
-      expect(factice.requetes).toHaveLength(98);
+      // 1.6 (modifié, signalé) : 50 requêtes par passage, un POST de plus
+      // (nouvelle authentification).
+      expect(factice.requetes).toHaveLength(100);
       const posts = factice.requetes.filter((r) => r.methode !== "GET");
-      expect(posts).toHaveLength(38);
+      expect(posts).toHaveLength(40);
       for (const requete of posts) {
         expect(requete.methode).toBe("POST");
         expect(requete.chemin).toMatch(/^\/api\/auth\//);
@@ -767,7 +771,10 @@ test.describe("contrôle après déploiement, serveur factice", () => {
 // (docs/features/double-authentification.md, section 13).
 // 1.5 : dix-huit, avec le profil et les sessions, mêmes conditions
 // (docs/features/profil-sessions.md, section 11).
-test.describe("contrôle après déploiement, les dix-neuf POST des comptes", () => {
+// 1.6 : dix-neuf, avec la nouvelle authentification, mêmes conditions
+// (docs/features/nouvelle-authentification.md, section 10) ; vingt POST avec
+// le chemin inexistant.
+test.describe("contrôle après déploiement, les vingt POST des comptes", () => {
   test("reçus par le serveur : aucun octet de corps, ni Origin, ni Cookie, ni Authorization, ni Content-Type", async () => {
     const factice = await demarrerFactice();
     try {

@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { dependancesProfilInertes } from "../db/outils-test/profil";
+import { dependancesNouvelleAuthentificationInertes } from "../db/outils-test/nouvelle-authentification";
 
 import {
   CHEMINS_INTERNES_DOUBLE_AUTH,
@@ -128,6 +129,7 @@ function gerer(
     motDePasseCompromis: async () => false,
     doubleAuth: deps(journal, options.deps, options.session),
     profil: dependancesProfilInertes(),
+    nouvelleAuthentification: dependancesNouvelleAuthentificationInertes(),
     horloge: { maintenant: () => 0, attendre: async () => {} },
   });
 }

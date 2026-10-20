@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { dependancesProfilInertes } from "../db/outils-test/profil";
+import { dependancesNouvelleAuthentificationInertes } from "../db/outils-test/nouvelle-authentification";
 
 import type { DependancesDoubleAuth, SessionGestion } from "./double-authentification";
 import { creerTraitementAuth, reponseInexistante } from "./points-entree";
@@ -140,6 +141,7 @@ function traitement(
     motDePasseCompromis: async () => false,
     doubleAuth,
     profil: dependancesProfilInertes(),
+    nouvelleAuthentification: dependancesNouvelleAuthentificationInertes(),
     horloge: { maintenant: () => 0, attendre: async () => {} },
   });
   return { gerer, traiter, appels, doubleAuth, revoquerSession };

@@ -201,26 +201,34 @@ describe("demo.oubli_trace", () => {
   });
 });
 
-describe("demo.sensible : nouvelle authentification fermée en 0.4", () => {
-  test.each(ROLES)("%s : refuse, service jamais appelé", async (role) => {
-    const membre = await creerMembre({ organisationId: orgs.a, role });
-    const executer = vi.fn(async () => "jamais");
-    const sensible = declarerAction({
-      nom: "demo.sensible",
-      droit: "organisation.membres.voir",
-      entree: z.strictObject({}),
-      journal: null,
-      nouvelleAuthentification: true,
-      debit: null,
-      emails: [],
-      executer,
-    });
+// Modifié en 1.6 : la nouvelle authentification n'est plus fermée, elle est
+// exigée ; sans preuve, chaque rôle autorisé reçoit
+// nouvelle_authentification_requise (le détail, preuve comprise, est dans
+// nouvelle-authentification.integration.test.ts). Fiche :
+// docs/features/nouvelle-authentification.md, test 6.
+describe("demo.sensible : nouvelle authentification exigée (1.6)", () => {
+  test.each(ROLES)(
+    "%s sans preuve : nouvelle_authentification_requise, service jamais appelé",
+    async (role) => {
+      const membre = await creerMembre({ organisationId: orgs.a, role });
+      const executer = vi.fn(async () => "jamais");
+      const sensible = declarerAction({
+        nom: "demo.sensible",
+        droit: "organisation.membres.voir",
+        entree: z.strictObject({}),
+        journal: null,
+        nouvelleAuthentification: true,
+        debit: null,
+        emails: [],
+        executer,
+      });
 
-    const resultat = await executerChaine(sensible, { entetes: membre.entetes }, {});
+      const resultat = await executerChaine(sensible, { entetes: membre.entetes }, {});
 
-    expect(resultat).toStrictEqual(REFUS);
-    expect(executer).not.toHaveBeenCalled();
-  });
+      expect(resultat).toStrictEqual({ ok: false, raison: "nouvelle_authentification_requise" });
+      expect(executer).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("etablirContexte, avec une vraie session", () => {
