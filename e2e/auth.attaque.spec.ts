@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 import {
   adresseConnexion,
   adresseDoubleAuth,
+  adresseProfil,
   connecter,
   creerCompteVerifie,
   MOT_DE_PASSE,
@@ -91,8 +92,10 @@ const CHEMINS_FERMES = [
   "/two-factor/get-totp-uri",
   "/two-factor/send-otp",
   "/two-factor/verify-otp",
-  "/update-user",
-  "/change-password",
+  // 1.5 (modifié) : /update-user et /change-password sont ouverts en POST ;
+  // leur GET est vérifié avec les autres points ouverts, plus bas. La liste
+  // et la révocation de toutes les sessions restent fermées.
+  "/change-email",
   "/delete-user",
   "/ok",
   "/error",
@@ -154,8 +157,8 @@ test.describe("T-55 : points d'entrée fermés, indiscernables d'une adresse ine
   });
 
   // 1.2 (modifié) : cinq points ouverts au lieu de trois. 1.3 (modifié) :
-  // sept. 1.4 (modifié) : quatorze.
-  test("GET des quatorze points ouverts : fermé (seul POST est admis)", async () => {
+  // sept. 1.4 (modifié) : quatorze. 1.5 (modifié) : dix-huit.
+  test("GET des dix-huit points ouverts : fermé (seul POST est admis)", async () => {
     for (const chemin of [
       "/sign-up/email",
       "/send-verification-email",
@@ -171,6 +174,10 @@ test.describe("T-55 : points d'entrée fermés, indiscernables d'une adresse ine
       "/two-factor/replace",
       "/two-factor/generate-backup-codes",
       "/two-factor/disable",
+      "/revoke-session",
+      "/revoke-other-sessions",
+      "/change-password",
+      "/update-user",
     ]) {
       expect(await lire(chemin), chemin).toEqual(await lire(inexistant()));
     }
@@ -361,6 +368,23 @@ test.describe("T-01 et S-82 : connexion", () => {
     expect(await lire("/two-factor/get-totp-uri", options)).toEqual(
       await lire(inexistant(), options),
     );
+  });
+
+  // 1.5 : la liste des sessions de Better Auth porte le jeton de chaque
+  // session ; elle reste fermée, même avec une session valide
+  // (docs/features/profil-sessions.md, section 2.2, test 16).
+  test("GET /list-sessions et POST /revoke-sessions avec une session valide : identiques à un chemin inexistant", async ({}, info) => {
+    const valeur = await creerCompteVerifie(adresseProfil(info, "ferme"));
+    const cookie = `${NOM_COOKIE}=${valeur}`;
+    expect(await lire("/list-sessions", { entetes: { cookie } })).toEqual(
+      await lire(inexistant(), { entetes: { cookie } }),
+    );
+    const options = {
+      methode: "POST" as const,
+      entetes: { "content-type": "application/json", origin: ADRESSE, cookie },
+      corps: "{}",
+    };
+    expect(await lire("/revoke-sessions", options)).toEqual(await lire(inexistant(), options));
   });
 });
 

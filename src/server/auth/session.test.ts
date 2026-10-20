@@ -30,6 +30,7 @@ describe("lireSession", () => {
     getSession.mockResolvedValue(lue(true));
     expect(await lireSession(new Headers())).toStrictEqual({
       utilisateurId: "u1",
+      sessionId: "s1",
       organisationActiveId: "o1",
       doubleAuthentification: false,
     });
@@ -39,6 +40,7 @@ describe("lireSession", () => {
     getSession.mockResolvedValue(lue(true, true));
     expect(await lireSession(new Headers())).toStrictEqual({
       utilisateurId: "u1",
+      sessionId: "s1",
       organisationActiveId: "o1",
       doubleAuthentification: true,
     });
@@ -59,6 +61,18 @@ describe("lireSession", () => {
       expect(await lireSession(new Headers())).toBeNull();
     },
   );
+
+  // 1.5 : l'identifiant de la session de la requête, jamais son jeton
+  // (docs/features/profil-sessions.md, section 3.1, test 11).
+  test("sessionId : l'identifiant de la session, jamais le jeton", async () => {
+    getSession.mockResolvedValue({
+      ...lue(true),
+      session: { id: "s1", token: "jeton-secret", activeOrganizationId: null },
+    });
+    const lu = await lireSession(new Headers());
+    expect(lu?.sessionId).toBe("s1");
+    expect(JSON.stringify(lu)).not.toContain("jeton-secret");
+  });
 
   test("aucune session : null", async () => {
     getSession.mockResolvedValue(null);

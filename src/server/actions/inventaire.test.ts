@@ -446,6 +446,17 @@ describe("pages de la zone compte (1.2)", () => {
     expect(problemesDeLaZoneCompte(sources)).toEqual([]);
   });
 
+  // 1.5 : le profil et les sessions (docs/features/profil-sessions.md,
+  // section 9, test 11).
+  test.each(["(compte)/compte/profil/page.tsx", "(compte)/compte/sessions/page.tsx"])(
+    "dépôt : %s existe dans la zone compte et appelle lireComptePourPage",
+    (page) => {
+      const sources = sourcesDeApp();
+      expect(sources.map(({ chemin }) => chemin)).toContain(page);
+      expect(problemesDeLaZoneCompte(sources)).toEqual([]);
+    },
+  );
+
   test.each<[string, Source[], string[]]>([
     [
       "page qui appelle lireComptePourPage",

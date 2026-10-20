@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { formaterDate, formaterJour } from "./dates";
+import { formaterDate, formaterDateHeure, formaterJour } from "./dates";
 
 // Format jour/mois/année de DESIGN-SYSTEM.md, fuseau fixé à Africa/Abidjan
 // (UTC+0, sans heure d'été). Fiche : docs/features/socle-interface.md,
@@ -89,5 +89,32 @@ describe("formaterJour : une date de calendrier, sans fuseau", () => {
     ["une espace en fin", "2026-10-05 "],
   ])("refuse %s par RangeError", (_nom, jour) => {
     expect(() => formaterJour(jour)).toThrow(RangeError);
+  });
+});
+
+// Fonctionnalité 1.5 : l'heure, première affichée (sessions). Heure
+// d'Abidjan sur 24 heures, minutes sur deux chiffres. Fiche :
+// docs/features/profil-sessions.md, section 7, test 8.
+describe("formaterDateHeure : un instant, au jour et à l'heure d'Abidjan", () => {
+  const CAS: ReadonlyArray<[string, string]> = [
+    ["2026-10-20T14:05:00Z", "20/10/2026 à 14:05"],
+    ["2026-10-20T00:00:00Z", "20/10/2026 à 00:00"],
+    ["2026-10-20T23:59:59Z", "20/10/2026 à 23:59"],
+    ["2026-10-20T00:30:00+05:30", "19/10/2026 à 19:00"],
+    ["2026-01-01T09:07:00Z", "01/01/2026 à 09:07"],
+  ];
+
+  test.each(CAS)("%s donne %s sur un poste à UTC+14", (instant, attendu) => {
+    simulerPoste("Pacific/Kiritimati");
+    expect(formaterDateHeure(new Date(instant))).toBe(attendu);
+  });
+
+  test.each(CAS)("%s donne %s sur un poste à UTC-11", (instant, attendu) => {
+    simulerPoste("Pacific/Pago_Pago");
+    expect(formaterDateHeure(new Date(instant))).toBe(attendu);
+  });
+
+  test("date invalide : RangeError", () => {
+    expect(() => formaterDateHeure(new Date("pas une date"))).toThrow(RangeError);
   });
 });

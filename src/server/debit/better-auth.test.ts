@@ -4,6 +4,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import { CHEMINS_INTERNES_DOUBLE_AUTH } from "../auth/double-authentification";
 import { POINTS_ENTREE_OUVERTS } from "../auth/points-entree";
+import { CHEMINS_INTERNES_PROFIL } from "../auth/profil";
 import type { Compteur } from "../db/debit";
 
 import { CHEMINS_LIMITES, creerStockageBetterAuth, reglesBetterAuth } from "./better-auth";
@@ -50,7 +51,9 @@ describe("reglesBetterAuth : règles par chemin, tirées de LIMITES", () => {
   // Modifié en 1.4 : douze chemins, avec les cinq chemins internes de la
   // double authentification (docs/features/double-authentification.md,
   // section 6, test 10).
-  test("les douze chemins appelés chez Better Auth, chacun avec sa limite", () => {
+  // Modifié en 1.5 : treize, avec le chemin interne du changement du mot de
+  // passe (docs/features/profil-sessions.md, section 6, test 6).
+  test("les treize chemins appelés chez Better Auth, chacun avec sa limite", () => {
     expect(CHEMINS_LIMITES).toEqual({
       "/sign-up/email": "auth.inscription",
       "/send-verification-email": "auth.renvoi_verification",
@@ -64,6 +67,7 @@ describe("reglesBetterAuth : règles par chemin, tirées de LIMITES", () => {
       "/two-factor/enable": "auth.double_auth_activation",
       "/two-factor/generate-backup-codes": "auth.double_auth_codes",
       "/two-factor/disable": "auth.double_auth_desactivation",
+      "/change-password": "auth.changement_mot_de_passe",
     });
     expect(reglesBetterAuth()).toEqual({
       "/sign-up/email": regle("auth.inscription"),
@@ -78,17 +82,19 @@ describe("reglesBetterAuth : règles par chemin, tirées de LIMITES", () => {
       "/two-factor/enable": regle("auth.double_auth_activation"),
       "/two-factor/generate-backup-codes": regle("auth.double_auth_codes"),
       "/two-factor/disable": regle("auth.double_auth_desactivation"),
+      "/change-password": regle("auth.changement_mot_de_passe"),
     });
   });
 
   // Modifié en 1.4 : les points simples, plus les chemins internes appelés par
-  // les sept points composés de la double authentification.
+  // les sept points composés de la double authentification. Modifié en 1.5 :
+  // plus le seul chemin interne des quatre points du profil.
   test("les règles couvrent exactement les chemins appelés chez Better Auth", () => {
-    const simples = Object.keys(POINTS_ENTREE_OUVERTS).filter(
-      (chemin) => !chemin.startsWith("/two-factor/"),
-    );
+    const simples = Object.entries(POINTS_ENTREE_OUVERTS)
+      .filter(([, point]) => !("executer" in point))
+      .map(([chemin]) => chemin);
     expect(Object.keys(reglesBetterAuth()).sort()).toEqual(
-      [...simples, ...CHEMINS_INTERNES_DOUBLE_AUTH].sort(),
+      [...simples, ...CHEMINS_INTERNES_DOUBLE_AUTH, ...CHEMINS_INTERNES_PROFIL].sort(),
     );
   });
 

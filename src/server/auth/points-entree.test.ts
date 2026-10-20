@@ -7,6 +7,7 @@ import {
   type Horloge,
 } from "./points-entree";
 import { dependancesDoubleAuthInertes } from "../db/outils-test/double-auth";
+import { dependancesProfilInertes } from "../db/outils-test/profil";
 
 // Le gestionnaire des points d'entrée ouverts : réponses de Better Auth
 // traduites en une liste fermée, erreurs attrapées, durée plancher (T-07).
@@ -64,6 +65,7 @@ function avec(
     motDePasseCompromis: options.compromis ?? (async () => false),
     // 1.4 : jamais atteintes par ces tests.
     doubleAuth: dependancesDoubleAuthInertes(),
+    profil: dependancesProfilInertes(),
     horloge,
   });
 }
@@ -368,6 +370,7 @@ describe("déconnexion vérifiée côté serveur (T-03)", () => {
       motDePasseCompromis: async () => false,
       // 1.4 : jamais atteintes par ces tests.
       doubleAuth: dependancesDoubleAuthInertes(),
+      profil: dependancesProfilInertes(),
       horloge: IMMEDIATE,
     });
     const cookie = { cookie: "better-auth.session_token=jeton.signature" };

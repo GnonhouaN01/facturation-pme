@@ -298,3 +298,49 @@ describe("limites de la double authentification (1.4)", () => {
     expect(Object.keys(LIMITES).filter((nom) => nom.includes("rejeu"))).toEqual([]);
   });
 });
+
+// Fonctionnalité 1.5 : profil et sessions. Par utilisateur dans notre
+// passerelle (opérations du profil, essais du mot de passe actuel), par
+// adresse IP dans Better Auth (chemin interne /change-password). Fiche :
+// docs/features/profil-sessions.md, section 6, test 6.
+describe("limites du profil et des sessions (1.5)", () => {
+  test("30 opérations du profil par heure et par utilisateur", () => {
+    expect(LIMITES["auth.profil_compte"]).toStrictEqual({
+      maximum: 30,
+      fenetreSecondes: UNE_HEURE,
+      par: "utilisateur",
+    });
+  });
+
+  test("8 essais du mot de passe actuel par 24 heures et par utilisateur", () => {
+    expect(LIMITES["auth.mot_de_passe_compte"]).toStrictEqual({
+      maximum: 8,
+      fenetreSecondes: UN_JOUR,
+      par: "utilisateur",
+    });
+  });
+
+  test("4 changements du mot de passe par 10 minutes et par adresse IP", () => {
+    expect(LIMITES["auth.changement_mot_de_passe"]).toStrictEqual({
+      maximum: 4,
+      fenetreSecondes: 10 * 60,
+      par: "adresse_ip",
+    });
+  });
+
+  test("aucun budget d'emails nouveau : la notification part sur email.reinitialisation", () => {
+    expect(
+      Object.keys(LIMITES)
+        .filter((nom) => nom.startsWith("email."))
+        .sort(),
+    ).toEqual([
+      "email.application",
+      "email.compte",
+      "email.destinataire",
+      "email.destinataire_jour",
+      "email.double_auth",
+      "email.organisation",
+      "email.reinitialisation",
+    ]);
+  });
+});
