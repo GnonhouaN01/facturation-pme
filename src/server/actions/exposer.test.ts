@@ -326,6 +326,9 @@ describe("lireComptePourPage", () => {
     session.mockResolvedValue({
       utilisateurId: "0d6f6c4e-1d1e-4a57-9a51-3f2a7f0b9c11",
       organisationActiveId: "6f1c3c1e-8a3d-4c5b-9f0e-2d7a1b4c5e6f",
+      // La zone compte reste ouverte sans second facteur : c'est là qu'on
+      // l'active (docs/features/double-authentification.md, section 9).
+      doubleAuthentification: false,
     });
     const lire = vi.fn(async (compte: unknown) => compte);
 
@@ -389,7 +392,11 @@ describe("redirigerSiConnecte", () => {
   });
 
   test("session valide : redirection vers /compte", async () => {
-    session.mockResolvedValue({ utilisateurId: "u", organisationActiveId: null });
+    session.mockResolvedValue({
+      utilisateurId: "u",
+      organisationActiveId: null,
+      doubleAuthentification: false,
+    });
     const erreur = await issue();
     expect((erreur as { digest?: unknown }).digest).toBe(digestRedirection());
   });

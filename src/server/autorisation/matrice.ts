@@ -11,7 +11,7 @@ export type Role = (typeof ROLES)[number];
 
 // S-12 : la double authentification est obligatoire pour ces rôles. Lue par
 // la désactivation (1.4, refusée à un membre qui a l'un d'eux dans une
-// organisation) et, en PR 2, par l'étape 7 de la chaîne. Fiche :
+// organisation) et par l'étape 7 de la chaîne (PR 2). Fiche :
 // docs/features/double-authentification.md, sections 7.3 et 9.
 export const ROLES_DOUBLE_AUTH: readonly Role[] = ["proprietaire", "comptable"];
 

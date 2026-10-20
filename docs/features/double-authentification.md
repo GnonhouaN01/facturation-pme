@@ -669,8 +669,25 @@ Branche `feat/1.4-double-authentification` : commits `docs(1.4): fiche`, `docs(1
 - La fabrique `creerDependancesDoubleAuth` (`src/server/auth/dependances-double-auth.ts`) lie les dépendances pour `gestionnaire.ts` et pour le banc d'intégration : une seule liaison, testée par le banc sur la vraie base. Lectures par l'adaptateur interne de Better Auth (jamais `auth.api`, constat de la 1.2) ; le mot de passe est vérifié par `password.verify` du contexte, sur le compte `credential`.
 - L'anti-rejeu s'applique à tout code de l'application : connexion, confirmation et vérifications de la gestion (section 6.1).
 - Le code QR porte un fond `#ffffff` et des modules `#000000` écrits dans le composant, et non des variables du thème (règle 1 de la compétence `interface`) : un code inversé en thème sombre se lit mal par l'appareil photo.
-- Non faits, à reprendre : le passage complet avec capture du journal du serveur sur le site construit (test 17 et `erreurs.attaque.spec.ts`, serveur en panne à l'étape du code). Sous Vitest, une exception d'une dépendance donne une seule ligne `[auth]` sans code ni identifiant (`double-authentification.test.ts`).
+- Non faits en PR 1, repris en PR 2 (tests 32 et 33) : le passage complet avec capture du journal du serveur sur le site construit (test 17 et `erreurs.attaque.spec.ts`, serveur en panne à l'étape du code). Sous Vitest, une exception d'une dépendance donne une seule ligne `[auth]` sans code ni identifiant (`double-authentification.test.ts`).
 
 **Vérifications** : voir la description de la PR (sorties de `npm run verifier` et de `npm run test:integration` sur `dev`).
 
 **À faire par le développeur avant la fusion** : l'essai sur la prévisualisation (« Vérifications manuelles ») ; l'essai de la procédure de remise à zéro sur `dev` (`docs/exploitation/remise-a-zero-double-authentification.md`, section 4).
+
+### PR 2, le 2026-10-19
+
+Branche `feat/1.4-exigence-par-role` : commits `docs(1.4): PR 2`, `test(1.4)` (phase rouge), `feat(1.4)`.
+
+**Phase rouge** (commit `test(1.4)`). Unitaires : 16 échecs (étape 7 de `action.test.ts` pour le Propriétaire et le Comptable, et la valeur mal formée ; `session.test.ts`, champ absent), plus les erreurs de type du champ absent. Intégration (sur `dev`) : 5 échecs dans `chaine.attaque.integration.test.ts`. Bout en bout (site construit avant le code, tests unitaires remisés le temps de la construction, base jetable) : 1 échec (test 31).
+
+**Passaient avant le code, et pourquoi** : Commercial et Lecteur sans second facteur acceptés (non concernés, garde de non-régression) ; tests 32 et 33, qui vérifient le code de la PR 1 (report) ; `affichage-connecte.spec.ts`, dont seule la mise en place change.
+
+**Tests modifiés, sans changer ce qu'ils prouvent** :
+
+- Sessions factices des tests de la chaîne (`action.test.ts`, `action-debit.test.ts`, `action-email.test.ts`, `exposer.test.ts`) : champ `doubleAuthentification` ajouté (vrai pour les membres, faux pour la zone compte, qui reste ouverte sans second facteur).
+- `creerMembre` : option `doubleAuthentification`, vraie par défaut (section 9).
+- `affichage-connecte.spec.ts` : le compte active la double authentification avant d'être rattaché comme Propriétaire ; les étapes du parcours passent de `double-authentification.spec.ts` à `e2e/double-auth.ts`, inchangées (le titre « Codes de secours » est cherché exactement : « Créer de nouveaux codes de secours » y répondait aussi, erreur de mise en place du test 32, vue en phase rouge).
+- Rangs d'adresses de bout en bout : le rang 25 (`secours`, jamais utilisé) devient `journal` (test 32) ; rang 30 ajouté (`proprietaire`, test 31) ; 31 rangs au lieu de 30 (`nettoyer-comptes.spec.ts`).
+
+**Écarts avec la fiche** : aucun sur le fond. Le test 33 atteint l'étape du code en simulant la seule réponse de `/sign-in/email` dans le navigateur (`page.route`) : la base injoignable empêche de l'atteindre autrement ; le code part vers le vrai serveur.

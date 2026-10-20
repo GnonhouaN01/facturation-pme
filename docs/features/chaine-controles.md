@@ -163,7 +163,7 @@ etablirContexte<T>(
 ): Promise<ResultatLecture<T>>;
 ```
 
-- Étapes 2, 3, 5 et 6 de la section 5, puis `lire(ctx)` dans la transaction. Les points d'accroche 4 (débit) et 7 (double authentification, qui vise aussi les lectures, section 11) s'y appliqueront.
+- Étapes 2, 3, 5 et 6 de la section 5, puis `lire(ctx)` dans la transaction. Le point d'accroche 4 (débit) ne s'y applique pas (décision 5 de la 0.5) ; l'étape 7 (double authentification, 1.4) s'y applique.
 - **Pas de contrôle d'origine** : une page s'ouvre par une navigation de premier niveau, éventuellement depuis un lien d'un autre site (sans `Origin`, ou avec `Sec-Fetch-Site: cross-site`). Une lecture ne modifie rien.
 - Ni entrée, ni validation, ni trace : `ctx` n'a pas de `journaliser` (type et exécution), et le résultat n'est jamais `invalide`.
 - Mêmes traductions d'erreurs que la chaîne (section 6.3), `ctx.introuvable()` compris. Le journal technique porte le droit à la place du nom de l'action. `redirect()` et `notFound()` levés par `lire` sont relancés tels quels.
@@ -208,7 +208,7 @@ type Contexte<J> = {
 | 4 | *Point d'accroche 0.5 : limitation de débit* | — | — |
 | 5 | Ouverture de `executerDansOrganisation(organisationId)`. Toutes les étapes suivantes s'y déroulent | `set_config` | — |
 | 6 | Adhésion `FOR SHARE` (section 2.2) ; rôle parmi les quatre ; `peut(role, droit)` | `member` | `refuse` |
-| 7 | *Point d'accroche 1.4 : double authentification exigée pour Propriétaire et Comptable (S-12, S-13, T-02)* | — | `refuse` |
+| 7 | Double authentification exigée pour Propriétaire et Comptable (S-12, S-13, T-02), livrée par la 1.4 (PR 2) : `ROLES_DOUBLE_AUTH` contient le rôle relu et `session.doubleAuthentification` n'est pas `true` (`user.two_factor_enabled`, lu à l'étape 2) | Aucune | `refuse` |
 | 8 | Nouvelle authentification (S-14) : en 0.4, toute déclaration `nouvelleAuthentification: true` est **refusée** (fermé par défaut) jusqu'à la fonctionnalité du jalon 1 qui l'implémente | Aucune | `refuse` |
 | 9 | Validation de l'entrée par le schéma de la déclaration | Aucune | `invalide` |
 | 10 | `executer(ctx, entree)` : le service, dans la transaction | Selon le service | `refuse` par `ctx.introuvable()` |
@@ -420,7 +420,7 @@ Nouvel outil, `src/server/db/outils-test/membres.ts` :
 |---|---|---|
 | Limitation de débit | 0.5 | Étape 4 réservée dans l'ordre ; champ `debit` de la déclaration ajouté par la 0.5 (clé possible : utilisateur, organisation) |
 | Nouvelle authentification avant une action sensible (S-14) | 1.6 (ajoutée à `PLAN.md`, décision 10), avant 2.2, 2.4, 2.5, 7.2 | Champ `nouvelleAuthentification` obligatoire ; `true` refusé tant que la 1.6 n'est pas livrée. Le mécanisme (`freshAge` de Better Auth, 24 h par défaut d'après `context/create-context.mjs`, trop long pour S-14) est choisi par la fiche 1.6 |
-| Double authentification par rôle (S-12, S-13, T-02) | 1.4 | Étape 7 réservée, sans effet avant la 1.4 (décision 11) ; `user.two_factor_enabled` est déjà lu avec la session. Test à écrire en 1.4 : un Propriétaire puis un Comptable sans second facteur activé reçoivent `refuse` sur toute action, y compris de lecture ; le même compte, après activation, est accepté ; un Commercial et un Lecteur sans second facteur ne sont pas concernés |
+| Double authentification par rôle (S-12, S-13, T-02) | 1.4, **livrée** (PR 2, `docs/features/double-authentification.md`, section 9) | Étape 7 réservée, sans effet avant la 1.4 (décision 11) ; `user.two_factor_enabled` est déjà lu avec la session. Test à écrire en 1.4 : un Propriétaire puis un Comptable sans second facteur activé reçoivent `refuse` sur toute action, y compris de lecture ; le même compte, après activation, est accepté ; un Commercial et un Lecteur sans second facteur ne sont pas concernés |
 | Visibilité des Commerciaux (F-016, T-31) | 7.4 | `ctx.perimetre` |
 | Route de membre | 7.2 | Chaîne indépendante du transport ; adaptateur `exposerRoute` à livrer |
 | Lecture par les pages | 0.6 | `etablirContexte` |
@@ -662,7 +662,7 @@ Inchangés : `drizzle/`, `scripts/`, `.github/workflows/` (la CI fournit déjà 
 ### Au jalon 1
 
 - 1.1 : fermer les points d'entrée `/organization/*` de Better Auth avant d'exposer `/api/auth` (T-55) ; trancher l'adresse de branche de Vercel sur `preview` et le réglage équivalent de Better Auth (décision 4).
-- 1.4 : l'étape 7 (double authentification par rôle) et son test (section 11).
+- ~~1.4 : l'étape 7 (double authentification par rôle) et son test (section 11).~~ Livrée par la PR 2 de la 1.4.
 - 1.6 : le mécanisme de nouvelle authentification (S-14) et le passage de `nouvelleAuthentification: true` de « refusé » à « exigé ».
 
 ### Au jalon 2
