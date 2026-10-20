@@ -91,6 +91,9 @@ export default defineConfig({
         // 1.4 : double authentification, aux deux largeurs
         // (docs/features/double-authentification.md, test 26).
         /(^|\W)double-authentification\.spec\.ts$/,
+        // 1.5 : profil et sessions, aux deux largeurs
+        // (docs/features/profil-sessions.md, tests 15 et 16).
+        /(^|\W)profil-sessions\.spec\.ts$/,
       ],
       use: { ...devices["Desktop Chrome"], viewport: { width: 390, height: 844 } },
     },

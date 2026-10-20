@@ -13,6 +13,8 @@ import {
 } from "@/schemas/double-authentification";
 import { CODE_SECOURS, CODE_TOTP, normaliserCodeSecours } from "@/schemas/regles-compte";
 
+import type { DependancesProfil } from "./profil";
+
 // Les sept points de la double authentification de /api/auth (1.4), composés
 // par notre passerelle sur les points de l'extension twoFactor de Better
 // Auth : un cookie par usage (celui de la connexion en attente pour la
@@ -85,7 +87,10 @@ export type RaisonDoubleAuth =
   | "trop_de_requetes"
   | "refuse"
   | "invalide"
-  | "erreur";
+  | "erreur"
+  // 1.5 : changement du mot de passe (profil.ts).
+  | "mot_de_passe_trop_court"
+  | "mot_de_passe_compromis";
 
 export type ResultatCompose =
   { raison: RaisonDoubleAuth } | { ok: true; cookies: string[]; donnees?: Record<string, unknown> };
@@ -109,6 +114,8 @@ export type OutilsPoint = {
   // La révocation de la session du cookie reçu (correctif de la 1.2).
   revoquerSessionRecue: () => Promise<void>;
   dependances: DependancesDoubleAuth;
+  // 1.5 : les dépendances des points du profil (profil.ts).
+  profil: DependancesProfil;
 };
 
 export type PointCompose = {

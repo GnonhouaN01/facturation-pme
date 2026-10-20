@@ -89,5 +89,13 @@ export const TEXTES_EMAILS = {
         "Si ce n'est pas vous, quelqu'un connaît votre mot de passe : changez-le sans attendre depuis cette page :",
       suspension: "La connexion à votre compte reste suspendue 24 heures au plus.",
     },
+    // 1.5 (docs/features/profil-sessions.md, section 8) : changement depuis
+    // une session ; ni date, ni adresse IP, ni appareil.
+    "compte.mot_de_passe_change": {
+      sujet: "Votre mot de passe a été modifié",
+      corps:
+        "Le mot de passe de votre compte Facturation PME vient d'être modifié depuis une session ouverte, et vos autres sessions ont été fermées. Si vous êtes à l'origine de ce changement, aucune action n'est attendue.",
+      oubli: "Sinon, choisissez sans attendre un nouveau mot de passe depuis cette page :",
+    },
   },
 } as const;

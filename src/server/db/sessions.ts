@@ -1,15 +1,17 @@
 import "server-only";
 
-import { and, eq, ne } from "drizzle-orm";
+import { and, desc, eq, gt, ne, sql } from "drizzle-orm";
 
 import { db, type BaseDeDonnees } from "./client";
 import { session } from "./schema/auth";
 
-// Fermeture des autres sessions d'un utilisateur après un changement de son
-// second facteur (activation, remplacement, désactivation), en gardant la
-// session donnée. Table de Better Auth sans organisation_id : par db, filtrée
-// sur l'utilisateur (RR-8). Fiche : docs/features/double-authentification.md,
-// section 8.2.
+// Les sessions d'un utilisateur. Table de Better Auth sans organisation_id :
+// par db, chaque requête filtrée sur l'utilisateur (RR-8). Fermeture des
+// autres sessions après un changement du second facteur (activation,
+// remplacement, désactivation), en gardant la session donnée. Fiche :
+// docs/features/double-authentification.md, section 8.2. 1.5 : liste des
+// sessions non expirées, sans jeton, et fermeture d'une session par son
+// identifiant (docs/features/profil-sessions.md, sections 3.1 et 3.2).
 export function creerRevocationAutresSessions(
   base: BaseDeDonnees,
 ): (utilisateurId: string, jetonGarde: string) => Promise<number> {
@@ -22,3 +24,53 @@ export function creerRevocationAutresSessions(
 }
 
 export const revoquerAutresSessions = creerRevocationAutresSessions(db);
+
+// Une session telle que la page des sessions la lit : jamais le jeton.
+export type SessionLueEnBase = {
+  id: string;
+  navigateur: string | null;
+  adresseIp: string | null;
+  ouverteLe: Date;
+  expireLe: Date;
+};
+
+export function creerLectureSessions(
+  base: BaseDeDonnees,
+): (utilisateurId: string) => Promise<SessionLueEnBase[]> {
+  return (utilisateurId) =>
+    base
+      .select({
+        id: session.id,
+        navigateur: session.userAgent,
+        adresseIp: session.ipAddress,
+        ouverteLe: session.createdAt,
+        expireLe: session.expiresAt,
+      })
+      .from(session)
+      .where(and(eq(session.userId, utilisateurId), gt(session.expiresAt, sql`now()`)))
+      .orderBy(desc(session.createdAt));
+}
+
+export const sessionsDe = creerLectureSessions(db);
+
+// Supprime la session d'identifiant donné si elle est à l'utilisateur et
+// n'est pas celle du jeton gardé (la session courante se ferme par la
+// déconnexion). Ne dit pas si une ligne a été supprimée : la réponse du point
+// d'entrée ne peut pas en dépendre (S-02).
+export function creerRevocationSession(
+  base: BaseDeDonnees,
+): (utilisateurId: string, sessionId: string, jetonGarde: string) => Promise<void> {
+  return async (utilisateurId, sessionId, jetonGarde) => {
+    await base
+      .delete(session)
+      .where(
+        and(
+          eq(session.id, sessionId),
+          eq(session.userId, utilisateurId),
+          ne(session.token, jetonGarde),
+        ),
+      );
+  };
+}
+
+export const revoquerSessionDe = creerRevocationSession(db);

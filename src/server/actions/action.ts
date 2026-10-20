@@ -112,6 +112,10 @@ export type RequeteChaine = { entetes: Headers };
 
 export type SessionLue = {
   utilisateurId: string;
+  // L'identifiant de la session de la requête, jamais son jeton : il marque
+  // « Cette session » dans la liste des sessions (1.5,
+  // docs/features/profil-sessions.md, section 3.1).
+  sessionId: string;
   organisationActiveId: string | null;
   // user.two_factor_enabled, relu avec la session à chaque requête (étape 7).
   doubleAuthentification: boolean;

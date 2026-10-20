@@ -383,7 +383,7 @@ Dans cet ordre, chacun vu en échec avant le code.
 
 - **1.3** : ouverture des comptes en production (retrait de `COMPTES_OUVERTS_EN_PRODUCTION`) ; liens de `compte.existant` vers la connexion et la réinitialisation ; lien « Mot de passe oublié » sur `/connexion`.
 - **1.4** : étape 3 d'UC-02 (code temporaire, codes de secours), erreurs 3a, 3b et 4a ; branche `twoFactorRedirect` ; définition des « connexions sensibles » de S-70 et de leur lieu.
-- **1.5** : liste et révocation des sessions ; sessions multiples d'un même utilisateur.
+- **1.5** : liste et révocation des sessions ; sessions multiples d'un même utilisateur. **Traité** par `docs/features/profil-sessions.md`.
 - **1.6** : `freshAge` et nouvelle authentification.
 - **2.1** : arrivée sur la dernière organisation active ou la liste (UC-02, étape 4) ; création d'organisation dans `(compte)/`.
 - **8.1** : signalement des lignes `[auth] error` et du rythme des `[auth] warn` (essais en masse) au service de suivi.

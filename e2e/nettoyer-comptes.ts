@@ -25,8 +25,9 @@ export type PoolNettoyage = {
 export const REQUETE_NETTOYAGE = 'DELETE FROM "user" WHERE email = ANY($1::text[])';
 
 // Forme exacte d'une adresse de comptes-e2e.ts : aucun caractère de motif,
-// domaine .invalid, qui ne reçoit aucun email réel.
-const ADRESSE_E2E = /^e2e-[0-9a-f]{8}-\d{1,3}@exemple\.invalid$/;
+// domaine .invalid, qui ne reçoit aucun email réel. 1.5 : numéro sur 4 chiffres
+// au plus (35 rangs, 1 050 adresses par exécution).
+const ADRESSE_E2E = /^e2e-[0-9a-f]{8}-\d{1,4}@exemple\.invalid$/;
 
 export async function nettoyer(options: {
   source: Source;

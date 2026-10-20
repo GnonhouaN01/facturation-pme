@@ -403,7 +403,7 @@ Un test vérifie : les messages de sécurité sont identiques, au caractère pr�
 - `formaterJour("2026-10-05")` → `05/10/2026`, pour une date de calendrier (colonne `date` : échéance, date de paiement), par découpage de la chaîne, sans conversion en instant ni fuseau. Une chaîne qui n'est pas `AAAA-MM-JJ`, ou une date qui n'existe pas au calendrier, lève une `RangeError`.
 - **Fuseau fixé, `Africa/Abidjan`** (UTC+0 toute l'année, sans heure d'été) : le serveur (Vercel, Francfort), la CI et le navigateur d'un membre en déplacement donnent le même jour.
 - Le test simule un poste à UTC+14 (`vi.stubEnv("TZ", "Pacific/Kiritimati")`) : Node applique un changement de `TZ` en cours d'exécution (constaté le 2026-10-11 : le fuseau par défaut d'`Intl` suit). Sans cela, le test ne distinguerait rien en CI, dont le fuseau (UTC) donne déjà le même jour qu'Abidjan. `vi.stubEnv` n'est pas une lecture de configuration : la règle 12 vise la lecture des variables, et la règle B ne le refuse pas.
-- Heure (sessions, journal) : reportée à la 1.5, première à en afficher.
+- Heure (sessions, journal) : reportée à la 1.5, première à en afficher. **Traité** : `formaterDateHeure` (`docs/features/profil-sessions.md`, section 7).
 
 ### 12. Accessibilité, et affichage à 390 et 1280 pixels (NF-03, NF-04)
 

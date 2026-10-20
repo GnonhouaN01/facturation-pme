@@ -184,3 +184,16 @@ export const RANGS_DOUBLE_AUTH = {
 export function adresseDoubleAuth(info: TestInfo, rang: keyof typeof RANGS_DOUBLE_AUTH): string {
   return adresseE2E(info.project.name, RANGS_DOUBLE_AUTH[rang], info.retry, info.repeatEachIndex);
 }
+
+// Profil et sessions (1.5) : rangs 31 à 34 des adresses de l'exécution.
+// Fiche : docs/features/profil-sessions.md, tests 15 et 16.
+export const RANGS_PROFIL = {
+  parcours: 31,
+  ferme: 32,
+  journal: 33,
+  affichage: 34,
+} as const;
+
+export function adresseProfil(info: TestInfo, rang: keyof typeof RANGS_PROFIL): string {
+  return adresseE2E(info.project.name, RANGS_PROFIL[rang], info.retry, info.repeatEachIndex);
+}

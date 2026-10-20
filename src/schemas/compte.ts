@@ -22,7 +22,8 @@ const SANS_CONTROLE = /^[^\u0000-\u001f\u007f-\u009f]*$/u;
 // Jeton de vérification : un JWT, trois segments base64url non vides.
 const JETON_VERIFICATION = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u;
 
-const nom = z
+// Partagé avec la correction du nom (1.5, schemas/profil.ts).
+export const champNom = z
   .string()
   .max(LONGUEUR_MAX_NOM)
   .regex(SANS_CONTROLE)
@@ -34,7 +35,7 @@ const email = z.string().max(LONGUEUR_MAX_ADRESSE);
 // propre raison (UC-01, 2a).
 const motDePasse = z.string().max(LONGUEUR_MAX_MOT_DE_PASSE);
 
-export const schemaInscription = z.strictObject({ nom, email, motDePasse });
+export const schemaInscription = z.strictObject({ nom: champNom, email, motDePasse });
 export const schemaRenvoiVerification = z.strictObject({ email });
 // Connexion (1.2) : ni rememberMe, ni callbackURL. Aucune longueur minimale :
 // un mot de passe trop court reçoit la même réponse qu'un mauvais (T-07).

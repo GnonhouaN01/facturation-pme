@@ -55,6 +55,10 @@ export const LIMITES_TEST = {
   "auth.double_auth_compte": { maximum: 20, fenetreSecondes: 86_400, par: "utilisateur" },
   "auth.double_auth_gestion": { maximum: 10, fenetreSecondes: 3_600, par: "utilisateur" },
   "email.double_auth": { maximum: 40, fenetreSecondes: 86_400, par: "application" },
+  // 1.5 : même raison.
+  "auth.profil_compte": { maximum: 30, fenetreSecondes: 3_600, par: "utilisateur" },
+  "auth.mot_de_passe_compte": { maximum: 8, fenetreSecondes: 86_400, par: "utilisateur" },
+  "auth.changement_mot_de_passe": { maximum: 4, fenetreSecondes: 600, par: "adresse_ip" },
 } as const satisfies Record<NomLimite, Limite>;
 
 const NOMS = Object.keys(LIMITES_TEST) as NomLimite[];

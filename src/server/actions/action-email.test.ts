@@ -135,6 +135,7 @@ beforeEach(() => {
   etat = {
     session: {
       utilisateurId: randomUUID(),
+      sessionId: "5a1d2c3b-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
       organisationActiveId: randomUUID(),
       doubleAuthentification: true,
     },

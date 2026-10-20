@@ -322,9 +322,13 @@ describe("lireComptePourPage", () => {
     expect(lire).not.toHaveBeenCalled();
   });
 
-  test("avec session : lire ne reçoit que l'identifiant de l'utilisateur, aucune organisation", async () => {
+  // Modifié en 1.5 : lire reçoit aussi l'identifiant de la session de la
+  // requête, qui marque « Cette session » dans la liste des sessions
+  // (docs/features/profil-sessions.md, section 3.1, test 11).
+  test("avec session : lire ne reçoit que l'utilisateur et sa session, aucune organisation", async () => {
     session.mockResolvedValue({
       utilisateurId: "0d6f6c4e-1d1e-4a57-9a51-3f2a7f0b9c11",
+      sessionId: "2b7c4d1e-0a9f-4e3b-8c6d-5f1a2b3c4d5e",
       organisationActiveId: "6f1c3c1e-8a3d-4c5b-9f0e-2d7a1b4c5e6f",
       // La zone compte reste ouverte sans second facteur : c'est là qu'on
       // l'active (docs/features/double-authentification.md, section 9).
@@ -334,7 +338,10 @@ describe("lireComptePourPage", () => {
 
     const lu = await lireComptePourPage(lire);
 
-    expect(lu).toStrictEqual({ utilisateurId: "0d6f6c4e-1d1e-4a57-9a51-3f2a7f0b9c11" });
+    expect(lu).toStrictEqual({
+      utilisateurId: "0d6f6c4e-1d1e-4a57-9a51-3f2a7f0b9c11",
+      sessionId: "2b7c4d1e-0a9f-4e3b-8c6d-5f1a2b3c4d5e",
+    });
     expect(lire).toHaveBeenCalledTimes(1);
   });
 
@@ -394,6 +401,7 @@ describe("redirigerSiConnecte", () => {
   test("session valide : redirection vers /compte", async () => {
     session.mockResolvedValue({
       utilisateurId: "u",
+      sessionId: "5a1d2c3b-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
       organisationActiveId: null,
       doubleAuthentification: false,
     });

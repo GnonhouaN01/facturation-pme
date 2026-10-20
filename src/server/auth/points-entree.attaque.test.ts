@@ -8,6 +8,7 @@ import {
   reponseInexistante,
 } from "./points-entree";
 import { dependancesDoubleAuthInertes } from "../db/outils-test/double-auth";
+import { dependancesProfilInertes } from "../db/outils-test/profil";
 
 // Tests d'attaque de la liste fermée des points d'entrée de /api/auth : T-55
 // (points d'entrée natifs fermés), S-81 (origine), entrée falsifiée,
@@ -112,6 +113,7 @@ function traitement(
     // 1.4 : jamais atteintes ici (docs/features/double-authentification.md) ;
     // les points /two-factor/* ont leurs propres tests d'attaque.
     doubleAuth: dependancesDoubleAuthInertes(),
+    profil: dependancesProfilInertes(),
     horloge: { maintenant: () => 0, attendre: async () => {} },
   });
   return {
@@ -173,8 +175,9 @@ function cheminsDeclares(): string[] {
 const OUVERTS = Object.keys(POINTS_ENTREE_OUVERTS).sort();
 // 1.4 : les points simples, un appel à Better Auth chacun ; les sept points de
 // la double authentification ont leurs tests dans
-// double-authentification.attaque.test.ts.
-const SIMPLES = OUVERTS.filter((chemin) => !chemin.startsWith("/two-factor/"));
+// double-authentification.attaque.test.ts. Modifié en 1.5 : les quatre
+// points composés du profil ont les leurs dans profil.attaque.test.ts.
+const SIMPLES = OUVERTS.filter((chemin) => !("executer" in POINTS_ENTREE_OUVERTS[chemin]!));
 // Les deux points composés par la passerelle n'existent pas chez Better Auth.
 const COMPOSES = ["/two-factor/confirm-enable", "/two-factor/replace"];
 
@@ -182,10 +185,15 @@ describe("T-55 : liste fermée des points d'entrée", () => {
   // Modifié en 1.3 : sept points au lieu de cinq (docs/features/mot-de-passe.md,
   // section 2.1). Modifié en 1.4 : quatorze, avec les sept de la double
   // authentification (docs/features/double-authentification.md, section 2.1).
-  test("les points d'entrée ouverts sont exactement les quatorze des fiches 1.1 à 1.4, en POST", () => {
+  // Modifié en 1.5 : dix-huit, avec les quatre du profil et des sessions
+  // (docs/features/profil-sessions.md, section 2.1).
+  test("les points d'entrée ouverts sont exactement les dix-huit des fiches 1.1 à 1.5, en POST", () => {
     expect(OUVERTS).toEqual([
+      "/change-password",
       "/request-password-reset",
       "/reset-password",
+      "/revoke-other-sessions",
+      "/revoke-session",
       "/send-verification-email",
       "/sign-in/email",
       "/sign-out",
@@ -197,6 +205,7 @@ describe("T-55 : liste fermée des points d'entrée", () => {
       "/two-factor/replace",
       "/two-factor/verify-backup-code",
       "/two-factor/verify-totp",
+      "/update-user",
       "/verify-email",
     ]);
     for (const point of Object.values(POINTS_ENTREE_OUVERTS)) expect(point.methode).toBe("POST");
@@ -210,6 +219,21 @@ describe("T-55 : liste fermée des points d'entrée", () => {
       expect(declares, chemin).toContain(chemin);
     }
     for (const chemin of COMPOSES) expect(declares, chemin).not.toContain(chemin);
+  });
+
+  // 1.5 (docs/features/profil-sessions.md, section 2.2, test 1).
+  test("1.5 : les chemins des sessions et du compte qui restent fermés existent dans l'instance", () => {
+    const declares = cheminsDeclares();
+    for (const chemin of [
+      "/list-sessions",
+      "/revoke-sessions",
+      "/change-email",
+      "/delete-user",
+      "/update-session",
+    ]) {
+      expect(declares).toContain(chemin);
+      expect(OUVERTS).not.toContain(chemin);
+    }
   });
 
   test("1.4 : les chemins de la double authentification qui restent fermés existent dans l'instance", () => {
@@ -610,9 +634,18 @@ describe("T-55 et S-82 (1.2) : ce qui reste fermé", () => {
     ["connexion par un réseau social", "POST", "/sign-in/social"],
     ["GET de la connexion", "GET", "/sign-in/email"],
     ["GET de la déconnexion", "GET", "/sign-out"],
-    ["liste des sessions (1.5)", "GET", "/list-sessions"],
-    ["révocation d'une session (1.5)", "POST", "/revoke-session"],
-    ["révocation des autres sessions (1.5)", "POST", "/revoke-other-sessions"],
+    // Modifié en 1.5 : la liste reste fermée, son corps porte les jetons
+    // (docs/features/profil-sessions.md, section 2.2) ; les deux révocations
+    // sont ouvertes (profil.attaque.test.ts), la révocation de toutes les
+    // sessions reste fermée.
+    ["liste des sessions, GET (1.5)", "GET", "/list-sessions"],
+    ["liste des sessions, POST (1.5)", "POST", "/list-sessions"],
+    ["révocation de toutes les sessions (1.5)", "POST", "/revoke-sessions"],
+    ["GET de la révocation d'une session (1.5)", "GET", "/revoke-session"],
+    ["GET de la révocation des autres sessions (1.5)", "GET", "/revoke-other-sessions"],
+    ["changement de l'adresse (1.5)", "POST", "/change-email"],
+    ["suppression du compte (1.5)", "POST", "/delete-user"],
+    ["GET de la mise à jour du nom (1.5)", "GET", "/update-user"],
     ["mise à jour de la session", "POST", "/update-session"],
   ] as const)(
     "%s : réponse inexistante, Better Auth jamais appelé",
@@ -902,7 +935,9 @@ describe("T-55 (1.3) : ce qui reste fermé autour de la réinitialisation", () =
     ["GET de la demande", "GET", "/request-password-reset"],
     ["POST sur le chemin du lien", "POST", `/reset-password/${JETON_REINITIALISATION}`],
     ["vérification du mot de passe (serveur)", "POST", "/verify-password"],
-    ["changement du mot de passe", "POST", "/change-password"],
+    // Modifié en 1.5 : le POST est ouvert (profil.attaque.test.ts), le GET
+    // reste fermé.
+    ["GET du changement du mot de passe", "GET", "/change-password"],
     ["ancien chemin de la demande", "POST", "/forget-password"],
   ] as const)("%s : réponse inexistante, rien n'est appelé", async (_nom, methode, chemin) => {
     const attendue = await inexistante();

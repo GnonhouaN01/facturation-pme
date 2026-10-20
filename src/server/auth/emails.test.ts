@@ -530,3 +530,57 @@ describe("emailDoubleAuth : notifications de la double authentification (1.4)", 
     expect(lire()).not.toMatch(/exemple\.invalid|u-123/u);
   });
 });
+
+// Fonctionnalité 1.5 : notification du changement du mot de passe depuis une
+// session. Adresse lue dans la tâche, aucun paramètre ; budget
+// email.reinitialisation, sans limite par destinataire. Fiche :
+// docs/features/profil-sessions.md, section 8, test 9.
+describe("emailProfil : changement du mot de passe depuis une session (1.5)", () => {
+  test("compte.mot_de_passe_change : planifié, l'adresse lue dans la tâche, aucun paramètre", async () => {
+    const { emails, taches, envois, executer } = banc();
+    const lireAdresse = vi.fn(async () => ADRESSE);
+    emails.emailProfil("compte.mot_de_passe_change", lireAdresse);
+    expect(taches).toHaveLength(1);
+    expect(lireAdresse).not.toHaveBeenCalled();
+    await executer();
+    expect(lireAdresse).toHaveBeenCalledTimes(1);
+    expect(envois).toEqual([
+      { modele: "compte.mot_de_passe_change", destinataire: ADRESSE_NORMALISEE, parametres: {} },
+    ]);
+  });
+
+  test("sans limite par destinataire : reinitialisation, puis application", async () => {
+    const { emails, debits, envois, executer } = banc({
+      limites: { "email.destinataire": false, "email.destinataire_jour": false },
+    });
+    emails.emailProfil("compte.mot_de_passe_change", async () => ADRESSE);
+    await executer();
+    expect(debits).toEqual([
+      ["email.reinitialisation", "gmail"],
+      ["email.application", "gmail"],
+    ]);
+    expect(envois).toHaveLength(1);
+  });
+
+  test("adresse introuvable, lecture ou planification en échec : rien n'est levé, ni adresse au journal", async () => {
+    const lire = journal();
+    const { emails, envois, executer } = banc();
+    emails.emailProfil("compte.mot_de_passe_change", async () => null);
+    emails.emailProfil("compte.mot_de_passe_change", async () => {
+      throw new Error("panne pour awa@exemple.invalid u-123");
+    });
+    await expect(executer()).resolves.toBeUndefined();
+    expect(envois).toEqual([]);
+    const avecPlanification = creerEmailsCompte({
+      planifier: () => {
+        throw new Error("after() hors d'une requête");
+      },
+      verifierDebit: async () => true,
+      envoyerEmail: async () => ({ envoye: true }),
+    });
+    expect(() =>
+      avecPlanification.emailProfil("compte.mot_de_passe_change", async () => ADRESSE),
+    ).not.toThrow();
+    expect(lire()).not.toMatch(/exemple\.invalid|u-123/u);
+  });
+});

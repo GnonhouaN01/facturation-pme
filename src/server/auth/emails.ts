@@ -11,6 +11,7 @@ import { envoyerEmail, type DemandeEmail, type ResultatEnvoi } from "../email/en
 import type { ModeleEmail } from "../email/modeles";
 
 import type { ModeleDoubleAuth } from "./double-authentification";
+import type { ModeleProfil } from "./profil";
 
 // Les rappels d'envoi de Better Auth (vérification de l'adresse, compte
 // existant). Chacun planifie l'envoi après la réponse et rend la main
@@ -49,6 +50,10 @@ export type EmailsCompte = {
   // dans la tâche planifiée, après la réponse (docs/features/
   // double-authentification.md, section 10). Ne lève jamais.
   emailDoubleAuth: (modele: ModeleDoubleAuth, lireAdresse: () => Promise<string | null>) => void;
+  // 1.5 : changement du mot de passe depuis une session, adresse lue dans la
+  // tâche planifiée (docs/features/profil-sessions.md, section 8). Ne lève
+  // jamais.
+  emailProfil: (modele: ModeleProfil, lireAdresse: () => Promise<string | null>) => void;
 };
 
 // Les limites de chaque modèle de compte, dans l'ordre : destinataire, puis
@@ -112,6 +117,13 @@ const LIMITES_MODELE: Readonly<Partial<Record<ModeleEmail, Comptage>>> = {
   "compte.double_auth_tentatives": [
     ...PAR_DESTINATAIRE,
     ["email.double_auth", "application"],
+    ["email.application", "application"],
+  ],
+  // 1.5 : comme compte.mot_de_passe_modifie, sur le budget de la
+  // réinitialisation, sans limite par destinataire : l'alerte suit une preuve
+  // du mot de passe, bornée par auth.mot_de_passe_compte.
+  "compte.mot_de_passe_change": [
+    ["email.reinitialisation", "application"],
     ["email.application", "application"],
   ],
 };
@@ -188,6 +200,9 @@ export function creerEmailsCompte(dependances: DependancesEmailsCompte): EmailsC
     emailDoubleAuth: (modele, lireAdresse) => {
       planifier(modele, lireAdresse, {});
     },
+    emailProfil: (modele, lireAdresse) => {
+      planifier(modele, lireAdresse, {});
+    },
   };
 }
 
@@ -202,3 +217,4 @@ export const planifierEmailCompteExistant = emails.emailCompteExistant;
 export const planifierEmailReinitialisation = emails.emailReinitialisation;
 export const planifierEmailMotDePasseModifie = emails.emailMotDePasseModifie;
 export const planifierEmailDoubleAuth = emails.emailDoubleAuth;
+export const planifierEmailProfil = emails.emailProfil;

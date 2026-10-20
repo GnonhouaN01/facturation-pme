@@ -46,6 +46,8 @@ const EXEMPLES = {
   "compte.codes_secours_regeneres": {},
   "compte.code_secours_utilise": {},
   "compte.double_auth_tentatives": {},
+  // 1.5 (docs/features/profil-sessions.md, section 8).
+  "compte.mot_de_passe_change": {},
 } as const satisfies Record<ModeleEmail, Record<string, unknown>>;
 
 const NOMS = Object.keys(MODELES_EMAIL) as ModeleEmail[];
@@ -70,7 +72,9 @@ describe("la liste fermée", () => {
   // notification (docs/features/mot-de-passe.md, section 6.2).
   // Modifié en 1.4 : onze modèles, avec les six notifications de la double
   // authentification (docs/features/double-authentification.md, section 10).
-  test("1.4 : onze modèles, l'essai et les dix emails de compte", () => {
+  // Modifié en 1.5 : douze, avec le changement du mot de passe depuis une
+  // session (docs/features/profil-sessions.md, section 8).
+  test("1.5 : douze modèles, l'essai et les onze emails de compte", () => {
     expect(NOMS).toEqual([
       "essai.verification_envoi",
       "compte.verification",
@@ -83,6 +87,7 @@ describe("la liste fermée", () => {
       "compte.codes_secours_regeneres",
       "compte.code_secours_utilise",
       "compte.double_auth_tentatives",
+      "compte.mot_de_passe_change",
     ]);
   });
 
@@ -578,6 +583,27 @@ describe("modèles de la réinitialisation (1.3)", () => {
     expect(corps).not.toMatch(/\d{4}-\d{2}-\d{2}/u);
     expect(
       MODELES_EMAIL["compte.mot_de_passe_modifie"].parametres.safeParse({ page: "connexion" })
+        .success,
+    ).toBe(false);
+  });
+
+  // 1.5 (docs/features/profil-sessions.md, section 8, test 9) : distinct de
+  // la notification de la réinitialisation, « vos autres sessions ».
+  test("compte.mot_de_passe_change : aucun paramètre ; seul lien, « mot de passe oublié » ; ni date ni adresse IP", () => {
+    const textes = TEXTES_EMAILS.modeles["compte.mot_de_passe_change"];
+    expect(textes.sujet).toBe("Votre mot de passe a été modifié");
+    const { corps } = MODELES_EMAIL["compte.mot_de_passe_change"].construire(
+      {},
+      { origine: ORIGINE },
+    );
+    expect(corps.match(/https?:\/\/\S+/gu)).toEqual([`${ORIGINE}/mot-de-passe-oublie`]);
+    expect(corps).toContain("depuis une session ouverte");
+    expect(corps).toContain("vos autres sessions ont été fermées");
+    expect(corps).not.toContain("toutes vos sessions");
+    expect(corps).not.toMatch(/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/u);
+    expect(corps).not.toMatch(/\d{4}-\d{2}-\d{2}/u);
+    expect(
+      MODELES_EMAIL["compte.mot_de_passe_change"].parametres.safeParse({ page: "connexion" })
         .success,
     ).toBe(false);
   });
