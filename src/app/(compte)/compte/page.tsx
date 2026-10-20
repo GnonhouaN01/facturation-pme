@@ -8,7 +8,8 @@ import { TEXTES_COMPTE } from "@/textes/compte";
 // ajoutera les organisations (UC-02, étape 4). Fiche :
 // docs/features/connexion.md, sections 5.1 à 5.3. 1.4 : l'état de la double
 // authentification et le lien vers sa page (docs/features/
-// double-authentification.md, section 11).
+// double-authentification.md, section 11). 1.5 : liens vers le profil et les
+// sessions (docs/features/profil-sessions.md, section 9).
 export default async function PageCompte() {
   const etat = await lireComptePourPage(lireEtatDoubleAuth);
   const textes = TEXTES_COMPTE.compte;
@@ -38,6 +39,30 @@ export default async function PageCompte() {
           className="inline-flex min-h-11 items-center self-start text-[0.9375rem] leading-6 text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring"
         >
           {etat.actif ? textes.gerer : textes.activer}
+        </Link>
+      </section>
+      <section className="flex flex-col gap-3 rounded-lg border border-border bg-card p-6">
+        <h2 className="font-heading text-[1.25rem] leading-7 font-semibold text-foreground">
+          {textes.profilTitre}
+        </h2>
+        <p className="text-[0.9375rem] leading-6 text-muted-foreground">{textes.profilAide}</p>
+        <Link
+          href="/compte/profil"
+          className="inline-flex min-h-11 items-center self-start text-[0.9375rem] leading-6 text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring"
+        >
+          {textes.modifierProfil}
+        </Link>
+      </section>
+      <section className="flex flex-col gap-3 rounded-lg border border-border bg-card p-6">
+        <h2 className="font-heading text-[1.25rem] leading-7 font-semibold text-foreground">
+          {textes.sessionsTitre}
+        </h2>
+        <p className="text-[0.9375rem] leading-6 text-muted-foreground">{textes.sessionsAide}</p>
+        <Link
+          href="/compte/sessions"
+          className="inline-flex min-h-11 items-center self-start text-[0.9375rem] leading-6 text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring"
+        >
+          {textes.voirSessions}
         </Link>
       </section>
     </main>

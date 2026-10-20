@@ -7,4 +7,6 @@ export const TEXTES_COMMUNS = {
   allerAuContenu: "Aller au contenu",
   menu: "Menu",
   revenirAccueil: "Revenir à l'accueil",
+  // 1.5 : « 20/10/2026 à 14:05 » (docs/features/profil-sessions.md, section 7).
+  liaisonHeure: "à",
 } as const;

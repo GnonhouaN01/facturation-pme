@@ -313,8 +313,9 @@ describe("sans session : connexion_requise, rien d'autre", () => {
       });
       expect(profil.lireSession).toHaveBeenCalledTimes(1);
       expect(traiter).not.toHaveBeenCalled();
-      const { lireSession: _lue, ...autres } = profil;
-      aucuneDependanceAppelee(autres as FauxProfil);
+      for (const [nom, espion] of Object.entries(profil)) {
+        if (nom !== "lireSession") expect(espion, nom).not.toHaveBeenCalled();
+      }
     },
   );
 

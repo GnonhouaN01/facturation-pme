@@ -240,6 +240,24 @@ export const MODELES_EMAIL = {
       };
     },
   },
+  // Profil (1.5) : changement du mot de passe depuis une session ; aucun
+  // paramètre ; lien fixe vers « mot de passe oublié ». Fiche :
+  // docs/features/profil-sessions.md, section 8.
+  "compte.mot_de_passe_change": {
+    parametres: z.strictObject({}),
+    construire: (
+      parametres: Record<string, unknown>,
+      contexte: { origine: string },
+    ): Construction => {
+      void parametres;
+      const textes = TEXTES_EMAILS.modeles["compte.mot_de_passe_change"];
+      const lien = lienPage(contexte.origine, "mot-de-passe-oublie");
+      return {
+        sujet: textes.sujet,
+        corps: corpsAvecFin(`${textes.corps}\n\n${textes.oubli}\n${lien}`),
+      };
+    },
+  },
 } as const satisfies Record<string, DefinitionModele>;
 
 export type ModeleEmail = keyof typeof MODELES_EMAIL;

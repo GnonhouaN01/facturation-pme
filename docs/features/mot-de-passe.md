@@ -520,7 +520,7 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 22 relèven
 ## Reporté
 
 - **1.4** : test « la double authentification reste exigée après une réinitialisation » (T-04, UC-03 « Abus ») ; stockage des codes dans `verification`.
-- **1.5** : affichage des sessions ; la réinitialisation les ferme toutes dès la 1.3. **Correction du nom saisi par un tiers** : le compte récupéré par une réinitialisation garde le nom choisi par le pré-propriétaire (section 4.3, décision B) ; la 1.5 donne à l'utilisateur le moyen de le corriger.
+- **1.5** : affichage des sessions ; la réinitialisation les ferme toutes dès la 1.3. **Correction du nom saisi par un tiers** : le compte récupéré par une réinitialisation garde le nom choisi par le pré-propriétaire (section 4.3, décision B) ; la 1.5 donne à l'utilisateur le moyen de le corriger. **Traité** par `docs/features/profil-sessions.md` (sections 4 et 5), changement du mot de passe depuis une session compris.
 - **1.6 ou paramètres du compte** : changement du mot de passe depuis une session (`/change-password`), avec `haveIBeenPwned` et la même révocation.
 - **8.1** : signalement des lignes `[email] ... "limite"` et `[auth] error` au service de suivi.
 

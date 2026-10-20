@@ -89,6 +89,15 @@ export const LIMITES = {
   "auth.double_auth_compte": { maximum: 20, fenetreSecondes: 24 * 60 * 60, par: "utilisateur" },
   "auth.double_auth_gestion": { maximum: 10, fenetreSecondes: 60 * 60, par: "utilisateur" },
   "email.double_auth": { maximum: 40, fenetreSecondes: 24 * 60 * 60, par: "application" },
+  // Profil et sessions (1.5, S-11, T-01) : par utilisateur dans notre
+  // passerelle, les quatre points (révocations, mot de passe, nom), puis les
+  // essais du mot de passe actuel, avant toute vérification ; par adresse IP
+  // dans Better Auth, chemin interne /change-password. La notification part
+  // sur email.reinitialisation. Fiche : docs/features/profil-sessions.md,
+  // sections 6 et 8.
+  "auth.profil_compte": { maximum: 30, fenetreSecondes: 60 * 60, par: "utilisateur" },
+  "auth.mot_de_passe_compte": { maximum: 8, fenetreSecondes: 24 * 60 * 60, par: "utilisateur" },
+  "auth.changement_mot_de_passe": { maximum: 4, fenetreSecondes: 10 * 60, par: "adresse_ip" },
 } as const satisfies Record<string, Limite>;
 
 // Valeur comptée par les limites « par application » : un seul compte Gmail

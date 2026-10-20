@@ -69,7 +69,7 @@ La 1.6 livre le mécanisme qu'attend la chaîne de contrôles : jusque-là, tout
 - la page `/donnees-personnelles` (information des utilisateurs sur leurs données, `THREATS.md` section 7), publiée en production ; elle demande sa propre fiche ;
 - la formalité auprès de l'ARTCI, autorité de protection des données de Côte d'Ivoire (loi n° 2013-450 du 19 juin 2013 relative à la protection des données à caractère personnel), vérifiée : nature de la formalité due, et formalité accomplie si elle l'est.
 
-Jusque-là, les comptes restent fermés en production, et les fonctionnalités suivantes du jalon 1 s'y ajoutent fermées. Base de production vérifiée le 2026-10-18 : 9 migrations, 11 tables, droits conformes, aucun compte. Si la 1.4 est fusionnée avant #52, celle-ci passe à quatorze points d'entrée (`docs/features/double-authentification.md`, section 13).
+Jusque-là, les comptes restent fermés en production, et les fonctionnalités suivantes du jalon 1 s'y ajoutent fermées. Base de production vérifiée le 2026-10-18 : 9 migrations, 11 tables, droits conformes, aucun compte. Si la 1.4 est fusionnée avant #52, celle-ci passe à quatorze points d'entrée (`docs/features/double-authentification.md`, section 13) ; dix-huit si la 1.5 l'est aussi (`docs/features/profil-sessions.md`, section 11).
 
 **Démontrable à la fin :** un visiteur crée un compte, le vérifie, active la double authentification et gère ses sessions.
 

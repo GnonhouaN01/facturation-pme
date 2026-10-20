@@ -1,7 +1,7 @@
 import { randomInt } from "node:crypto";
 
 import { and, eq, like } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { env } from "../env";
 
@@ -23,6 +23,19 @@ const MOT_DE_PASSE = "une-phrase-de-passe-solide";
 const NOUVEAU = "une-autre-phrase-bien-longue";
 
 afterAll(() => banc.nettoyer());
+
+// Have I Been Pwned simulé : aucun mot de passe du test n'y figure.
+beforeEach(() => {
+  vi.stubGlobal("fetch", async (entree: string | URL | Request) => {
+    const url = new URL(entree instanceof Request ? entree.url : entree);
+    if (url.hostname !== "api.pwnedpasswords.com") throw new Error("appel inattendu");
+    return new Response("0000000000000000000000000000000000A:1\r\n");
+  });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 function ip(): string {
   return `198.51.100.${randomInt(1, 255)}`;

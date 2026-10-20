@@ -12,11 +12,14 @@ import { auth } from "./config";
 // pas de session (F-001, docs/features/inscription.md, section 4.6). L'état
 // du second facteur est lu avec la session, sans cache : seule la valeur true
 // compte (étape 7, docs/features/double-authentification.md, section 9).
+// 1.5 : l'identifiant de la session, jamais son jeton
+// (docs/features/profil-sessions.md, section 3.1).
 export async function lireSession(entetes: Headers): Promise<SessionLue | null> {
   const lue = await auth.api.getSession({ headers: entetes });
   if (!lue || lue.user.emailVerified !== true) return null;
   return {
     utilisateurId: lue.user.id,
+    sessionId: lue.session.id,
     organisationActiveId: lue.session.activeOrganizationId ?? null,
     doubleAuthentification: lue.user.twoFactorEnabled === true,
   };

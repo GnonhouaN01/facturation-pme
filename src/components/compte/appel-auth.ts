@@ -70,7 +70,12 @@ export type PointAuth =
   | "/two-factor/confirm-enable"
   | "/two-factor/replace"
   | "/two-factor/generate-backup-codes"
-  | "/two-factor/disable";
+  | "/two-factor/disable"
+  // 1.5 (docs/features/profil-sessions.md, section 2).
+  | "/revoke-session"
+  | "/revoke-other-sessions"
+  | "/change-password"
+  | "/update-user";
 
 const LIGNE_QR = /^[01]+$/u;
 const CLE = /^[A-Z2-7]{1,4}( [A-Z2-7]{1,4})*$/u;

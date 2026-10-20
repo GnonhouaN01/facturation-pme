@@ -11,6 +11,12 @@ import {
   type EtatDoubleAuthCompte,
 } from "../auth/etat-double-auth";
 import { lireSession } from "../auth/session";
+import {
+  lireProfilCompte,
+  lireSessionsCompte,
+  type Profil,
+  type SessionAffichee,
+} from "../auth/sessions-compte";
 import type { Droit } from "../autorisation/matrice";
 import type { ActionJournal } from "../journal/actions";
 
@@ -83,8 +89,10 @@ export async function lirePourPage<T>(
 // la page « introuvable », comme lirePourPage ; lecture en échec : la page
 // « erreur », avec un incident, sans cause. lire ne reçoit que l'identifiant
 // de l'utilisateur : aucune donnée d'une organisation n'est lisible par
-// elle. Fiche : docs/features/connexion.md, section 5.1.
-export type ContexteCompte = { utilisateurId: string };
+// elle. Fiche : docs/features/connexion.md, section 5.1. 1.5 : aussi
+// l'identifiant de la session de la requête, jamais son jeton
+// (docs/features/profil-sessions.md, section 3.1).
+export type ContexteCompte = { utilisateurId: string; sessionId: string };
 
 export async function lireComptePourPage<T>(
   lire: (compte: ContexteCompte) => Promise<T>,
@@ -97,7 +105,7 @@ export async function lireComptePourPage<T>(
     return traduireLecture<T>(traduireErreur(erreur, "compte.lecture"));
   }
   if (session === null) notFound();
-  return lire({ utilisateurId: session.utilisateurId });
+  return lire({ utilisateurId: session.utilisateurId, sessionId: session.sessionId });
 }
 
 // Pages de connexion et d'inscription (correctif de la 1.2) : un utilisateur
@@ -150,4 +158,15 @@ export function traduireLecture<T>(resultat: ResultatLecture<T>): T {
 export type { EtatDoubleAuthCompte };
 export function lireEtatDoubleAuth(compte: ContexteCompte): Promise<EtatDoubleAuthCompte> {
   return lireEtat(compte.utilisateurId);
+}
+
+// Pages du profil et des sessions (1.5) : pour l'utilisateur et la session
+// que lireComptePourPage a lus, jamais pour un identifiant reçu. Fiche :
+// docs/features/profil-sessions.md, sections 3.1 et 9.
+export type { Profil, SessionAffichee };
+export function lireSessions(compte: ContexteCompte): Promise<SessionAffichee[]> {
+  return lireSessionsCompte(compte);
+}
+export function lireProfil(compte: ContexteCompte): Promise<Profil> {
+  return lireProfilCompte(compte);
 }

@@ -9,6 +9,7 @@ import { inArray } from "drizzle-orm";
 import { empreinteCodeSecours } from "../../auth/codes-secours";
 import { optionsAuth } from "../../auth/config";
 import { creerDependancesDoubleAuth } from "../../auth/dependances-double-auth";
+import { creerDependancesProfil } from "../../auth/dependances-profil";
 import { creerEmailsCompte } from "../../auth/emails";
 import { creerTraitementAuth, jetonDeSession } from "../../auth/points-entree";
 import { matriceQr } from "../../auth/qr";
@@ -24,7 +25,7 @@ import { db } from "../client";
 import { creerCompteur, type Compteur } from "../debit";
 import * as requetesDoubleAuth from "../double-authentification";
 import { marquerAdresseVerifiee, supprimerJetonsReinitialisation } from "../reinitialisation";
-import { revoquerAutresSessions } from "../sessions";
+import { revoquerAutresSessions, revoquerSessionDe } from "../sessions";
 import { user, verification } from "../schema/auth";
 import { compteurDebit } from "../schema/technique";
 
@@ -120,6 +121,19 @@ export function bancInscription(options: { adresses: number }): BancInscription 
     },
   });
 
+  // 1.4, comme gestionnaire.ts : même fabrique, sur cette instance, ce
+  // compteur et ces emails (docs/features/double-authentification.md,
+  // tests 19 à 25).
+  const doubleAuth = creerDependancesDoubleAuth({
+    contexte: () => auth.$context,
+    verifierDebit: verificateur.verifierDebit,
+    requetes: requetesDoubleAuth,
+    revoquerAutresSessions,
+    empreinteCodeSecours,
+    matriceQr,
+    emailDoubleAuth: emails.emailDoubleAuth,
+  });
+
   return {
     traiter: creerTraitementAuth({
       traiter: (requete) => auth.handler(requete),
@@ -150,17 +164,21 @@ export function bancInscription(options: { adresses: number }): BancInscription 
         return ligne !== null && ligne.expiresAt > new Date();
       },
       motDePasseCompromis: isPasswordCompromised,
-      // 1.4, comme gestionnaire.ts : même fabrique, sur cette instance, ce
-      // compteur et ces emails (docs/features/double-authentification.md,
-      // tests 19 à 25).
-      doubleAuth: creerDependancesDoubleAuth({
+      doubleAuth,
+      // 1.5, comme gestionnaire.ts (docs/features/profil-sessions.md,
+      // tests 12 à 14).
+      profil: creerDependancesProfil({
         contexte: () => auth.$context,
+        doubleAuth,
         verifierDebit: verificateur.verifierDebit,
-        requetes: requetesDoubleAuth,
-        revoquerAutresSessions,
-        empreinteCodeSecours,
-        matriceQr,
-        emailDoubleAuth: emails.emailDoubleAuth,
+        motDePasseCompromis: isPasswordCompromised,
+        requetes: {
+          revoquerSessionDe,
+          revoquerAutresSessions,
+          supprimerJetonsReinitialisation,
+          adresseUtilisateur: requetesDoubleAuth.adresseUtilisateur,
+        },
+        emailProfil: emails.emailProfil,
       }),
     }),
     transport,

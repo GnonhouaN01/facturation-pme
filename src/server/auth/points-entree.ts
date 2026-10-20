@@ -23,6 +23,7 @@ import {
   type ReponseBetterAuth,
 } from "./double-authentification";
 import { consignerIncidentAuth } from "./journal";
+import { POINTS_PROFIL, type DependancesProfil } from "./profil";
 
 // Le gestionnaire de /api/auth : une liste fermée de points d'entrée ouverts
 // (T-55). Tout autre chemin, toute autre méthode, et les points ouverts en
@@ -36,7 +37,9 @@ import { consignerIncidentAuth } from "./journal";
 // section 2 ; docs/features/connexion.md, sections 1 à 4 et 6 ;
 // docs/features/mot-de-passe.md, sections 2, 3.3 et 8 (mot de passe oublié) ;
 // docs/features/double-authentification.md, section 2 (double
-// authentification, sept points composés dans double-authentification.ts).
+// authentification, sept points composés dans double-authentification.ts) ;
+// docs/features/profil-sessions.md, section 2 (profil et sessions, quatre
+// points composés dans profil.ts).
 
 // Décision 1 de la 1.1, étendue à la connexion par la 1.2 et au mot de passe
 // oublié par la 1.3 : comptes fermés en production. Une constante du code,
@@ -90,6 +93,8 @@ export type DependancesPointsEntree = {
   motDePasseCompromis: (motDePasse: string) => Promise<boolean>;
   // 1.4 (docs/features/double-authentification.md, section 2).
   doubleAuth: DependancesDoubleAuth;
+  // 1.5 (docs/features/profil-sessions.md, section 2).
+  profil: DependancesProfil;
   horloge?: Horloge;
 };
 
@@ -413,10 +418,11 @@ const POINTS_SIMPLES: Readonly<Record<string, PointEntree>> = Object.freeze({
   },
 } satisfies Record<string, PointEntree>);
 
-// La liste fermée : les sept points simples (un appel à Better Auth chacun) et
-// les sept points de la double authentification (1.4).
+// La liste fermée : les sept points simples (un appel à Better Auth chacun),
+// les sept points de la double authentification (1.4) et les quatre du
+// profil et des sessions (1.5).
 export const POINTS_ENTREE_OUVERTS: Readonly<Record<string, PointEntree | PointCompose>> =
-  Object.freeze({ ...POINTS_SIMPLES, ...POINTS_DOUBLE_AUTH });
+  Object.freeze({ ...POINTS_SIMPLES, ...POINTS_DOUBLE_AUTH, ...POINTS_PROFIL });
 
 // Le jeton de session porté par un en-tête Cookie (valeur signée
 // « jeton.signature », encodée), sans vérifier la signature : sert à relire
@@ -587,6 +593,7 @@ export function creerTraitementAuth(
           appeler: appeler(requete.headers),
           revoquerSessionRecue: () => dependances.revoquerSession(requete.headers),
           dependances: dependances.doubleAuth,
+          profil: dependances.profil,
         });
       } catch {
         return refus("erreur");

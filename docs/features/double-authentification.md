@@ -588,7 +588,7 @@ Dans cet ordre, chacun vu en échec avant le code. Les numéros 1 à 27 relèven
 - **2.1** : UC-02 4a, renvoi vers l'activation d'un Propriétaire ou d'un Comptable sans second facteur, à l'arrivée sur une organisation ; trace éventuelle, au journal d'audit d'une organisation, du changement de second facteur de l'un de ses Propriétaires ou Comptables.
 - **2.2** : S-12, seconde phrase : un Propriétaire impose la double authentification à toute son organisation (réglage de l'organisation, lu par l'étape 7).
 - **2.4** : S-13 côté interface : à la promotion d'un membre, l'avertir que ses nouveaux droits attendent l'activation (UC-10 4a). Le refus, lui, est livré par la PR 2.
-- **1.5** : affichage des sessions ; les fermetures de la section 8.2 y deviennent visibles.
+- **1.5** : affichage des sessions ; les fermetures de la section 8.2 y deviennent visibles. **Traité** par `docs/features/profil-sessions.md`, section 3.5.
 - **1.6** : nouvelle authentification avant une action sensible ; le code du second facteur pourra en faire partie.
 - **8.1** : signalement au service de suivi des lignes `[email] ... "limite"` de `email.double_auth` et des blocages `auth.double_auth_compte`.
 

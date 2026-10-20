@@ -85,6 +85,8 @@ describe("messages de sécurité, mot pour mot", () => {
 });
 
 describe("textes fixés par la fiche", () => {
+  // Modifié en 1.5 : le mot qui lie la date et l'heure
+  // (docs/features/profil-sessions.md, section 7).
   test("textes communs", () => {
     expect(TEXTES_COMMUNS).toEqual({
       produit: "Facturation PME",
@@ -92,6 +94,7 @@ describe("textes fixés par la fiche", () => {
       allerAuContenu: "Aller au contenu",
       menu: "Menu",
       revenirAccueil: "Revenir à l'accueil",
+      liaisonHeure: "à",
     });
   });
 

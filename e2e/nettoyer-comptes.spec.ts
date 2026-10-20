@@ -147,7 +147,8 @@ test.describe("nettoyage des comptes de bout en bout", () => {
     expect([...ADRESSES_E2E]).toEqual(attendues);
     expect(new Set(ADRESSES_E2E).size).toBe(ADRESSES_E2E.length);
     for (const adresse of ADRESSES_E2E) {
-      expect(adresse).toMatch(/^e2e-[0-9a-f]{8}-\d{1,3}@exemple\.invalid$/);
+      // Modifié en 1.5 : 1 050 adresses, numéro sur 4 chiffres au plus.
+      expect(adresse).toMatch(/^e2e-[0-9a-f]{8}-\d{1,4}@exemple\.invalid$/);
     }
   });
 

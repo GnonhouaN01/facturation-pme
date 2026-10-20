@@ -3,7 +3,8 @@ import "server-only";
 import { isPasswordCompromised } from "better-auth/plugins";
 
 import * as requetesDoubleAuth from "../db/double-authentification";
-import { revoquerAutresSessions } from "../db/sessions";
+import { supprimerJetonsReinitialisation } from "../db/reinitialisation";
+import { revoquerAutresSessions, revoquerSessionDe } from "../db/sessions";
 import { verifierDebit } from "../debit/debit";
 import { adressePourCompteur } from "../email/adresse";
 import { configurationEmail, env } from "../env";
@@ -11,7 +12,8 @@ import { configurationEmail, env } from "../env";
 import { empreinteCodeSecours } from "./codes-secours";
 import { auth } from "./config";
 import { creerDependancesDoubleAuth } from "./dependances-double-auth";
-import { planifierEmailDoubleAuth } from "./emails";
+import { creerDependancesProfil } from "./dependances-profil";
+import { planifierEmailDoubleAuth, planifierEmailProfil } from "./emails";
 import { creerTraitementAuth, jetonDeSession } from "./points-entree";
 import { matriceQr } from "./qr";
 
@@ -36,7 +38,20 @@ import { matriceQr } from "./qr";
 // docs/features/mot-de-passe.md, sections 3.3 et 5. Double authentification
 // (1.4) : dépendances liées par creerDependancesDoubleAuth, lectures par
 // l'adaptateur interne, requêtes de db/double-authentification.ts et
-// db/sessions.ts. Fiche : docs/features/double-authentification.md.
+// db/sessions.ts. Fiche : docs/features/double-authentification.md. Profil
+// et sessions (1.5) : dépendances liées par creerDependancesProfil, sur la
+// même lecture de session et la même vérification du mot de passe que la
+// double authentification. Fiche : docs/features/profil-sessions.md.
+const doubleAuth = creerDependancesDoubleAuth({
+  contexte: () => auth.$context,
+  verifierDebit,
+  requetes: requetesDoubleAuth,
+  revoquerAutresSessions,
+  empreinteCodeSecours,
+  matriceQr,
+  emailDoubleAuth: planifierEmailDoubleAuth,
+});
+
 export const traiterRequeteAuth = creerTraitementAuth({
   traiter: (requete) => auth.handler(requete),
   origine: env.BETTER_AUTH_URL,
@@ -60,13 +75,18 @@ export const traiterRequeteAuth = creerTraitementAuth({
     return ligne !== null && ligne.expiresAt > new Date();
   },
   motDePasseCompromis: isPasswordCompromised,
-  doubleAuth: creerDependancesDoubleAuth({
+  doubleAuth,
+  profil: creerDependancesProfil({
     contexte: () => auth.$context,
+    doubleAuth,
     verifierDebit,
-    requetes: requetesDoubleAuth,
-    revoquerAutresSessions,
-    empreinteCodeSecours,
-    matriceQr,
-    emailDoubleAuth: planifierEmailDoubleAuth,
+    motDePasseCompromis: isPasswordCompromised,
+    requetes: {
+      revoquerSessionDe,
+      revoquerAutresSessions,
+      supprimerJetonsReinitialisation,
+      adresseUtilisateur: requetesDoubleAuth.adresseUtilisateur,
+    },
+    emailProfil: planifierEmailProfil,
   }),
 });

@@ -32,6 +32,9 @@ export const CHEMINS_LIMITES = {
   "/two-factor/enable": "auth.double_auth_activation",
   "/two-factor/generate-backup-codes": "auth.double_auth_codes",
   "/two-factor/disable": "auth.double_auth_desactivation",
+  // 1.5 : chemin interne du changement du mot de passe
+  // (docs/features/profil-sessions.md, section 6).
+  "/change-password": "auth.changement_mot_de_passe",
 } as const satisfies Record<string, NomLimite>;
 
 export type RegleBetterAuth = { window: number; max: number };

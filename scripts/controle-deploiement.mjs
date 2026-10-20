@@ -310,6 +310,13 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     await lire(origine, "/compte/double-authentification"),
     await lire(origine, "/compte/double-authentification", cookieForge()),
   ];
+  // 1.5 : le profil et les sessions, comme /compte.
+  const [profil, profilForge, sessions, sessionsForge] = [
+    await lire(origine, "/compte/profil"),
+    await lire(origine, "/compte/profil", cookieForge()),
+    await lire(origine, "/compte/sessions"),
+    await lire(origine, "/compte/sessions", cookieForge()),
+  ];
   // 1.3 : les pages publiques du mot de passe oublié.
   const [oubli, lienReinitialisation] = [
     await lire(origine, "/mot-de-passe-oublie"),
@@ -333,10 +340,12 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     await lire(origine, "/api/auth/two-factor/get-totp-uri"),
     await lire(origine, "/api/auth/two-factor/send-otp"),
     await lire(origine, "/api/auth/two-factor/verify-otp"),
+    // 1.5 : la liste des sessions de Better Auth porte leurs jetons.
+    await lire(origine, "/api/auth/list-sessions"),
     await lire(origine, authInconnu()),
   ];
-  // Décision 1 de la 1.1, étendue par la 1.2, la 1.3 et la 1.4 : en
-  // production, les quatorze POST des comptes répondent comme un chemin
+  // Décision 1 de la 1.1, étendue par la 1.2, la 1.3, la 1.4 et la 1.5 : en
+  // production, les dix-huit POST des comptes répondent comme un chemin
   // inexistant de /api/auth.
   const comptes = [];
   for (const chemin of [
@@ -354,6 +363,11 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     "/api/auth/two-factor/replace",
     "/api/auth/two-factor/generate-backup-codes",
     "/api/auth/two-factor/disable",
+    // 1.5 (docs/features/profil-sessions.md, section 11).
+    "/api/auth/revoke-session",
+    "/api/auth/revoke-other-sessions",
+    "/api/auth/change-password",
+    "/api/auth/update-user",
     authInconnu(),
   ]) {
     comptes.push(await lire(origine, chemin, undefined, undefined, "POST"));
@@ -378,6 +392,8 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     ["connexion", connexion, 200, [connexion]],
     ["compte", compte, 404, [compte, compteForge]],
     ["double-authentification", doubleAuth, 404, [doubleAuth, doubleAuthForge]],
+    ["profil", profil, 404, [profil, profilForge]],
+    ["sessions", sessions, 404, [sessions, sessionsForge]],
     ["mot-de-passe-oublie", oubli, 200, [oubli]],
     ["lien-reinitialisation", lienReinitialisation, 200, [lienReinitialisation]],
   ];
@@ -405,6 +421,8 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     ["inexistante", [absente]],
     ["compte", [compte, compteForge]],
     ["double-authentification", [doubleAuth, doubleAuthForge]],
+    ["profil", [profil, profilForge]],
+    ["sessions", [sessions, sessionsForge]],
   ]) {
     controler(`${nom}:gabarit`, lues, (...r) => {
       const trouves = TEXTES_GABARIT.filter((texte) => r.some((x) => x.corps.includes(texte)));
@@ -443,6 +461,18 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     ["sans cookie", "cookie forgé"],
     "statut ou document différent avec un cookie de session forgé",
   );
+  for (const [nom, a, b] of [
+    ["profil", profil, profilForge],
+    ["sessions", sessions, sessionsForge],
+  ]) {
+    identique(
+      `${nom}:identique`,
+      a,
+      b,
+      ["sans cookie", "cookie forgé"],
+      "statut ou document différent avec un cookie de session forgé",
+    );
+  }
   identique(
     "lien:identique",
     lien1,
@@ -487,7 +517,7 @@ export async function controlerSite(adresse, { detail = false } = {}) {
   controler("auth:identique", auths, (...r) =>
     r.every((x) => forme(x) === forme(r[0]))
       ? null
-      : "réponse différente pour un point d'entrée fermé (/organization/*, /get-session, /two-factor/get-totp-uri) et un chemin inexistant",
+      : "réponse différente pour un point d'entrée fermé (/organization/*, /get-session, /two-factor/get-totp-uri, /list-sessions) et un chemin inexistant",
   );
   controler("comptes:statut", comptes, premierProbleme(statut(404)));
   controler("comptes:identique", comptes, (...r) =>

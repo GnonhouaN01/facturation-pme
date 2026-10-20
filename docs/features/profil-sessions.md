@@ -1,6 +1,6 @@
 # Fonctionnalité : profil et sécurité du compte (sessions, mot de passe, nom)
 
-Statut : validée le 2026-10-20 par application des recommandations de l'assistant (consigne du développeur : « applique tes recommandations aux questions ouvertes ») ; les vrais choix restants sont listés à la fin (« Choix restants »).
+Statut : validée le 2026-10-20 par application des recommandations de l'assistant (consigne du développeur : « applique tes recommandations aux questions ouvertes ») ; implémentée le 2026-10-20 (« Notes de l'implémentation ») ; preuve manuelle à regrouper avec celle de la 1.4. Les vrais choix restants sont listés à la fin (« Choix restants »).
 
 Jalon 1, fonctionnalité 1.5 de `docs/PLAN.md`. Taille S dans le plan, M avec les reports. Cas d'utilisation : UC-05, UC-03 (« Abus », par symétrie : changer de mot de passe ferme les autres sessions). Exigences : F-004, S-17, S-10, S-11, S-81, S-82, S-85, S-87, NF-01, NF-02. Menaces : T-03, T-01 (essais de mot de passe par une session volée), T-34 (texte saisi par un tiers affiché), T-39, T-55, T-65.
 
@@ -237,7 +237,7 @@ Après un changement du mot de passe : message « Mot de passe modifié. Vos aut
 `scripts/controle-deploiement.mjs` (production seulement, lancé par le workflow, jamais par l'assistant) :
 
 - `comptes:*` passe de quatorze à **dix-huit** `POST` sans corps ni `Origin`, identiques au `POST` d'un chemin inexistant tant que les comptes sont fermés ;
-- `auth:identique` gagne `GET /api/auth/list-sessions` et `POST /api/auth/revoke-sessions` ;
+- `auth:identique` gagne `GET /api/auth/list-sessions` (`POST /revoke-sessions` reste vérifié par les tests, voir « Notes de l'implémentation ») ;
 - `/compte/profil` et `/compte/sessions` contrôlées comme `/compte` (sans session et avec un cookie forgé, identiques, sans texte du gabarit).
 
 **Interaction avec la PR 2 de la 1.3 (#52)** : #52 doit passer les dix-huit `POST` à `403 refuse` (et non quatorze) ; à reprendre dans #52 avant sa fusion (`PLAN.md`, jalon 1).
@@ -396,3 +396,31 @@ Appliquées par l'assistant le 2026-10-20, selon sa recommandation (consigne du 
 1. **Dernière activité** (UC-05) : l'enregistrer (une écriture par requête, ou au plus une par heure et par session) revient sur la décision 3 de la 1.2 ; recommandé : non, dates d'ouverture et d'expiration seulement.
 2. **Code du second facteur au changement du mot de passe** : recommandé non (section 4) ; à revoir avec la 1.6 si le développeur préfère l'uniformité avec les codes de secours.
 3. **Organisation active après le changement du mot de passe** : perdue par la rotation de Better Auth ; à traiter en 2.1 (« Reporté »).
+
+## Notes de l'implémentation
+
+Le 2026-10-20, branche `feat/1.5-profil-sessions` : commits `docs(1.5): fiche`, `test(1.5)` (phase rouge), `feat(1.5)`.
+
+**Comportement de Better Auth 1.7.7** lu dans `node_modules` avant la fiche (section 1) : `/list-sessions` rend le jeton de chaque session (`parseSessionOutput` le garde) ; `/change-password` hache le nouveau mot de passe avant de vérifier l'actuel, supprime toutes les sessions et en ouvre une sans reprise de l'ancienne (organisation active perdue), rend le jeton dans le corps ; erreurs du journal par `logger.error`, réduites à une ligne fixe par `consignerAuth`.
+
+**Phase rouge** (commit `test(1.5)`). Unitaires : 112 échecs dans 11 fichiers, dont 2 non chargés (`appareil`, `profil` absents) : points du profil inconnus (404), inventaire à dix-huit, limites, modèle d'email, heure, `sessionId`, pages absentes. Intégration (sur `dev`) : 1 fichier non chargé (`db/profil` absent). Bout en bout (site construit avant le code, `src/` d'avant et nouveau parcours remisés le temps de la construction, base jetable) : 26 échecs, 117 réussis (parcours, journal et affichage du profil, `list-sessions`, contrôle après déploiement, rangs).
+
+**Passaient avant le code, et pourquoi** : les quatre points fermés en production et en `GET` (inconnus, donc déjà la réponse inexistante : garde de non-régression, avec un témoin hors production qui échouait) ; `GET /list-sessions` fermé (déjà fermé) ; la plupart des défauts du contrôle après déploiement qui ne touchent pas les nouvelles pages.
+
+**Tests modifiés, sans changer ce qu'ils prouvent** :
+
+- Listes des fiches précédentes : quatorze points ouverts deviennent dix-huit ; les lignes « `/revoke-session`, `/revoke-other-sessions` fermés (1.5) » et « `POST /change-password` fermé » deviennent leurs `GET` (le `POST` est ouvert) ; treize règles de débit au lieu de douze ; douze modèles d'email ; 98 requêtes du contrôle au lieu de 80, 38 `POST`, vingt lignes de détail et six comparaisons ; 35 rangs d'adresses au lieu de 31.
+- Appels de `creerTraitementAuth` des tests de la 1.1 à la 1.4 : nouvelle dépendance `profil` exigée par le type, inerte (`outils-test/profil.ts`, qui lève si une dépendance est atteinte).
+- Sessions factices des tests de la chaîne : champ `sessionId` ajouté ; `LIMITES_TEST` (`outils-test/email.ts`) : les trois limites nouvelles, exigées par le type ; texte commun `liaisonHeure` (`textes.test.ts`).
+- `e2e/nettoyer-comptes.ts` et son test : le numéro d'adresse passe de 3 à 4 chiffres au plus (35 rangs, 1 050 adresses par exécution ; le motif `\d{1,3}` refusait la liste, constaté au premier `npm run verifier`).
+- Erreurs de mise en place de mes propres tests, corrigées sans changer ce qu'ils vérifient : Have I Been Pwned simulé dans `profil.integration.test.ts` (le réseau est gardé ; l'inscription répondait `erreur`) ; « Fermer » cherché exactement (`exact: true`), « Fermer les autres sessions » y répondait aussi.
+
+**Écarts avec la fiche** :
+
+- `POST /revoke-sessions` n'est pas ajouté au contrôle après déploiement : `comptes:*` change de sens avec #52 (403 attendu pour les points ouverts), et un point fermé n'y a pas sa place ; il est vérifié fermé par `points-entree.attaque.test.ts` et `e2e/auth.attaque.spec.ts` avec une session valide.
+- Le test du journal (test 10) est dans `profil.attaque.test.ts`, qui a le banc des quatre points, et non dans `journal.attaque.test.ts`.
+- Les requêtes du profil vivent dans `src/server/db/profil.ts` (et non `comptes.ts`, réservé à la tâche quotidienne par la règle U) ; les lectures des pages dans `src/server/auth/sessions-compte.ts`.
+- Pages vérifiées à 390 et 1280 px (`e2e/profil-sessions.spec.ts`, projets `mobile-390` et `ordinateur-1280`), pas à 360.
+- `creerDependancesProfil` reprend `lireSession` et `motDePasseValide` des dépendances de la double authentification : une seule lecture de session et une seule vérification du mot de passe.
+
+**Constats hors périmètre** (aucun changement fait) : `e2e/zones.attaque.spec.ts`, test 31 de la 1.4 (« Propriétaire sans second facteur »), échoue localement 2 fois sur 3 sur `origin/main` comme sur cette branche (`--repeat-each 3`) : le document « introuvable » reçu avec une session porte une balise `<script>` vide de plus que sans session (découpage du flux de Next.js). Il est passé au second `npm run verifier`. Un premier `npm run test:integration` a vu échouer une fois `reinitialisation.integration.test.ts` (« supprimerJetonsReinitialisation »), qui passe seul et au passage complet suivant ; ses requêtes ne touchent pas les comptes de la 1.5.

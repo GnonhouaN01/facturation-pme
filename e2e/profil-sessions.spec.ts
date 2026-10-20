@@ -95,7 +95,7 @@ test.describe("UC-05, changement du mot de passe et du nom", () => {
     expect(html).not.toContain("Mobile Safari/537.36");
 
     // UC-05, étapes 2 et 3 : l'autre session fermée, refusée aussitôt.
-    await lignes.nth(1).getByRole("button", { name: SESSIONS.fermer }).click();
+    await lignes.nth(1).getByRole("button", { name: SESSIONS.fermer, exact: true }).click();
     await expect(lignes).toHaveCount(1);
     expect((await pageTelephone.goto("/compte"))?.status()).toBe(404);
 
@@ -156,7 +156,11 @@ test.describe("T-39 : journal du site construit, profil et sessions", () => {
 
     await page.goto("/compte/sessions");
     await expect(page.getByTestId("session")).toHaveCount(3);
-    await page.getByTestId("session").nth(1).getByRole("button", { name: SESSIONS.fermer }).click();
+    await page
+      .getByTestId("session")
+      .nth(1)
+      .getByRole("button", { name: SESSIONS.fermer, exact: true })
+      .click();
     await expect(page.getByTestId("session")).toHaveCount(2);
     await page.getByRole("button", { name: SESSIONS.fermerAutres }).click();
     await expect(page.getByTestId("session")).toHaveCount(1);
@@ -215,7 +219,7 @@ test.describe("profil et sessions, affichage", () => {
     await expect(page.getByTestId("session")).toHaveCount(2);
     await sansDefilement();
     for (const cible of [
-      page.getByRole("button", { name: SESSIONS.fermer }),
+      page.getByRole("button", { name: SESSIONS.fermer, exact: true }),
       page.getByRole("button", { name: SESSIONS.fermerAutres }),
     ]) {
       expect((await cible.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
