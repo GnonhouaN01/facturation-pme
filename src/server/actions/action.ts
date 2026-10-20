@@ -5,7 +5,15 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { lireSession } from "../auth/session";
-import { DROITS, perimetre, peut, ROLES, type Droit, type Role } from "../autorisation/matrice";
+import {
+  DROITS,
+  perimetre,
+  peut,
+  ROLES,
+  ROLES_DOUBLE_AUTH,
+  type Droit,
+  type Role,
+} from "../autorisation/matrice";
 import { executerDansOrganisation, type TransactionOrganisation } from "../db/client";
 import { lireAdhesion } from "../db/requetes/adhesions";
 import { verifierDebit } from "../debit/debit";
@@ -105,6 +113,8 @@ export type RequeteChaine = { entetes: Headers };
 export type SessionLue = {
   utilisateurId: string;
   organisationActiveId: string | null;
+  // user.two_factor_enabled, relu avec la session à chaque requête (étape 7).
+  doubleAuthentification: boolean;
 };
 
 export type AdhesionLue = {
@@ -320,7 +330,14 @@ export function creerChaine(dependances: DependancesChaine): Chaine {
         throw new RefusUniforme();
       }
 
-      // 7. Point d'accroche 1.4 : double authentification par rôle.
+      // 7. Double authentification exigée du Propriétaire et du Comptable
+      // (S-12, S-13, T-02) : rôle et état relus à chaque requête ; refus
+      // dans la transaction, qui est annulée, avant toute lecture de l'entrée.
+      // Seule la valeur true compte. Fiche :
+      // docs/features/double-authentification.md, section 9.
+      if (ROLES_DOUBLE_AUTH.includes(adhesion.role) && session.doubleAuthentification !== true) {
+        throw new RefusUniforme();
+      }
 
       return travail({
         session,

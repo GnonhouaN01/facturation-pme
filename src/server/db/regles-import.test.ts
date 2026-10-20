@@ -1,3 +1,7 @@
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { ESLint } from "eslint";
 import { describe, expect, test } from "vitest";
 
@@ -1096,5 +1100,137 @@ describe("V. uqr ne s'importe que dans src/server/auth/qr.ts", { timeout: 60_000
 
   test("src/server/auth/qr.ts : autorisé", async () => {
     expect(await refus(UQR, "src/server/auth/qr.ts")).toEqual([]);
+  });
+});
+
+// W. Tirage sans biais (1.4, PR 2, CodeQL js/biased-cryptographic-random) :
+// aucun % sur un appel à randomBytes, getRandomValues ou Math.random, sur tout
+// le dépôt. Fiche : docs/features/double-authentification.md, « Notes de
+// l'implémentation », PR 2.
+const MESSAGE_W = "règle W";
+
+async function refusW(code: string, fichier: string): Promise<string[]> {
+  return (await refus(code, fichier)).filter((message) => message.includes(MESSAGE_W));
+}
+
+const W_OCTETS = `import { randomBytes } from "node:crypto";
+export const c = String(100_000 + (randomBytes(4).readUInt32BE() % 900_000));
+`;
+const W_OCTETS_MEMBRE = `import crypto from "node:crypto";
+export const c = crypto.randomBytes(1)[0] % 62;
+`;
+const W_VALEURS = `export const c = crypto.getRandomValues(new Uint32Array(1))[0] % 10;
+`;
+const W_VALEURS_NUE = `const getRandomValues = (t: Uint8Array) => t;
+export const c = (getRandomValues(new Uint8Array(1))[0] ?? 0) % 10;
+`;
+const W_MATH = `export const c = Math.floor(Math.random() * 100) % 7;
+`;
+const W_MODULO_A_GAUCHE = `import { randomBytes } from "node:crypto";
+export const c = 1_000 % (randomBytes(1)[0] ?? 1);
+`;
+const W_AFFECTATION = `import { randomBytes } from "node:crypto";
+let c = randomBytes(4).readUInt32BE();
+c %= 10;
+export const d = (c %= randomBytes(1)[0] ?? 1);
+`;
+const W_TIRAGE_SUR = `import { randomInt } from "node:crypto";
+export const c = String(randomInt(100_000, 1_000_000));
+`;
+const W_MODULO_SANS_TIRAGE = `import { createHmac, randomBytes } from "node:crypto";
+const hmac = createHmac("sha1", randomBytes(20)).update("m").digest();
+export const code = hmac.readUInt32BE(0) % 1_000_000;
+export const jeton = randomBytes(16).toString("hex");
+`;
+const W_MATH_SANS_MODULO = `export const c = Math.floor(Math.random() * 10);
+`;
+
+// Un fichier de chaque bloc de eslint.config.mjs qui déclare
+// no-restricted-syntax, plus les fichiers hors de src/.
+const FICHIERS_W = [
+  "e2e/essai.spec.ts",
+  "e2e/outil.ts",
+  "e2e/lanceur.mjs",
+  "scripts/essai.mjs",
+  "tests/essai.ts",
+  "essai.config.ts",
+  "src/server/services/essai.ts",
+  "src/server/auth/essai.ts",
+  "src/server/auth/essai.test.ts",
+  "src/server/db/essai.ts",
+  "src/server/db/essai.integration.test.ts",
+  "src/server/db/outils-test/essai.ts",
+  "src/server/db/debit.ts",
+  "src/server/debit/essai.ts",
+  "src/server/actions/essai.ts",
+  "src/server/actions/action.ts",
+  "src/server/actions/exposer.ts",
+  "src/server/env.ts",
+  "src/server/modules/email/smtp.ts",
+  "src/server/email/envoi.ts",
+  "src/proxy.ts",
+  "src/app/essai/actions.ts",
+  "src/app/(app)/essai/page.tsx",
+  "src/components/essai.tsx",
+  "src/components/ui/essai.tsx",
+];
+
+describe("W. aucun modulo sur un tirage aléatoire, sur tout le dépôt", { timeout: 120_000 }, () => {
+  test.each([
+    ["randomBytes, lu en entier", W_OCTETS],
+    ["crypto.randomBytes", W_OCTETS_MEMBRE],
+    ["crypto.getRandomValues", W_VALEURS],
+    ["getRandomValues nu", W_VALEURS_NUE],
+    ["Math.random", W_MATH],
+    ["tirage à droite du %", W_MODULO_A_GAUCHE],
+  ])("%s : refusé partout", async (_nom, code) => {
+    for (const fichier of FICHIERS_W) {
+      expect(await refusW(code, fichier), fichier).not.toEqual([]);
+    }
+  });
+
+  test("%= dont l'opérande appelle randomBytes : refusé", async () => {
+    expect(await refusW(W_AFFECTATION, "e2e/essai.spec.ts")).toHaveLength(1);
+  });
+
+  test.each([
+    ["randomInt", W_TIRAGE_SUR],
+    ["modulo sur une empreinte, randomBytes ailleurs", W_MODULO_SANS_TIRAGE],
+    ["Math.random sans modulo", W_MATH_SANS_MODULO],
+  ])("%s : autorisé", async (_nom, code) => {
+    for (const fichier of FICHIERS_W) {
+      expect(await refusW(code, fichier), fichier).toEqual([]);
+    }
+  });
+
+  // Seul le dernier bloc qui déclare no-restricted-syntax s'applique à un
+  // fichier : chaque fichier réel du dépôt doit garder les sélecteurs de W
+  // dans sa configuration finale, quel que soit le bloc ajouté plus tard.
+  test("chaque fichier du dépôt garde W dans sa configuration finale", async () => {
+    const racine = fileURLToPath(new URL("../../../", import.meta.url));
+    const extensions = /\.(js|jsx|mjs|cjs|ts|tsx|mts|cts)$/u;
+    const fichiers = [
+      ...readdirSync(racine).filter((nom) => extensions.test(nom)),
+      ...["src", "e2e", "scripts", "tests"].flatMap((dossier) =>
+        readdirSync(join(racine, dossier), { recursive: true, encoding: "utf8" })
+          .filter((nom) => extensions.test(nom))
+          .map((nom) => join(dossier, nom)),
+      ),
+    ];
+    expect(fichiers.length).toBeGreaterThan(200);
+    const sansW: string[] = [];
+    for (const fichier of fichiers) {
+      if (await eslint.isPathIgnored(join(racine, fichier))) continue;
+      const config = (await eslint.calculateConfigForFile(join(racine, fichier))) as {
+        rules?: Record<string, unknown[]>;
+      };
+      const selecteurs = (config.rules?.["no-restricted-syntax"] ?? [])
+        .slice(1)
+        .map((entree) => (entree as { selector?: string }).selector);
+      const complet =
+        selecteurs.filter((selecteur) => selecteur?.includes(":has(CallExpression")).length >= 10;
+      if (!complet) sansW.push(fichier);
+    }
+    expect(sansW).toEqual([]);
   });
 });

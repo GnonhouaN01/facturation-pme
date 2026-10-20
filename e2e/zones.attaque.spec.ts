@@ -7,6 +7,9 @@ import { TEXTES_ERREURS } from "../src/textes/erreurs";
 import { TEXTES_NAVIGATION } from "../src/textes/navigation";
 import { TEXTES_SIMULATION } from "../src/textes/simulation";
 
+import { adresseDoubleAuth } from "./compte-verifie";
+import { activer, preparer } from "./double-auth";
+import { outilOrganisation } from "./organisation-e2e";
 import {
   documentServi,
   ENTETES_SECTION_6,
@@ -260,5 +263,52 @@ test.describe("zone compte, sans session valide", () => {
       expect(corps, texte).not.toContain(texte);
       expect(charge, texte).not.toContain(texte);
     }
+  });
+});
+
+// T-02, S-12 : un Propriétaire sans second facteur, connecté et membre d'une
+// organisation, reçoit sur /tableau-de-bord la même page « introuvable »
+// qu'un visiteur sans session, sans rien du gabarit ; après l'activation par
+// /compte (qui lui reste ouverte), le gabarit s'affiche. L'adhésion vient de
+// l'organisation de test (e2e/organisation-e2e.ts), sur la base jetable ou en
+// CI seulement. Fiche : docs/features/double-authentification.md, section 9,
+// test 31.
+test.describe("zone application, Propriétaire sans second facteur", () => {
+  const outil = outilOrganisation();
+  test.skip("saut" in outil, "saut" in outil ? outil.saut : "");
+
+  test.afterAll(async () => {
+    if (!("saut" in outil)) await outil.nettoyer();
+  });
+
+  test("« introuvable » comme sans session, puis le gabarit après l'activation", async ({
+    page,
+    context,
+    request,
+  }, info) => {
+    if ("saut" in outil) throw new Error(outil.saut);
+    const sansSession = await rendu(page, TABLEAU_DE_BORD);
+    const brutSansSession = documentServi(await (await request.get(TABLEAU_DE_BORD)).text());
+
+    const email = adresseDoubleAuth(info, "proprietaire");
+    await preparer(page, context, email);
+    await outil.rattacher(email);
+
+    expect(await rendu(page, TABLEAU_DE_BORD)).toEqual(sansSession);
+    const cookie = (await context.cookies()).find((c) => c.name === COOKIE_SESSION);
+    const brut = await page.request.get(TABLEAU_DE_BORD, {
+      headers: { cookie: `${COOKIE_SESSION}=${cookie?.value ?? ""}` },
+    });
+    const html = await brut.text();
+    expect(brut.status()).toBe(404);
+    expect(documentServi(html)).toEqual(brutSansSession);
+    for (const texte of TEXTES_GABARIT) expect(html).not.toContain(texte);
+
+    await activer(page);
+    await page.goto(TABLEAU_DE_BORD);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      TEXTES_NAVIGATION.entrees.tableauDeBord,
+    );
+    await expect(page.getByText(TEXTES_NAVIGATION.roles.proprietaire).first()).toBeVisible();
   });
 });

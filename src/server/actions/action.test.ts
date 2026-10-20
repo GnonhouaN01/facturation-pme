@@ -56,8 +56,13 @@ type Etat = {
 let etat: Etat;
 let etapes: string[];
 
+// Second facteur actif par défaut : un Propriétaire réel l'a (étape 7).
 function sessionValide(): SessionLue {
-  return { utilisateurId: randomUUID(), organisationActiveId: randomUUID() };
+  return {
+    utilisateurId: randomUUID(),
+    organisationActiveId: randomUUID(),
+    doubleAuthentification: true,
+  };
 }
 
 function dependances() {
@@ -231,7 +236,7 @@ describe("étape 3 : organisation active", () => {
     ["injection", "00000000-0000-4000-8000-000000000000' OR '1'='1"],
     ["UUID entouré d'espaces", ` ${randomUUID()} `],
   ])("%s : refuse, sans transaction ouverte", async (_nom, organisationActiveId) => {
-    etat.session = { utilisateurId: randomUUID(), organisationActiveId };
+    etat.session = { ...sessionValide(), organisationActiveId };
     const { deps, executerDansOrganisation } = dependances();
 
     const resultat = await creerChaine(deps).executerChaine(declaration(), requete(), {});
@@ -315,6 +320,132 @@ describe("étape 6 : adhésion et rôle", () => {
     expect(etapes).not.toContain("service");
     expect(journaliser).not.toHaveBeenCalled();
     expect(espionErreur).not.toHaveBeenCalled();
+  });
+});
+
+// T-02, S-12, S-13 : un Propriétaire ou un Comptable sans second facteur
+// n'accède à aucune donnée, quelle que soit l'action ou la page ; le
+// Commercial et le Lecteur ne sont pas concernés. Après l'étape 6, avant la
+// nouvelle authentification et la validation de l'entrée. Fiche :
+// docs/features/double-authentification.md, section 9, test 28.
+describe("étape 7 : double authentification par rôle", () => {
+  const ROLES = ["proprietaire", "comptable", "commercial", "lecteur"] as const;
+  const EXIGEANTS: readonly string[] = ["proprietaire", "comptable"];
+
+  function sansSecondFacteur() {
+    etat.session = { ...sessionValide(), doubleAuthentification: false };
+  }
+
+  describe.each(ROLES)("%s", (role) => {
+    const exigeant = EXIGEANTS.includes(role);
+
+    test(`sans second facteur, action : ${exigeant ? "refuse, transaction annulée, service non appelé" : "acceptée"}`, async () => {
+      sansSecondFacteur();
+      etat.adhesion = { membreId: randomUUID(), role };
+      const { deps, journaliser } = dependances();
+      const decl = declaration();
+
+      const resultat = await creerChaine(deps).executerChaine(decl, requete(), {});
+
+      if (exigeant) {
+        expect(resultat).toStrictEqual(REFUS);
+        expect(decl.executer).not.toHaveBeenCalled();
+        expect(etapes.at(-1)).toBe("annulation");
+        expect(journaliser).not.toHaveBeenCalled();
+        expect(espionErreur).not.toHaveBeenCalled();
+      } else {
+        expect(resultat).toStrictEqual({ ok: true, donnees: "fait" });
+      }
+    });
+
+    test(`sans second facteur, entrée invalide : ${exigeant ? "refuse, pas invalide" : "invalide"}`, async () => {
+      sansSecondFacteur();
+      etat.adhesion = { membreId: randomUUID(), role };
+      const { deps } = dependances();
+      const decl = declaration({ entree: z.strictObject({ nom: z.string() }) });
+
+      const resultat = await creerChaine(deps).executerChaine(decl, requete(), { nom: 42 });
+
+      if (exigeant) expect(resultat).toStrictEqual(REFUS);
+      else expect(resultat).toMatchObject({ ok: false, raison: "invalide" });
+    });
+
+    test(`sans second facteur, lecture d'une page : ${exigeant ? "refuse, lecture non faite" : "faite"}`, async () => {
+      sansSecondFacteur();
+      etat.adhesion = { membreId: randomUUID(), role };
+      const { deps } = dependances();
+      const lire = vi.fn(async () => "lu");
+
+      const resultat = await creerChaine(deps).etablirContexte(
+        requete(),
+        "organisation.membres.voir",
+        lire,
+      );
+
+      if (exigeant) {
+        expect(resultat).toStrictEqual(REFUS);
+        expect(lire).not.toHaveBeenCalled();
+        expect(etapes.at(-1)).toBe("annulation");
+      } else {
+        expect(resultat).toStrictEqual({ ok: true, donnees: "lu" });
+      }
+    });
+
+    test("avec second facteur : action et lecture acceptées", async () => {
+      etat.adhesion = { membreId: randomUUID(), role };
+      const { deps } = dependances();
+      const chaine = creerChaine(deps);
+
+      expect(await chaine.executerChaine(declaration(), requete(), {})).toStrictEqual({
+        ok: true,
+        donnees: "fait",
+      });
+      expect(
+        await chaine.etablirContexte(requete(), "organisation.membres.voir", async () => "lu"),
+      ).toStrictEqual({ ok: true, donnees: "lu" });
+    });
+  });
+
+  test("l'état du second facteur vient de la session, jamais de l'entrée", async () => {
+    sansSecondFacteur();
+    const { deps } = dependances();
+    const decl = declaration();
+
+    const resultat = await creerChaine(deps).executerChaine(decl, requete(), {
+      doubleAuthentification: true,
+    });
+
+    expect(resultat).toStrictEqual(REFUS);
+    expect(decl.executer).not.toHaveBeenCalled();
+  });
+
+  test("après l'étape 6 : un droit refusé par la matrice reste refusé à l'adhésion", async () => {
+    sansSecondFacteur();
+    etat.adhesion = { membreId: randomUUID(), role: "lecteur" };
+    const { deps, lireAdhesion } = dependances();
+
+    const resultat = await creerChaine(deps).executerChaine(
+      declaration({ droit: "organisation.supprimer" }),
+      requete(),
+      {},
+    );
+
+    expect(resultat).toStrictEqual(REFUS);
+    expect(lireAdhesion).toHaveBeenCalledTimes(1);
+  });
+
+  test("valeur autre que true (session mal formée) : refusée comme false", async () => {
+    etat.session = {
+      ...sessionValide(),
+      doubleAuthentification: "true" as unknown as boolean,
+    };
+    const { deps } = dependances();
+    const decl = declaration();
+
+    const resultat = await creerChaine(deps).executerChaine(decl, requete(), {});
+
+    expect(resultat).toStrictEqual(REFUS);
+    expect(decl.executer).not.toHaveBeenCalled();
   });
 });
 
@@ -896,7 +1027,7 @@ describe("etablirContexte", () => {
     ["absente", null],
     ["pas un UUID", "organisation-a"],
   ])("organisation active %s : refuse, sans transaction", async (_nom, organisationActiveId) => {
-    etat.session = { utilisateurId: randomUUID(), organisationActiveId };
+    etat.session = { ...sessionValide(), organisationActiveId };
     const { deps, executerDansOrganisation } = dependances();
 
     const resultat = await creerChaine(deps).etablirContexte(

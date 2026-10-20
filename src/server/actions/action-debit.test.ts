@@ -114,7 +114,11 @@ function declaration(
 beforeEach(() => {
   etapes = [];
   etat = {
-    session: { utilisateurId: randomUUID(), organisationActiveId: randomUUID() },
+    session: {
+      utilisateurId: randomUUID(),
+      organisationActiveId: randomUUID(),
+      doubleAuthentification: true,
+    },
     adhesion: { membreId: randomUUID(), role: "proprietaire" },
     debit: true,
   };
@@ -157,7 +161,11 @@ describe("étape 4 : place dans l'ordre des contrôles", () => {
     ["absente", null],
     ["invalide", "pas-un-uuid"],
   ])("organisation active %s : refuse, verifierDebit non appelée", async (_nom, valeur) => {
-    etat.session = { utilisateurId: randomUUID(), organisationActiveId: valeur };
+    etat.session = {
+      utilisateurId: randomUUID(),
+      organisationActiveId: valeur,
+      doubleAuthentification: true,
+    };
     const { deps, verifierDebit } = dependances();
 
     const resultat = await creerChaine(deps).executerChaine(declaration(), requete(), {});

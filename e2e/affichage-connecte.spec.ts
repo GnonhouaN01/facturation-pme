@@ -1,4 +1,4 @@
-import { type Locator, type Page, expect, test } from "@playwright/test";
+import { type BrowserContext, type Locator, type Page, expect, test } from "@playwright/test";
 
 import { TEXTES_COMMUNS } from "../src/textes/commun";
 import { TEXTES_COMPTE } from "../src/textes/compte";
@@ -11,6 +11,7 @@ import {
   ipAuHasard,
   MOT_DE_PASSE,
 } from "./compte-verifie";
+import { activer, preparer } from "./double-auth";
 import { outilOrganisation } from "./organisation-e2e";
 import { observerViolations, violations } from "./outils";
 import { capturer, defilementHorizontal } from "./pages-livrees";
@@ -34,15 +35,14 @@ test.describe("gabarit de l'application, navigateur connecté", () => {
     if (!("saut" in outil)) await outil.nettoyer();
   });
 
-  async function ouvrirTableauDeBord(page: Page, email: string) {
+  // Modifié en 1.4, PR 2 : un Propriétaire n'ouvre la zone application
+  // qu'avec son second facteur (étape 7, docs/features/double-authentification.md,
+  // section 9). Le compte, connecté par son cookie, active d'abord la double
+  // authentification par l'interface, puis est rattaché comme Propriétaire.
+  async function ouvrirTableauDeBord(page: Page, context: BrowserContext, email: string) {
     if ("saut" in outil) throw new Error(outil.saut);
-    await creerCompteVerifie(email);
-    await page.setExtraHTTPHeaders({ "x-forwarded-for": ipAuHasard() });
-    await page.goto("/connexion");
-    await page.getByLabel(TEXTES_COMPTE.connexion.email).fill(email);
-    await page.getByLabel(TEXTES_COMPTE.connexion.motDePasse).fill(MOT_DE_PASSE);
-    await page.getByRole("button", { name: TEXTES_COMPTE.connexion.envoyer }).click();
-    await expect(page).toHaveURL(`${ADRESSE}/compte`);
+    await preparer(page, context, email);
+    await activer(page);
     await outil.rattacher(email);
     await page.goto("/tableau-de-bord");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(
@@ -67,9 +67,12 @@ test.describe("gabarit de l'application, navigateur connecté", () => {
     throw new Error("cible jamais atteinte au clavier");
   }
 
-  test("disposition, cibles, focus, défilement, captures, déconnexion", async ({ page }, info) => {
+  test("disposition, cibles, focus, défilement, captures, déconnexion", async ({
+    page,
+    context,
+  }, info) => {
     await observerViolations(page);
-    await ouvrirTableauDeBord(page, adresseConnexion(info, "gabarit"));
+    await ouvrirTableauDeBord(page, context, adresseConnexion(info, "gabarit"));
     const largeur = page.viewportSize()?.width ?? 0;
     const barre = page.locator("aside");
     const contenu = page.getByRole("main");

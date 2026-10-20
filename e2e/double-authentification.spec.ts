@@ -1,16 +1,19 @@
-import { type BrowserContext, type Page, expect, test } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+
+import { type Page, expect, test } from "@playwright/test";
 
 import { TEXTES_COMPTE } from "../src/textes/compte";
 
+import { ADRESSE, adresseDoubleAuth, NOM_COOKIE, sujetsPour } from "./compte-verifie";
 import {
-  ADRESSE,
-  adresseDoubleAuth,
-  creerCompteVerifie,
-  ipAuHasard,
-  MOT_DE_PASSE,
-  NOM_COOKIE,
-  sujetsPour,
-} from "./compte-verifie";
+  activer,
+  envoyerCode,
+  gerer,
+  motDePasse,
+  NOM_ATTENTE,
+  preparer,
+  seDeconnecter,
+} from "./double-auth";
 import { observerViolations, violations } from "./outils";
 import { codeTotp } from "./totp";
 
@@ -18,20 +21,12 @@ import { codeTotp } from "./totp";
 // parcours du jalon 1 (PLAN.md 4.6 : s'inscrire, vérifier son email, se
 // connecter avec la double authentification), le code de secours, T-06 (cinq
 // essais par attente, code déjà accepté refusé), cookies et corps (S-82).
-// Codes calculés par le test depuis la clé lue à l'écran (e2e/totp.ts).
-// Fiche : docs/features/double-authentification.md, tests 26 et 27.
+// Codes calculés par le test depuis la clé lue à l'écran (e2e/totp.ts). PR 2 :
+// le passage complet relu dans la sortie du serveur (T-39, report de la PR 1).
+// Fiche : docs/features/double-authentification.md, tests 26, 27 et 32.
 
 const CONNEXION = TEXTES_COMPTE.connexion;
 const DOUBLE = TEXTES_COMPTE.doubleAuth;
-const NOM_ATTENTE = "better-auth.two_factor";
-
-async function preparer(page: Page, context: BrowserContext, email: string) {
-  const valeur = await creerCompteVerifie(email);
-  await context.addCookies([
-    { name: NOM_COOKIE, value: valeur, url: ADRESSE, httpOnly: true, sameSite: "Lax" },
-  ]);
-  await page.setExtraHTTPHeaders({ "x-forwarded-for": ipAuHasard() });
-}
 
 // Écoute de toutes les requêtes et réponses de /api/auth : aucun code ni clé
 // dans une adresse, aucun jeton ni adresse otpauth dans un corps.
@@ -45,62 +40,6 @@ function surveiller(page: Page) {
     }
   });
   return { adresses, corps };
-}
-
-// Activation complète par l'interface : rend la clé et les dix codes.
-async function activer(page: Page): Promise<{ cle: string; codes: string[] }> {
-  await page.goto("/compte");
-  await expect(page.getByText(TEXTES_COMPTE.compte.doubleAuthInactive)).toBeVisible();
-  await page.getByRole("link", { name: TEXTES_COMPTE.compte.activer }).click();
-  await expect(page).toHaveURL(`${ADRESSE}/compte/double-authentification`);
-  await expect(page.getByText(DOUBLE.obligatoire)).toBeVisible();
-  await page.getByLabel(DOUBLE.motDePasse).fill(MOT_DE_PASSE);
-  await page.getByRole("button", { name: DOUBLE.continuer }).click();
-
-  await expect(page.getByRole("img", { name: DOUBLE.qr })).toBeVisible();
-  const cle = (await page.getByTestId("cle-totp").textContent()) ?? "";
-  expect(cle).toMatch(/^[A-Z2-7]{4}( [A-Z2-7]{1,4})+$/u);
-  // Les codes de secours ne s'affichent qu'après le code (UC-04, étape 4).
-  await expect(page.getByText(DOUBLE.codesTitre)).toHaveCount(0);
-
-  await page.getByLabel(DOUBLE.code).fill(codeTotp(cle));
-  await page.getByRole("button", { name: DOUBLE.confirmer }).click();
-  await expect(page.getByRole("heading", { name: DOUBLE.codesTitre })).toBeVisible();
-  const codes = (await page.getByTestId("code-secours").allTextContents()).map((c) => c.trim());
-  expect(codes).toHaveLength(10);
-  for (const code of codes) expect(code).toMatch(/^[a-z2-9]{5}-[a-z2-9]{5}$/u);
-  await page.getByLabel(DOUBLE.conserve).check();
-  await page.getByRole("button", { name: DOUBLE.terminer }).click();
-  await expect(page.getByText(DOUBLE.activee)).toBeVisible();
-  return { cle, codes };
-}
-
-async function seDeconnecter(page: Page) {
-  await page.goto("/compte");
-  await page.getByRole("button", { name: TEXTES_COMPTE.deconnexion.bouton }).click();
-  await expect(page).toHaveURL(`${ADRESSE}/connexion`);
-}
-
-async function motDePasse(page: Page, email: string) {
-  await page.goto("/connexion");
-  await page.getByLabel(CONNEXION.email).fill(email);
-  await page.getByLabel(CONNEXION.motDePasse).fill(MOT_DE_PASSE);
-  const [reponse] = await Promise.all([
-    page.waitForResponse((r) => new URL(r.url()).pathname === "/api/auth/sign-in/email"),
-    page.getByRole("button", { name: CONNEXION.envoyer }).click(),
-  ]);
-  expect(await reponse.text()).toBe(JSON.stringify({ ok: true, etape: "code" }));
-  await expect(page.getByLabel(CONNEXION.codeLibelle)).toBeVisible();
-}
-
-async function envoyerCode(page: Page, code: string, chemin = "/api/auth/two-factor/verify-totp") {
-  const champ = chemin.endsWith("verify-totp") ? CONNEXION.codeLibelle : CONNEXION.secoursLibelle;
-  await page.getByLabel(champ).fill(code);
-  const [reponse] = await Promise.all([
-    page.waitForResponse((r) => new URL(r.url()).pathname === chemin),
-    page.getByRole("button", { name: CONNEXION.verifier }).click(),
-  ]);
-  return reponse;
 }
 
 test.describe("double authentification, parcours UC-04 puis UC-02", () => {
@@ -224,5 +163,77 @@ test.describe("page de la double authentification sans session", () => {
     const reponse = await page.goto("/compte/double-authentification");
     expect(reponse?.status()).toBe(404);
     await expect(page.getByText(DOUBLE.motDePasse)).toHaveCount(0);
+  });
+});
+
+// T-39 sur le site construit (report de la PR 1, test 17) : un passage
+// complet, puis la sortie du serveur (JOURNAL_SITE_E2E, e2e/lancer-serveur.mjs)
+// relue. Ni la clé, ni un code, ni un code de secours, ni l'adresse, ni une
+// adresse otpauth, ni la valeur d'un cookie de session ou d'attente. Fiche :
+// docs/features/double-authentification.md, section 3.5, test 32.
+test.describe("T-39 : journal du site construit, passage complet", () => {
+  test("activation, code, code de secours, nouveaux codes, désactivation : rien dans la sortie du serveur", async ({
+    page,
+    context,
+  }, info) => {
+    const chemin = process.env.JOURNAL_SITE_E2E;
+    if (!chemin) throw new Error("JOURNAL_SITE_E2E absent : playwright.config.ts doit le poser.");
+    const email = adresseDoubleAuth(info, "journal");
+    const cookies = new Set<string>();
+    const relever = async () => {
+      for (const cookie of await context.cookies()) {
+        if (cookie.name === NOM_COOKIE || cookie.name === NOM_ATTENTE) cookies.add(cookie.value);
+      }
+    };
+
+    await preparer(page, context, email);
+    await relever();
+    const { cle, codes } = await activer(page);
+    await relever();
+
+    await seDeconnecter(page);
+    await motDePasse(page, email);
+    await relever();
+    const codeConnexion = codeTotp(cle, 1);
+    expect((await envoyerCode(page, codeConnexion)).status()).toBe(200);
+    await relever();
+
+    await seDeconnecter(page);
+    await motDePasse(page, email);
+    await relever();
+    await page.getByRole("button", { name: CONNEXION.utiliserSecours }).click();
+    const secours = codes[0] ?? "";
+    expect(
+      (await envoyerCode(page, secours, "/api/auth/two-factor/verify-backup-code")).status(),
+    ).toBe(200);
+    await relever();
+
+    const nouveaux = await gerer(page, "nouveauxCodes", codes[1] ?? "");
+    await expect(page.getByText(DOUBLE.activee)).toBeVisible();
+    await gerer(page, "desactiver", nouveaux[0] ?? "");
+    await relever();
+    await expect.poll(() => sujetsPour(email)).toContain("Double authentification désactivée");
+
+    const sortie = await readFile(chemin, "utf8");
+    // Témoin : la sortie du serveur est bien lue.
+    expect(sortie.length).toBeGreaterThan(0);
+    const interdits = [
+      cle,
+      cle.replaceAll(" ", ""),
+      codeConnexion,
+      ...codes,
+      ...codes.map((code) => code.replace("-", "")),
+      ...nouveaux,
+      email,
+      ...cookies,
+      ...[...cookies].map((valeur) => decodeURIComponent(valeur).split(".")[0] ?? valeur),
+    ].filter((valeur) => valeur.length >= 6);
+    for (const interdit of interdits) {
+      expect(sortie.includes(interdit), "valeur de la requête dans le journal").toBe(false);
+    }
+    expect(sortie).not.toMatch(/otpauth/i);
+    for (const ligne of sortie.split("\n").filter((l) => l.startsWith("[auth] "))) {
+      expect(ligne).toMatch(/^\[auth\] \{"niveau":"(warn|error)","incident":"[0-9a-f-]{36}"\}$/);
+    }
   });
 });

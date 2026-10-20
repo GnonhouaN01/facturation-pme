@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { connect } from "node:net";
 
@@ -389,5 +389,67 @@ test.describe("identifiant d'incident, connexion sur le serveur en panne", () =>
     expect(ligne).toBe(`[auth] ${JSON.stringify({ niveau: "error", incident: corps.incident })}`);
     expect(sortie.includes(email)).toBe(false);
     expect(sortie.includes(motDePasse)).toBe(false);
+  });
+});
+
+// Report de la PR 1 de la 1.4 : l'étape du code sur le serveur en panne.
+// La base injoignable empêche d'atteindre cette étape par un vrai mot de
+// passe : la réponse de /sign-in/email est simulée dans le navigateur, et le
+// cookie d'attente posé au format signé, avec le secret factice de ce
+// serveur. Le code, lui, part vers le vrai serveur, dont la lecture de la
+// connexion en attente échoue. Texte fixe et incident affichés ; ligne
+// [auth] fixe portant cet incident ; ni le code ni l'identifiant d'attente
+// dans la sortie. Fiche : docs/features/double-authentification.md, test 33.
+test.describe("identifiant d'incident, étape du code sur le serveur en panne", () => {
+  const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
+
+  test("le formulaire affiche le texte fixe et l'identifiant, présent sur une ligne [auth]", async ({
+    page,
+  }) => {
+    const chemin = process.env.JOURNAL_PANNE_E2E;
+    if (!chemin) throw new Error("JOURNAL_PANNE_E2E absent : playwright.config.ts doit le poser.");
+    const attente = cookieSessionSigne();
+    const identifiant = decodeURIComponent(attente).split(".")[0] ?? attente;
+    const code = String(randomInt(100_000, 1_000_000));
+
+    await page.route(`${ADRESSE_PANNE}/api/auth/sign-in/email`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, etape: "code" }),
+      }),
+    );
+    await page
+      .context()
+      .addCookies([{ name: "better-auth.two_factor", value: attente, url: ADRESSE_PANNE }]);
+    await page.goto(`${ADRESSE_PANNE}/connexion`);
+    await page.getByLabel(TEXTES_COMPTE.connexion.email).fill("e2e-panne@exemple.invalid");
+    await page.getByLabel(TEXTES_COMPTE.connexion.motDePasse).fill("Panne-mot-de-passe-factice");
+    await page.getByRole("button", { name: TEXTES_COMPTE.connexion.envoyer }).click();
+    await page.getByLabel(TEXTES_COMPTE.connexion.codeLibelle).fill(code);
+    const [reponse] = await Promise.all([
+      page.waitForResponse((r) => new URL(r.url()).pathname === "/api/auth/two-factor/verify-totp"),
+      page.getByRole("button", { name: TEXTES_COMPTE.connexion.verifier }).click(),
+    ]);
+    expect(reponse.status()).toBe(500);
+    const corps = (await reponse.json()) as { ok?: unknown; raison?: unknown; incident?: string };
+    expect(corps).toMatchObject({ ok: false, raison: "erreur" });
+    expect(corps.incident).toMatch(UUID);
+
+    const alerte = page.locator("form").getByRole("alert");
+    await expect(alerte).toContainText(TEXTES_ERREURS.erreur);
+    await expect(alerte).toContainText(TEXTES_ERREURS.identifiantIncident);
+    await expect(alerte).toContainText(corps.incident ?? "absent");
+
+    await expect
+      .poll(async () => (await readFile(chemin, "utf8")).includes(corps.incident ?? "absent"), {
+        timeout: 10_000,
+      })
+      .toBe(true);
+    const sortie = await readFile(chemin, "utf8");
+    const ligne = sortie.split("\n").find((l) => l.includes(corps.incident ?? "absent"));
+    expect(ligne).toBe(`[auth] ${JSON.stringify({ niveau: "error", incident: corps.incident })}`);
+    expect(sortie.includes(code)).toBe(false);
+    expect(sortie.includes(identifiant)).toBe(false);
   });
 });

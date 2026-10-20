@@ -4,13 +4,13 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { z } from "zod";
 
-import { declarerAction, executerChaine } from "../actions/action";
+import { declarerAction, etablirContexte, executerChaine } from "../actions/action";
 import { env } from "../env";
 
 import { db, executerDansOrganisation } from "./client";
 import { creerMembre, nettoyerMembres, type Membre } from "./outils-test/membres";
 import { creerDeuxOrganisations, type Organisations } from "./outils-test/organisations";
-import { member, session } from "./schema/auth";
+import { member, session, user } from "./schema/auth";
 import { journalAudit, temoinIsolation } from "./schema/technique";
 
 // Tests d'attaque de la chaîne, avec la vraie base et de vraies sessions :
@@ -444,5 +444,100 @@ describe("organisation active falsifiée", () => {
     await changerOrganisationActive(membre, valeur);
 
     expect(await executerChaine(demoLire(), { entetes: membre.entetes }, {})).toStrictEqual(REFUS);
+  });
+});
+
+// T-02, S-12, S-13 : un Propriétaire ou un Comptable sans second facteur
+// n'accède à aucune donnée ; l'état du second facteur et le rôle sont relus à
+// chaque requête. Fiche : docs/features/double-authentification.md,
+// section 9, test 29.
+describe("T-02 : double authentification exigée par rôle", () => {
+  function changerSecondFacteur(membre: Membre, actif: boolean) {
+    return db
+      .update(user)
+      .set({ twoFactorEnabled: actif })
+      .where(eq(user.id, membre.utilisateurId));
+  }
+
+  test.each(["proprietaire", "comptable"])(
+    "%s sans second facteur : refuse, transaction annulée, rien écrit",
+    async (role) => {
+      const membre = await creerMembre({
+        organisationId: orgs.a,
+        role,
+        doubleAuthentification: false,
+      });
+      const requete = { entetes: membre.entetes };
+      const valeur = `sans-2fa-${role}-${randomUUID()}`;
+
+      expect(await executerChaine(demoReservee(), requete, {})).toStrictEqual(REFUS);
+      expect(await executerChaine(demoEcrire(), requete, { valeur })).toStrictEqual(REFUS);
+      expect(await executerChaine(demoEcrire(), requete, { valeur: 42 })).toStrictEqual(REFUS);
+      expect(
+        await etablirContexte(requete, "organisation.membres.voir", async () => "lu"),
+      ).toStrictEqual(REFUS);
+      expect(await lignesEcrites(valeur)).toBe(0);
+    },
+  );
+
+  test.each(["commercial", "lecteur"])("%s sans second facteur : accepté", async (role) => {
+    const membre = await creerMembre({
+      organisationId: orgs.a,
+      role,
+      doubleAuthentification: false,
+    });
+
+    expect(await executerChaine(demoLire(), { entetes: membre.entetes }, {})).toStrictEqual({
+      ok: true,
+      donnees: { organisationId: orgs.a, role },
+    });
+  });
+
+  test("second facteur activé puis retiré en base : accepté, puis refusé dès la requête suivante", async () => {
+    const membre = await creerMembre({
+      organisationId: orgs.a,
+      role: "proprietaire",
+      doubleAuthentification: false,
+    });
+    const requete = { entetes: membre.entetes };
+    expect(await executerChaine(demoLire(), requete, {})).toStrictEqual(REFUS);
+
+    await changerSecondFacteur(membre, true);
+    expect(await executerChaine(demoLire(), requete, {})).toStrictEqual({
+      ok: true,
+      donnees: { organisationId: orgs.a, role: "proprietaire" },
+    });
+
+    await changerSecondFacteur(membre, false);
+    expect(await executerChaine(demoLire(), requete, {})).toStrictEqual(REFUS);
+  });
+
+  test("S-13 : Commercial sans second facteur promu Comptable en base : refusé à la requête suivante", async () => {
+    const membre = await creerMembre({
+      organisationId: orgs.a,
+      role: "commercial",
+      doubleAuthentification: false,
+    });
+    const requete = { entetes: membre.entetes };
+    expect(await executerChaine(demoLire(), requete, {})).toMatchObject({ ok: true });
+
+    await db.update(member).set({ role: "comptable" }).where(eq(member.id, membre.membreId));
+
+    expect(await executerChaine(demoLire(), requete, {})).toStrictEqual(REFUS);
+    expect(await executerChaine(demoReservee(), requete, {})).toStrictEqual(REFUS);
+  });
+
+  test("le second facteur d'un autre membre ne compte pas", async () => {
+    const avec = await creerMembre({ organisationId: orgs.a, role: "proprietaire" });
+    const sans = await creerMembre({
+      organisationId: orgs.a,
+      role: "proprietaire",
+      doubleAuthentification: false,
+    });
+
+    expect(await executerChaine(demoLire(), { entetes: avec.entetes }, {})).toMatchObject({
+      ok: true,
+    });
+    expect(await executerChaine(demoLire(), { entetes: sans.entetes }, {})).toStrictEqual(REFUS);
   });
 });
