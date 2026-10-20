@@ -58,6 +58,30 @@ export function documentServi(html: string): string {
     .replace(/nonce(="|-)[A-Za-z0-9+/=]+/g, "nonce$1N");
 }
 
+// Deux réponses d'une même route, au nonce près, flux RSC compris : le
+// document servi sans les scripts du flux, et les lignes du flux décodé,
+// triées. Le découpage du flux en balises <script> et l'ordre de ses lignes
+// suivent le moment où chaque partie du rendu s'achève : une session lue en
+// base retarde le notFound() du gabarit et celui de la page, dont les lignes
+// d'erreur (« 4:E{...} », « b:E{...} ») partent alors dans un script à part,
+// dans l'ordre où les lectures finissent. Une ligne est désignée par son
+// identifiant, son rang n'a pas de sens : ni le découpage ni l'ordre ne sont
+// comparés ; le contenu de chaque ligne, que documentServi vide, l'est. Ne
+// compare pas deux adresses : le flux nomme l'adresse.
+const SCRIPT_FLUX = /<script\b[^>]*>self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)<\/script>/g;
+
+export function documentEtFlux(html: string): { document: string; lignes: string[] } {
+  let flux = "";
+  for (const [, chaine] of html.matchAll(SCRIPT_FLUX)) flux += JSON.parse(chaine ?? '""') as string;
+  return {
+    document: documentServi(html.replace(SCRIPT_FLUX, "")),
+    lignes: flux
+      .replace(/"nonce":"[A-Za-z0-9+/=]+"/g, '"nonce":"N"')
+      .split(/\r?\n/u)
+      .sort(),
+  };
+}
+
 // La politique, nonce remplacé par « * », pour la comparer à POLITIQUE_PRODUCTION.
 export function sansNonce(politique: string | undefined): Record<string, string[]> {
   return Object.fromEntries(

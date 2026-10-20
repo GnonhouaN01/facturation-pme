@@ -21,7 +21,10 @@ import { compteurDebit } from "./schema/technique";
 // (tranches de temps) ; la base garde la sienne. Fiche :
 // docs/features/double-authentification.md, tests 19 à 25.
 
-const banc = bancInscription({ adresses: 24 });
+// Horloge avancée par tranche (trancheSuivante) : le nettoyage au passage de
+// Better Auth est coupé, sinon il supprime les lignes encore valables des
+// fichiers lancés en parallèle (outils-test/inscription.ts, OptionsBanc).
+const banc = bancInscription({ adresses: 24, horlogeSimulee: true });
 const ORIGINE = new URL(env.BETTER_AUTH_URL).origin;
 const MOT_DE_PASSE = "une-phrase-de-passe-solide";
 

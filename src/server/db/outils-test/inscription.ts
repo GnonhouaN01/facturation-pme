@@ -59,7 +59,23 @@ export type BancInscription = {
   nettoyer: () => Promise<void>;
 };
 
-export function bancInscription(options: { adresses: number }): BancInscription {
+export type OptionsBanc = {
+  adresses: number;
+  // Le fichier de test avance l'horloge de JavaScript (vi.setSystemTime),
+  // comme double-authentification.integration.test.ts pour changer de
+  // tranche de code. Better Auth supprime alors, à chaque recherche d'une
+  // ligne de verification (findVerificationValue), toutes les lignes dont
+  // l'échéance précède cette horloge avancée, celles des autres fichiers
+  // lancés en parallèle comprises, encore valables à l'horloge réelle
+  // (constaté : reinitialisation.integration.test.ts, « supprimerJetons-
+  // Reinitialisation », dont les lignes expirent en 60 s, alors que
+  // l'horloge avancée atteint +10 min). Ce nettoyage au passage est coupé
+  // pour cette instance (disableCleanup) : ses lignes expirées sont purgées
+  // par la tâche quotidienne, et par nettoyer().
+  horlogeSimulee?: boolean;
+};
+
+export function bancInscription(options: OptionsBanc): BancInscription {
   const adresses = Array.from(
     { length: options.adresses },
     () => `test-${randomUUID()}@exemple.test`,
@@ -119,6 +135,9 @@ export function bancInscription(options: { adresses: number }): BancInscription 
       ...base.emailVerification,
       sendVerificationEmail: emails.emailVerification,
     },
+    ...(options.horlogeSimulee
+      ? { verification: { ...base.verification, disableCleanup: true } }
+      : {}),
   });
 
   // 1.4, comme gestionnaire.ts : même fabrique, sur cette instance, ce
