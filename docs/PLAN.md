@@ -71,6 +71,8 @@ La 1.6 livre le mécanisme qu'attend la chaîne de contrôles : jusque-là, tout
 
 Jusque-là, les comptes restent fermés en production, et les fonctionnalités suivantes du jalon 1 s'y ajoutent fermées. Base de production vérifiée le 2026-10-18 : 9 migrations, 11 tables, droits conformes, aucun compte. Si la 1.4 est fusionnée avant #52, celle-ci passe à quatorze points d'entrée (`docs/features/double-authentification.md`, section 13) ; dix-huit si la 1.5 l'est aussi (`docs/features/profil-sessions.md`, section 11).
 
+**Report de la 1.5 à la 1.6** (décision du développeur du 2026-10-21) : le code du second facteur pour changer de mot de passe, écarté par la 1.5 (`docs/features/profil-sessions.md`, section 4), est à trancher dans la fiche de la 1.6.
+
 **Démontrable à la fin :** un visiteur crée un compte, le vérifie, active la double authentification et gère ses sessions.
 
 ### Jalon 2 — Organisations
@@ -80,7 +82,7 @@ Jusque-là, les comptes restent fermés en production, et les fonctionnalités s
 | 2.1 | Création et changement d'organisation | UC-06, UC-11 | F-010, F-014, S-01, RR-8 | M |
 | 2.2 | Paramètres de l'organisation | UC-07 | F-011, F-057, S-14, S-33, S-53, T-12, T-60, RR-8 | L |
 | 2.3 | Invitations | UC-08, UC-09 | F-012, S-15, S-16, T-05, RR-8 | M |
-| 2.4 | Rôles et retrait d'un membre | UC-10 | F-013, F-017, R-12, S-05, S-17, T-51, T-52, T-54, RR-8 | M |
+| 2.4 | Rôles et retrait d'un membre, réaffectation des clients | UC-10 | F-013, F-017, R-12, S-05, S-17, T-51, T-52, T-54, RR-8 | M |
 | 2.5 | Suppression différée | UC-13 | F-018, R-15, T-44, RR-8 | S |
 
 **Tables de Better Auth (RR-8, `THREATS.md` section 8).** `member`, `user`, `session`, `organization` et `invitation` n'ont pas de règle d'isolation. Dans chaque fonctionnalité du jalon 2, toute requête de l'application sur l'une d'elles filtre explicitement sur l'organisation du contexte, et reçoit un test d'attaque qui tente de lire les lignes de l'autre organisation.
@@ -90,6 +92,10 @@ Jusque-là, les comptes restent fermés en production, et les fonctionnalités s
 - **Redirection vers `/connexion`** d'une page de `(app)/` ou de `(compte)/` ouverte sans session (`connexion_requise`), avec l'adresse de retour limitée à un chemin relatif de l'application, prévue par `docs/features/socle-interface.md`, section 2.2. Fiche dédiée : elle change la réponse sans session de toutes ces pages (aujourd'hui « introuvable », 404), donc les tests S-02 et le contrôle après déploiement qui reposent sur ce 404.
 - **Nom de l'utilisateur dans la barre latérale** (`socle-interface.md`, section 10) : demande une lecture de `user`, table de Better Auth (RR-8).
 - **Scénario « base injoignable avec une session valide »** (`socle-interface.md`, section 4.3) : une vraie session dans le navigateur du serveur en panne.
+
+**Report de la 1.5 à la 2.1** (`docs/features/profil-sessions.md`, section 4 et « Reporté ») : après un changement de mot de passe, la session neuve créée par Better Auth perd l'organisation active. La 2.1 la rétablit (ou la redemande), et le teste.
+
+**La 2.4 se fait après la 3.1** (décision du développeur du 2026-10-21, section « Paliers et ordre ») : le retrait d'un membre impose de réaffecter ses clients (F-017), qui n'existent qu'avec la 3.1. La 2.4 porte la réaffectation des clients, par le Propriétaire comme au retrait d'un membre.
 
 **Démontrable à la fin :** un gérant crée son entreprise, invite un comptable et un vendeur, et un comptable externe bascule entre deux entreprises sans jamais voir les données de l'une dans l'autre.
 
@@ -112,9 +118,15 @@ Jusque-là, les comptes restent fermés en production, et les fonctionnalités s
 | 4.1 | Calculs | — | F-051 à F-053, R-01, R-02, R-08 | M |
 | 4.2 | Création et modification d'un devis | UC-17 | F-040, F-041, R-14, T-13 | L |
 | 4.3 | Génération du PDF | — | F-045, S-51, S-87, T-62, T-63 | M |
-| 4.4 | Envoi et lien public | UC-18 | F-042, S-20, S-55 | M |
+| 4.4 | Envoi et lien public | UC-18 | F-042, S-55 | M |
 | 4.5 | Page publique et réponse | UC-19 | F-042, R-13, S-21, S-22, T-16, T-32, T-37, T-38 | L |
 | 4.6 | Transformation en brouillon de facture | UC-20 | F-043, F-044 | S |
+
+Décisions du développeur du 2026-10-21 (section « Paliers et ordre ») :
+
+- **Le mécanisme du jeton de lien (S-20)** est construit par la 5.4 (page publique d'une facture), première page par lien du produit minimal ; la 4.4 le réutilise pour le devis.
+- **F-043** (accepter ou refuser un devis à la main) : la question de son périmètre est tranchée dans la fiche de la 4.2. Sans la page publique (4.5), absente du produit minimal, c'est la seule façon d'enregistrer la réponse du client.
+- **La 4.6 se fait après la 5.1** : elle transforme un devis en brouillon de facture, qui n'existe qu'avec la 5.1.
 
 **Démontrable à la fin :** un vendeur envoie un devis, son client l'accepte depuis son téléphone sans compte.
 
@@ -125,7 +137,7 @@ Jusque-là, les comptes restent fermés en production, et les fonctionnalités s
 | 5.1 | Brouillon de facture | UC-21 | F-050, R-03 | M |
 | 5.2 | Module de certification et simulateur | — | F-060 à F-062, R-04, S-87, T-18 | M |
 | 5.3 | Émission | UC-22 | F-054, R-03, R-05, R-06, S-32, T-10, T-15 | L |
-| 5.4 | Envoi et page publique | UC-23, UC-24 | F-056, F-057, S-34 | M |
+| 5.4 | Envoi et page publique, mécanisme du jeton de lien | UC-23, UC-24 | F-056, F-057, S-20, S-34 | M |
 | 5.5 | Avoirs | UC-25 | F-070, F-071, R-09, R-10, S-30, T-14 | L |
 
 **Démontrable à la fin :** le parcours complet du devis à la facture émise, numérotée, figée et envoyée. C'est le cœur du produit.
@@ -163,6 +175,35 @@ Jusque-là, les comptes restent fermés en production, et les fonctionnalités s
 
 **Démontrable à la fin :** un projet présentable à un recruteur, avec ses preuves.
 
+### Paliers et ordre
+
+Décision du développeur du 2026-10-21 : deux paliers, réalisés dans l'ordre ci-dessous, qui priment sur l'ordre des numéros. Les fonctionnalités gardent leur numéro.
+
+**Palier 1 — « produit minimal ».** Une entreprise gère ses clients et son catalogue, fait un devis, le transforme en facture émise, certifiée par le simulateur, envoyée par lien, et enregistre son paiement.
+
+| Ordre | Fonctionnalités |
+|---|---|
+| 1 | 0.1 à 0.8 (livrées), 1.1 à 1.6 |
+| 2 | 2.1, 2.2, 2.3 |
+| 3 | 3.1, puis 2.4 (réaffectation des clients), 3.3 |
+| 4 | 4.1, 4.2 (F-043 tranchée), 4.3 |
+| 5 | 5.1, puis 4.6 |
+| 6 | 5.2, 5.3, 5.4 (jeton de lien, S-20) |
+| 7 | 6.1 |
+
+**Palier 2 — « prêt pour de vraies PME ».** Le produit minimal, plus ce qu'il faut avant d'accueillir de vrais utilisateurs :
+
+| Groupe | Fonctionnalités et conditions |
+|---|---|
+| Organisation et données | 2.5, 3.2 |
+| Devis par lien | 4.4, 4.5 (réutilisent le jeton de la 5.4) |
+| Factures et paiements | 5.5, 6.2, 6.3 |
+| Pilotage | 7.1, 7.2, 7.3, 7.4 (aucun vrai utilisateur avant la 7.4, section 7) |
+| Exploitation | 8.1, 8.2, le reste de la 8.3, 8.4 |
+| Conditions | Comptes ouverts en production (décision D de la 1.3 : `/donnees-personnelles`, formalité ARTCI) ; règles FNE et taux de TVA vérifiés auprès d'une source officielle (section 7) |
+
+La vitrine (8.5) peut être avancée à tout moment.
+
 ---
 
 ## 3. Pourquoi cet ordre
@@ -187,7 +228,7 @@ Trois choix méritent une explication.
 - **Les devis avant les factures.** Ils partagent les lignes et les calculs, mais un devis n'est ni numéroté de façon contrainte, ni certifié, ni immuable. On éprouve donc les calculs et le PDF sur l'objet le plus simple.
 - **La visibilité restreinte des Commerciaux en dernier.** Elle ajoute un second niveau de filtrage à toutes les lectures. Le champ « responsable » existe dès le jalon 3 pour que son ajout ne demande aucune migration lourde.
 
-**Si le temps manque :** les jalons 0 à 5 forment un produit cohérent et démontrable. Les jalons 6 et 7 le complètent. Le jalon 8.5 peut être avancé à tout moment.
+**Si le temps manque :** le palier 1 (section 2, « Paliers et ordre ») forme un produit cohérent et démontrable. Le palier 2 le complète. Le jalon 8.5 peut être avancé à tout moment.
 
 ---
 
