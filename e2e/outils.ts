@@ -70,11 +70,24 @@ export function documentServi(html: string): string {
 // compare pas deux adresses : le flux nomme l'adresse.
 const SCRIPT_FLUX = /<script\b[^>]*>self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)<\/script>/g;
 
-export function documentEtFlux(html: string): { document: string; lignes: string[] } {
+//
+// Le document est coupé à chaque script du flux, et ses morceaux ne sont
+// jamais recollés (alerte CodeQL 9) : retirer les scripts d'une chaîne
+// pouvait réunir « <scr » et « ipt> », qui les entouraient, en une balise
+// <script. Les morceaux vides ou blancs, laissés entre deux scripts du flux
+// contigus, sont écartés : le découpage n'est pas comparé.
+export function documentEtFlux(html: string): { morceaux: string[]; lignes: string[] } {
+  const morceaux: string[] = [];
   let flux = "";
-  for (const [, chaine] of html.matchAll(SCRIPT_FLUX)) flux += JSON.parse(chaine ?? '""') as string;
+  let debut = 0;
+  for (const trouve of html.matchAll(SCRIPT_FLUX)) {
+    morceaux.push(html.slice(debut, trouve.index));
+    flux += JSON.parse(trouve[1] ?? '""') as string;
+    debut = trouve.index + trouve[0].length;
+  }
+  morceaux.push(html.slice(debut));
   return {
-    document: documentServi(html.replace(SCRIPT_FLUX, "")),
+    morceaux: morceaux.filter((morceau) => morceau.trim() !== "").map(documentServi),
     lignes: flux
       .replace(/"nonce":"[A-Za-z0-9+/=]+"/g, '"nonce":"N"')
       .split(/\r?\n/u)
