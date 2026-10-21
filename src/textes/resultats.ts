@@ -6,6 +6,8 @@ export const TEXTES_RESULTATS = {
   connexion_requise: "Votre session a expiré. Connectez-vous à nouveau.",
   refuse: "Cette action n'est pas disponible.",
   trop_de_requetes: "Trop de tentatives. Patientez un instant, puis réessayez.",
+  // 1.6 : action sensible ; le formulaire de confirmation suit (2.2).
+  nouvelle_authentification_requise: "Confirmez votre identité pour continuer.",
   invalide: "Certains champs sont à corriger.",
   erreur: "Une erreur est survenue.",
 } as const;

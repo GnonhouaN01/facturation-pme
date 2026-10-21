@@ -4,6 +4,7 @@ import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { afterAll, afterEach, describe, expect, test, vi } from "vitest";
 
 import { adaptateurSur, basePanne, cookieSessionSigne } from "../db/outils-test/panne";
+import { dependancesNouvelleAuthentificationInertes } from "../db/outils-test/nouvelle-authentification";
 
 import { optionsAuth } from "./config";
 import { creerTraitementAuth } from "./points-entree";
@@ -189,6 +190,7 @@ describe("T-39 : inscription pendant une panne de la base", { timeout: 30_000 },
       // 1.4 : jamais atteintes par ces tests.
       doubleAuth: dependancesDoubleAuthInertes(),
       profil: dependancesProfilInertes(),
+      nouvelleAuthentification: dependancesNouvelleAuthentificationInertes(),
       horloge: { maintenant: () => 0, attendre: async () => {} },
     });
     const email = `victime-${randomUUID()}@exemple.invalid`;

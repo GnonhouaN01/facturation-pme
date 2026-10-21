@@ -20,6 +20,12 @@ export type Resultat<T> =
   | { ok: false; raison: "connexion_requise" }
   | { ok: false; raison: "refuse" }
   | { ok: false; raison: "trop_de_requetes" }
+  // Action sensible sans preuve de nouvelle authentification de la session
+  // (étape 8, 1.6) : l'interface demande le mot de passe et le code, puis
+  // renvoie l'action. Atteint seulement après le contrôle du droit, avant
+  // la lecture de l'entrée. Fiche : docs/features/nouvelle-authentification.md,
+  // section 4.
+  | { ok: false; raison: "nouvelle_authentification_requise" }
   | { ok: false; raison: "invalide"; champs: string[] }
   | { ok: false; raison: "erreur"; incident: string };
 
@@ -51,6 +57,10 @@ export function tropDeRequetes(): Refus {
 
 export function connexionRequise(): Refus {
   return { ok: false, raison: "connexion_requise" };
+}
+
+export function nouvelleAuthentificationRequise(): Refus {
+  return { ok: false, raison: "nouvelle_authentification_requise" };
 }
 
 // Refus de la règle d'isolation, et clé étrangère vers une ressource

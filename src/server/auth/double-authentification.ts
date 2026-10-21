@@ -13,6 +13,7 @@ import {
 } from "@/schemas/double-authentification";
 import { CODE_SECOURS, CODE_TOTP, normaliserCodeSecours } from "@/schemas/regles-compte";
 
+import type { DependancesNouvelleAuthentification } from "./nouvelle-authentification";
 import type { DependancesProfil } from "./profil";
 
 // Les sept points de la double authentification de /api/auth (1.4), composés
@@ -116,6 +117,9 @@ export type OutilsPoint = {
   dependances: DependancesDoubleAuth;
   // 1.5 : les dépendances des points du profil (profil.ts).
   profil: DependancesProfil;
+  // 1.6 : les dépendances de la nouvelle authentification
+  // (nouvelle-authentification.ts).
+  nouvelleAuthentification: DependancesNouvelleAuthentification;
 };
 
 export type PointCompose = {
@@ -289,11 +293,11 @@ function cookiesSession(lue: ReponseBetterAuth, origine: string): string[] {
   });
 }
 
-type Code = { sorte: "application"; valeur: string } | { sorte: "secours"; valeur: string };
+export type Code = { sorte: "application"; valeur: string } | { sorte: "secours"; valeur: string };
 
 // Un code de gestion : celui de l'application, ou un code de secours
-// normalisé ; sinon null.
-function lireCode(saisie: unknown): Code | null {
+// normalisé ; sinon null. Partagé avec la nouvelle authentification (1.6).
+export function lireCode(saisie: unknown): Code | null {
   const texte = String(saisie);
   if (CODE_TOTP.test(texte)) return { sorte: "application", valeur: texte };
   const normalise = normaliserCodeSecours(texte);
@@ -363,25 +367,24 @@ async function ouvrirGestion(
 }
 
 // Vérification du code avant une opération : code de l'application (tranche
-// réservée, puis Better Auth) ou code de secours (consommé par Better Auth).
-async function verifierCode(
+// réservée, puis Better Auth) ou code de secours (consommé par Better Auth),
+// avec le seul cookie de session donné. Partagée avec la nouvelle
+// authentification (1.6).
+export async function verifierCode(
   code: Code,
-  contexte: Contexte,
+  utilisateurId: string,
+  paire: string,
   outils: OutilsPoint,
 ): Promise<{ raison: RaisonDoubleAuth } | null> {
   const { dependances } = outils;
   let lue: ReponseBetterAuth;
   if (code.sorte === "application") {
-    const tranche = await dependances.reserverTranche(contexte.session.utilisateurId, code.valeur);
+    const tranche = await dependances.reserverTranche(utilisateurId, code.valeur);
     if (tranche === "deja_utilisee") return { raison: "code_incorrect" };
-    lue = await outils.appeler("/two-factor/verify-totp", { code: code.valeur }, contexte.paire);
+    lue = await outils.appeler("/two-factor/verify-totp", { code: code.valeur }, paire);
   } else {
     const empreinte = dependances.empreinteCodeSecours(code.valeur);
-    lue = await outils.appeler(
-      "/two-factor/verify-backup-code",
-      { code: empreinte },
-      contexte.paire,
-    );
+    lue = await outils.appeler("/two-factor/verify-backup-code", { code: empreinte }, paire);
   }
   return reussi(lue) ? null : traduire(lue);
 }
@@ -511,7 +514,12 @@ export const POINTS_DOUBLE_AUTH: Readonly<Record<string, PointCompose>> = Object
       if (!(await motDePasseJuste(contexte, motDePasse, outils))) {
         return { raison: "mot_de_passe_incorrect" };
       }
-      const refus = await verifierCode(code, contexte, outils);
+      const refus = await verifierCode(
+        code,
+        contexte.session.utilisateurId,
+        contexte.paire,
+        outils,
+      );
       if (refus !== null) return refus;
       await outils.dependances.preparerRemplacement(contexte.session.utilisateurId);
       return activer(contexte, motDePasse, outils);
@@ -533,7 +541,12 @@ export const POINTS_DOUBLE_AUTH: Readonly<Record<string, PointCompose>> = Object
       if (!(await motDePasseJuste(contexte, motDePasse, outils))) {
         return { raison: "mot_de_passe_incorrect" };
       }
-      const refus = await verifierCode(code, contexte, outils);
+      const refus = await verifierCode(
+        code,
+        contexte.session.utilisateurId,
+        contexte.paire,
+        outils,
+      );
       if (refus !== null) return refus;
       const lue = await outils.appeler(
         "/two-factor/generate-backup-codes",
@@ -571,7 +584,12 @@ export const POINTS_DOUBLE_AUTH: Readonly<Record<string, PointCompose>> = Object
       if (!(await motDePasseJuste(contexte, motDePasse, outils))) {
         return { raison: "mot_de_passe_incorrect" };
       }
-      const refus = await verifierCode(code, contexte, outils);
+      const refus = await verifierCode(
+        code,
+        contexte.session.utilisateurId,
+        contexte.paire,
+        outils,
+      );
       if (refus !== null) return refus;
       const lue = await outils.appeler(
         "/two-factor/disable",

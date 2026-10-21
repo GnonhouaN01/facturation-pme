@@ -209,7 +209,7 @@ type Contexte<J> = {
 | 5 | Ouverture de `executerDansOrganisation(organisationId)`. Toutes les étapes suivantes s'y déroulent | `set_config` | — |
 | 6 | Adhésion `FOR SHARE` (section 2.2) ; rôle parmi les quatre ; `peut(role, droit)` | `member` | `refuse` |
 | 7 | Double authentification exigée pour Propriétaire et Comptable (S-12, S-13, T-02), livrée par la 1.4 (PR 2) : `ROLES_DOUBLE_AUTH` contient le rôle relu et `session.doubleAuthentification` n'est pas `true` (`user.two_factor_enabled`, lu à l'étape 2) | Aucune | `refuse` |
-| 8 | Nouvelle authentification (S-14) : en 0.4, toute déclaration `nouvelleAuthentification: true` est **refusée** (fermé par défaut) jusqu'à la fonctionnalité du jalon 1 qui l'implémente | Aucune | `refuse` |
+| 8 | Nouvelle authentification (S-14) : en 0.4, toute déclaration `nouvelleAuthentification: true` était **refusée** (fermé par défaut). Depuis la 1.6 : la preuve de nouvelle authentification de la session est consommée dans la transaction ; absente, autre session, autre utilisateur ou expirée : refus. Une entrée invalide annule alors la transaction, qui rend la preuve (`docs/features/nouvelle-authentification.md`, section 4) | `verification` (suppression) | `nouvelle_authentification_requise` |
 | 9 | Validation de l'entrée par le schéma de la déclaration | Aucune | `invalide` |
 | 10 | `executer(ctx, entree)` : le service, dans la transaction | Selon le service | `refuse` par `ctx.introuvable()` |
 | 11 | Si la déclaration a un `journal` : la chaîne vérifie que `ctx.journaliser` a été appelé au moins une fois ; sinon elle lève `TraceManquante`, qui annule la transaction | `journal_audit` | `erreur` |

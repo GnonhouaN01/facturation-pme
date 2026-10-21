@@ -15,6 +15,7 @@ import { journaliser } from "../../journal/audit";
 import { creerTransportMemoire } from "../../modules/email/memoire";
 import { db, executerDansOrganisation } from "../client";
 import { creerCompteur } from "../debit";
+import { consommerPreuve } from "../nouvelle-authentification";
 import { lireAdhesion } from "../requetes/adhesions";
 import { compteurDebit } from "../schema/technique";
 
@@ -59,6 +60,8 @@ export const LIMITES_TEST = {
   "auth.profil_compte": { maximum: 30, fenetreSecondes: 3_600, par: "utilisateur" },
   "auth.mot_de_passe_compte": { maximum: 8, fenetreSecondes: 86_400, par: "utilisateur" },
   "auth.changement_mot_de_passe": { maximum: 4, fenetreSecondes: 600, par: "adresse_ip" },
+  // 1.6 : même raison.
+  "auth.nouvelle_authentification": { maximum: 10, fenetreSecondes: 86_400, par: "utilisateur" },
 } as const satisfies Record<NomLimite, Limite>;
 
 const NOMS = Object.keys(LIMITES_TEST) as NomLimite[];
@@ -102,6 +105,7 @@ export function creerBanc(): Banc {
     journaliser,
     verifierDebit: (nom, valeur) => verificateur.verifierDebit(nom, valeur),
     envoyerEmail,
+    consommerNouvelleAuthentification: consommerPreuve,
   });
 
   function cles(valeurs: string[]): string[] {

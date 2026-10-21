@@ -344,9 +344,9 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     await lire(origine, "/api/auth/list-sessions"),
     await lire(origine, authInconnu()),
   ];
-  // Décision 1 de la 1.1, étendue par la 1.2, la 1.3, la 1.4 et la 1.5 : en
-  // production, les dix-huit POST des comptes répondent comme un chemin
-  // inexistant de /api/auth.
+  // Décision 1 de la 1.1, étendue par la 1.2, la 1.3, la 1.4, la 1.5 et la
+  // 1.6 : en production, les dix-neuf POST des comptes répondent comme un
+  // chemin inexistant de /api/auth.
   const comptes = [];
   for (const chemin of [
     "/api/auth/sign-up/email",
@@ -368,6 +368,8 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     "/api/auth/revoke-other-sessions",
     "/api/auth/change-password",
     "/api/auth/update-user",
+    // 1.6 (docs/features/nouvelle-authentification.md, section 10).
+    "/api/auth/verify-password",
     authInconnu(),
   ]) {
     comptes.push(await lire(origine, chemin, undefined, undefined, "POST"));

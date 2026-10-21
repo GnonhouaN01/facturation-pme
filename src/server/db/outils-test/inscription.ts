@@ -9,6 +9,7 @@ import { inArray } from "drizzle-orm";
 import { empreinteCodeSecours } from "../../auth/codes-secours";
 import { optionsAuth } from "../../auth/config";
 import { creerDependancesDoubleAuth } from "../../auth/dependances-double-auth";
+import { creerDependancesNouvelleAuthentification } from "../../auth/dependances-nouvelle-authentification";
 import { creerDependancesProfil } from "../../auth/dependances-profil";
 import { creerEmailsCompte } from "../../auth/emails";
 import { creerTraitementAuth, jetonDeSession } from "../../auth/points-entree";
@@ -24,6 +25,7 @@ import { creerTransportMemoire, type TransportMemoire } from "../../modules/emai
 import { db } from "../client";
 import { creerCompteur, type Compteur } from "../debit";
 import * as requetesDoubleAuth from "../double-authentification";
+import { enregistrerPreuve } from "../nouvelle-authentification";
 import { marquerAdresseVerifiee, supprimerJetonsReinitialisation } from "../reinitialisation";
 import { revoquerAutresSessions, revoquerSessionDe } from "../sessions";
 import { user, verification } from "../schema/auth";
@@ -201,6 +203,14 @@ export function bancInscription(options: OptionsBanc): BancInscription {
           adresseUtilisateur: requetesDoubleAuth.adresseUtilisateur,
         },
         emailProfil: emails.emailProfil,
+      }),
+      // 1.6, comme gestionnaire.ts (docs/features/nouvelle-authentification.md,
+      // test 5).
+      nouvelleAuthentification: creerDependancesNouvelleAuthentification({
+        contexte: () => auth.$context,
+        doubleAuth,
+        verifierDebit: verificateur.verifierDebit,
+        enregistrerPreuve,
       }),
     }),
     transport,

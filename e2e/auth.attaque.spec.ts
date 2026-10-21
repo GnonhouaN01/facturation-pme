@@ -83,7 +83,9 @@ const CHEMINS_FERMES = [
   // en POST ; leur GET est vérifié avec les autres points ouverts, plus bas.
   // Le lien de Better Auth, jeton dans le chemin, reste fermé.
   `/reset-password/${"aB3dE5fG7hJ9kL1mN2pQ4rS6"}`,
-  "/verify-password",
+  // 1.6 (modifié) : /verify-password est ouvert en POST (nouvelle
+  // authentification) ; son GET est vérifié avec les autres points ouverts,
+  // plus bas.
   "/forget-password",
   // 1.4 (modifié) : /two-factor/enable et six autres points de la double
   // authentification sont ouverts en POST ; leur GET est vérifié avec les
@@ -157,8 +159,9 @@ test.describe("T-55 : points d'entrée fermés, indiscernables d'une adresse ine
   });
 
   // 1.2 (modifié) : cinq points ouverts au lieu de trois. 1.3 (modifié) :
-  // sept. 1.4 (modifié) : quatorze. 1.5 (modifié) : dix-huit.
-  test("GET des dix-huit points ouverts : fermé (seul POST est admis)", async () => {
+  // sept. 1.4 (modifié) : quatorze. 1.5 (modifié) : dix-huit. 1.6 (modifié) :
+  // dix-neuf.
+  test("GET des dix-neuf points ouverts : fermé (seul POST est admis)", async () => {
     for (const chemin of [
       "/sign-up/email",
       "/send-verification-email",
@@ -178,6 +181,7 @@ test.describe("T-55 : points d'entrée fermés, indiscernables d'une adresse ine
       "/revoke-other-sessions",
       "/change-password",
       "/update-user",
+      "/verify-password",
     ]) {
       expect(await lire(chemin), chemin).toEqual(await lire(inexistant()));
     }
@@ -385,6 +389,41 @@ test.describe("T-01 et S-82 : connexion", () => {
       corps: "{}",
     };
     expect(await lire("/revoke-sessions", options)).toEqual(await lire(inexistant(), options));
+  });
+});
+
+// Fonctionnalité 1.6 : nouvelle authentification. Le point est ouvert en
+// POST hors production ; sans session valable, il répond connexion_requise
+// sans rien vérifier ; une origine étrangère est refusée. Fiche :
+// docs/features/nouvelle-authentification.md, section 2, test 7.
+test.describe("T-55 et S-81 : nouvelle authentification", () => {
+  const corps = JSON.stringify({ motDePasse: "Phrase de passe 2026", code: "123456" });
+
+  test("POST /verify-password sans session, ou avec un cookie forgé : connexion_requise", async () => {
+    for (const cookie of [undefined, `${NOM_COOKIE}=forge.signature`]) {
+      const reponse = await lire("/verify-password", {
+        methode: "POST",
+        entetes: {
+          "content-type": "application/json",
+          origin: ADRESSE,
+          ...(cookie === undefined ? {} : { cookie }),
+        },
+        corps,
+      });
+      expect(reponse.statut).toBe(401);
+      expect(JSON.parse(reponse.corps)).toEqual({ ok: false, raison: "connexion_requise" });
+      expect(reponse.entetes.map(([nom]) => nom)).not.toContain("set-cookie");
+    }
+  });
+
+  test("POST /verify-password, Origin étrangère : refusé", async () => {
+    const reponse = await lire("/verify-password", {
+      methode: "POST",
+      entetes: { "content-type": "application/json", origin: "https://attaquant.exemple" },
+      corps,
+    });
+    expect(reponse.statut).toBe(403);
+    expect(JSON.parse(reponse.corps)).toEqual({ ok: false, raison: "refuse" });
   });
 });
 

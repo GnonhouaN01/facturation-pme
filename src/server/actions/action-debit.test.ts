@@ -83,6 +83,8 @@ function dependances() {
     },
     verifierDebit,
     envoyerEmail: async () => ({ envoye: false, raison: "non_autorise" }),
+    // 1.6 : aucune déclaration de ce fichier n'exige de nouvelle authentification.
+    consommerNouvelleAuthentification: async () => false,
   };
   return { deps, verifierDebit, executerDansOrganisation };
 }

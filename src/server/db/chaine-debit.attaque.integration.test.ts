@@ -11,6 +11,7 @@ import { journaliser } from "../journal/audit";
 
 import { db, executerDansOrganisation } from "./client";
 import { creerCompteur } from "./debit";
+import { consommerPreuve } from "./nouvelle-authentification";
 import { creerMembre, nettoyerMembres } from "./outils-test/membres";
 import { creerDeuxOrganisations, type Organisations } from "./outils-test/organisations";
 import { lireAdhesion } from "./requetes/adhesions";
@@ -52,6 +53,7 @@ function chaine() {
     journaliser,
     verifierDebit,
     envoyerEmail: async () => ({ envoye: false, raison: "non_autorise" }),
+    consommerNouvelleAuthentification: consommerPreuve,
   });
   return { c, verifierDebit };
 }
