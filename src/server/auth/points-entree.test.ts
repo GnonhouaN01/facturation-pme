@@ -463,11 +463,56 @@ describe("identifiant d'incident dans toute réponse « erreur » (S-85, dette d
       expect(lu.ok).toBe(false);
       expect(lu.raison).toBe("erreur");
       expect(lu.incident).toMatch(UUID);
-      expect(lignes).toEqual([
-        `[auth] ${JSON.stringify({ niveau: "error", incident: lu.incident })}`,
-      ]);
+      // Modifié le 2026-10-21 (fix(1.2)) : l'unique ligne porte aussi la cause
+      // (point, appels internes, erreur décrite), jamais un message.
+      expect(lignes).toHaveLength(1);
+      expect(lignes[0]?.startsWith("[auth] ")).toBe(true);
+      expect(JSON.parse(lignes[0]?.slice(7) ?? "{}")).toMatchObject({
+        niveau: "error",
+        incident: lu.incident,
+        point: chemin,
+      });
     },
   );
+
+  // fix(1.2), 2026-10-21 : une 500 de /api/auth se diagnostique depuis le
+  // journal du serveur seul.
+  test("statut 500 de Better Auth : l'appel interne, son statut et son code au journal", async () => {
+    const lignes: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...valeurs: unknown[]) => {
+      lignes.push(valeurs.map(String).join(" "));
+    });
+    const reponse = await avec(
+      Response.json({ code: "FAILED_TO_CREATE_SESSION", message: "x" }, { status: 500 }),
+    )(post("/sign-up/email", INSCRIPTION));
+    const { incident } = (await reponse.json()) as { incident: string };
+    expect(JSON.parse(lignes[0]?.slice(7) ?? "{}")).toMatchObject({
+      incident,
+      point: "/sign-up/email",
+      appels: [{ chemin: "/sign-up/email", statut: 500, code: "FAILED_TO_CREATE_SESSION" }],
+    });
+  });
+
+  test("exception : classes, code SQL et pile au journal, jamais le message ni l'adresse", async () => {
+    const lignes: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...valeurs: unknown[]) => {
+      lignes.push(valeurs.map(String).join(" "));
+    });
+    const reponse = await avec(async () => {
+      throw new Error(`Failed query: params: ${INSCRIPTION.email}`, {
+        cause: Object.assign(new Error("terminated"), { name: "DatabaseError", code: "57P01" }),
+      });
+    })(post("/sign-up/email", INSCRIPTION));
+    expect(reponse.status).toBe(500);
+    const lu = JSON.parse(lignes[0]?.slice(7) ?? "{}") as { erreur?: { pile?: string[] } };
+    expect(lu).toMatchObject({
+      point: "/sign-up/email",
+      erreur: { classes: ["Error", "DatabaseError"], code: "57P01" },
+    });
+    expect(lu.erreur?.pile?.length).toBeGreaterThan(0);
+    expect(lignes.join("\n")).not.toContain(INSCRIPTION.email);
+    expect(lignes.join("\n")).not.toContain("Failed query");
+  });
 
   test("deux erreurs : deux incidents différents", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});

@@ -51,7 +51,9 @@ export type BancInscription = {
   // absente ; et l'utilisateur dont l'adresse n'est pas vérifiée compte comme
   // absent, comme lireSession.
   lireSession: (entetes: Headers) => Promise<{ utilisateurId: string; jeton: string } | null>;
-  // Exécute les envois planifiés par les rappels (after() en production).
+  // Exécute les envois planifiés par les rappels (after() en production), et
+  // attend aussi ceux qu'un appel simultané a déjà pris : au retour, tout
+  // envoi planifié avant l'appel est fait.
   envoyer: () => Promise<void>;
   // Adresse de test neuve, autorisée par la porte (hors production).
   adresse: () => string;
@@ -59,7 +61,23 @@ export type BancInscription = {
   nettoyer: () => Promise<void>;
 };
 
-export function bancInscription(options: { adresses: number }): BancInscription {
+export type OptionsBanc = {
+  adresses: number;
+  // Le fichier de test avance l'horloge de JavaScript (vi.setSystemTime),
+  // comme double-authentification.integration.test.ts pour changer de
+  // tranche de code. Better Auth supprime alors, à chaque recherche d'une
+  // ligne de verification (findVerificationValue), toutes les lignes dont
+  // l'échéance précède cette horloge avancée, celles des autres fichiers
+  // lancés en parallèle comprises, encore valables à l'horloge réelle
+  // (constaté : reinitialisation.integration.test.ts, « supprimerJetons-
+  // Reinitialisation », dont les lignes expirent en 60 s, alors que
+  // l'horloge avancée atteint +10 min). Ce nettoyage au passage est coupé
+  // pour cette instance (disableCleanup) : ses lignes expirées sont purgées
+  // par la tâche quotidienne, et par nettoyer().
+  horlogeSimulee?: boolean;
+};
+
+export function bancInscription(options: OptionsBanc): BancInscription {
   const adresses = Array.from(
     { length: options.adresses },
     () => `test-${randomUUID()}@exemple.test`,
@@ -89,6 +107,7 @@ export function bancInscription(options: { adresses: number }): BancInscription 
   const verificateur = creerVerificateur({ limites: LIMITES, compteur, secret });
 
   const taches: (() => Promise<void>)[] = [];
+  let envois: Promise<void> = Promise.resolve();
   const emails = creerEmailsCompte({
     planifier: (tache) => {
       taches.push(tache);
@@ -119,6 +138,9 @@ export function bancInscription(options: { adresses: number }): BancInscription 
       ...base.emailVerification,
       sendVerificationEmail: emails.emailVerification,
     },
+    ...(options.horlogeSimulee
+      ? { verification: { ...base.verification, disableCleanup: true } }
+      : {}),
   });
 
   // 1.4, comme gestionnaire.ts : même fabrique, sur cette instance, ce
@@ -187,8 +209,17 @@ export function bancInscription(options: { adresses: number }): BancInscription 
       if (!lue || lue.user.emailVerified !== true) return null;
       return { utilisateurId: lue.user.id, jeton: lue.session.token };
     },
-    envoyer: async () => {
-      for (const tache of taches.splice(0)) await tache();
+    // Les appels s'enchaînent : chacun attend les lots pris avant lui. Sans
+    // cela, des comptes préparés en parallèle (double-authentification
+    // .integration.test.ts) vidaient la file l'un pour l'autre, et un appel
+    // revenait avant l'envoi de son email (constaté en CI, base rapide).
+    envoyer: () => {
+      const lot = taches.splice(0);
+      const suite = envois.then(async () => {
+        for (const tache of lot) await tache();
+      });
+      envois = suite.catch(() => {});
+      return suite;
     },
     adresse: () => {
       const adresse = adresses[suivante++];

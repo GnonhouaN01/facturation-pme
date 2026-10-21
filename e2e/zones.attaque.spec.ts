@@ -11,6 +11,7 @@ import { adresseDoubleAuth } from "./compte-verifie";
 import { activer, preparer } from "./double-auth";
 import { outilOrganisation } from "./organisation-e2e";
 import {
+  documentEtFlux,
   documentServi,
   ENTETES_SECTION_6,
   nonceDe,
@@ -288,7 +289,7 @@ test.describe("zone application, Propriétaire sans second facteur", () => {
   }, info) => {
     if ("saut" in outil) throw new Error(outil.saut);
     const sansSession = await rendu(page, TABLEAU_DE_BORD);
-    const brutSansSession = documentServi(await (await request.get(TABLEAU_DE_BORD)).text());
+    const brutSansSession = documentEtFlux(await (await request.get(TABLEAU_DE_BORD)).text());
 
     const email = adresseDoubleAuth(info, "proprietaire");
     await preparer(page, context, email);
@@ -301,7 +302,7 @@ test.describe("zone application, Propriétaire sans second facteur", () => {
     });
     const html = await brut.text();
     expect(brut.status()).toBe(404);
-    expect(documentServi(html)).toEqual(brutSansSession);
+    expect(documentEtFlux(html)).toEqual(brutSansSession);
     for (const texte of TEXTES_GABARIT) expect(html).not.toContain(texte);
 
     await activer(page);

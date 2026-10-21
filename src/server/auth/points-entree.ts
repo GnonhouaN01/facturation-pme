@@ -22,7 +22,7 @@ import {
   type PointCompose,
   type ReponseBetterAuth,
 } from "./double-authentification";
-import { consignerIncidentAuth } from "./journal";
+import { consignerIncidentAuth, type CauseIncident } from "./journal";
 import { POINTS_PROFIL, type DependancesProfil } from "./profil";
 
 // Le gestionnaire de /api/auth : une liste fermée de points d'entrée ouverts
@@ -461,10 +461,10 @@ function json(statut: number, corps: unknown, cookies: readonly string[] = []): 
 }
 
 // Un refus ; « erreur » porte l'identifiant de l'incident, écrit au journal
-// technique au même moment (une ligne par réponse).
-function refus(raison: Raison): Response {
+// technique au même moment avec sa cause (une ligne par réponse).
+function refus(raison: Raison, cause?: CauseIncident): Response {
   if (raison === "erreur") {
-    return json(STATUTS.erreur, { ok: false, raison, incident: consignerIncidentAuth() });
+    return json(STATUTS.erreur, { ok: false, raison, incident: consignerIncidentAuth(cause) });
   }
   return json(STATUTS[raison], { ok: false, raison });
 }
@@ -528,6 +528,9 @@ async function lireReponse(reponse: Response): Promise<ReponseLue> {
   };
 }
 
+// La cause d'un incident, remplie pendant le traitement d'une requête.
+type Cause = { point: string; appels: CauseIncident["appels"][number][] };
+
 export function creerTraitementAuth(
   dependances: DependancesPointsEntree,
 ): (requete: Request) => Promise<Response> {
@@ -535,8 +538,9 @@ export function creerTraitementAuth(
   const origine = new URL(dependances.origine).origin;
 
   // Un appel interne d'un point composé (1.4) : POST JSON construit en
-  // mémoire, avec le seul cookie donné.
-  function appeler(entetes: Headers) {
+  // mémoire, avec le seul cookie donné. Son chemin, son statut et son code
+  // rejoignent la cause d'un éventuel incident.
+  function appeler(entetes: Headers, cause: Cause) {
     return async (
       chemin: string,
       corps: Record<string, unknown>,
@@ -553,13 +557,14 @@ export function creerTraitementAuth(
           }),
         ),
       );
+      cause.appels.push({ chemin, statut: lue.statut, code: lue.code });
       return { statut: lue.statut, code: lue.code, cookies: lue.cookies, corps: lue.corps };
     };
   }
 
-  function reponseTraduite(traduite: Traduction): Response {
+  function reponseTraduite(traduite: Traduction, cause: Cause): Response {
     return "raison" in traduite
-      ? refus(traduite.raison)
+      ? refus(traduite.raison, cause)
       : json(200, { ok: true, ...traduite.donnees }, traduite.cookies);
   }
 
@@ -568,6 +573,7 @@ export function creerTraitementAuth(
     requete: Request,
     url: URL,
   ): Promise<Response> {
+    const cause: Cause = { point: url.pathname.slice(BASE.length), appels: [] };
     if (!verifierOrigine(requete.headers, origine)) return refus("refuse");
     // Aucune donnée dans l'adresse d'un POST : le jeton de vérification, en
     // particulier, n'arrive que dans le corps (décision 3).
@@ -590,15 +596,15 @@ export function creerTraitementAuth(
         traduite = await point.executer(lu.data as Record<string, unknown>, {
           entetes: requete.headers,
           origine,
-          appeler: appeler(requete.headers),
+          appeler: appeler(requete.headers, cause),
           revoquerSessionRecue: () => dependances.revoquerSession(requete.headers),
           dependances: dependances.doubleAuth,
           profil: dependances.profil,
         });
-      } catch {
-        return refus("erreur");
+      } catch (erreur) {
+        return refus("erreur", { ...cause, erreur });
       }
-      return reponseTraduite(traduite);
+      return reponseTraduite(traduite, cause);
     }
     try {
       const interne = await point.versBetterAuth(
@@ -607,19 +613,26 @@ export function creerTraitementAuth(
         origine,
         dependances,
       );
-      if (!(interne instanceof Request)) return refus(interne);
-      traduite = point.traduire(await lireReponse(await dependances.traiter(interne)));
+      if (!(interne instanceof Request)) return refus(interne, cause);
+      const lue = await lireReponse(await dependances.traiter(interne));
+      cause.appels.push({
+        chemin: new URL(interne.url).pathname.slice(BASE.length),
+        statut: lue.statut,
+        code: lue.code,
+      });
+      traduite = point.traduire(lue);
       if (!("raison" in traduite) && point.verifier) {
         if (!(await point.verifier(requete.headers, dependances, traduite.cookies))) {
-          return refus("erreur");
+          return refus("erreur", cause);
         }
       }
-    } catch {
+    } catch (erreur) {
       // Panne de base, compteur en échec, ou autre erreur relancée par Better
-      // Auth (onAPIError.throw) : une ligne fixe, jamais l'erreur.
-      return refus("erreur");
+      // Auth (onAPIError.throw) : une ligne avec l'erreur décrite, jamais son
+      // message (journal.ts).
+      return refus("erreur", { ...cause, erreur });
     }
-    return reponseTraduite(traduite);
+    return reponseTraduite(traduite, cause);
   }
 
   return async function traiterRequeteAuth(requete: Request): Promise<Response> {

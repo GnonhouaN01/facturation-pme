@@ -286,6 +286,51 @@ test.describe("page « erreur », serveur à la base injoignable", () => {
 // signature, ni l'adresse, ni le mot de passe, ni la requête SQL n'arrivent
 // dans le journal, qui ne garde que des lignes fixes [auth]. Fiche :
 // docs/features/inscription.md, section 1.3, test 2 (test 15).
+// Modifié le 2026-10-21 (fix(1.2)) : une ligne [auth] est soit la ligne fixe
+// du journal de Better Auth, soit la ligne d'un incident avec sa cause, dont
+// chaque valeur a une forme fermée : point et chemins de /api/auth, statut,
+// codes en majuscules, classes, code SQL, contrainte, emplacements
+// fichier:ligne:colonne. Aucun texte libre, donc aucun message, requête,
+// jeton ni adresse (src/server/auth/journal.ts).
+const LIGNE_FIXE = /^\[auth\] \{"niveau":"(warn|error)","incident":"[0-9a-f-]{36}"\}$/;
+const CHEMIN = /^(\/[a-z0-9-]{1,40}){1,4}$|^autre$/;
+const CODE = /^[A-Z][A-Z0-9_]{0,63}$/;
+const CLASSE = /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/;
+const CADRE = /^[A-Za-z0-9_@.\-/]+:\d+:\d+$/;
+
+function causeConforme(ligne: string): Record<string, unknown> {
+  expect(ligne.startsWith("[auth] ")).toBe(true);
+  const lu = JSON.parse(ligne.slice(7)) as Record<string, unknown>;
+  expect(
+    Object.keys(lu).every((cle) =>
+      ["niveau", "incident", "point", "appels", "erreur"].includes(cle),
+    ),
+  ).toBe(true);
+  expect(lu.niveau).toBe("error");
+  expect(lu.incident).toMatch(/^[0-9a-f-]{36}$/);
+  expect(lu.point).toMatch(CHEMIN);
+  for (const appel of lu.appels as { chemin: string; statut: number; code: string | null }[]) {
+    expect(Object.keys(appel).sort()).toEqual(["chemin", "code", "statut"]);
+    expect(appel.chemin).toMatch(CHEMIN);
+    expect(Number.isInteger(appel.statut)).toBe(true);
+    if (appel.code !== null) expect(appel.code).toMatch(CODE);
+  }
+  if (lu.erreur !== undefined) {
+    const erreur = lu.erreur as {
+      classes: string[];
+      code: string | null;
+      contrainte: string | null;
+      pile: string[];
+    };
+    expect(Object.keys(erreur).sort()).toEqual(["classes", "code", "contrainte", "pile"]);
+    for (const classe of erreur.classes) expect(classe).toMatch(CLASSE);
+    if (erreur.code !== null) expect(erreur.code).toMatch(/^[0-9A-Z]{5}$/);
+    if (erreur.contrainte !== null) expect(erreur.contrainte).toMatch(/^[a-z_][a-z0-9_]{0,62}$/);
+    for (const cadre of erreur.pile) expect(cadre).toMatch(CADRE);
+  }
+  return lu;
+}
+
 test.describe("T-39 : journal du serveur à la base injoignable", () => {
   function journal(): string {
     const chemin = process.env.JOURNAL_PANNE_E2E;
@@ -342,7 +387,7 @@ test.describe("T-39 : journal du serveur à la base injoignable", () => {
       expect(sortie, String(motif)).not.toMatch(motif);
     }
     for (const ligne of lignesAuth(sortie)) {
-      expect(ligne).toMatch(/^\[auth\] \{"niveau":"(warn|error)","incident":"[0-9a-f-]{36}"\}$/);
+      if (!LIGNE_FIXE.test(ligne)) causeConforme(ligne);
     }
   });
 });
@@ -386,7 +431,7 @@ test.describe("identifiant d'incident, connexion sur le serveur en panne", () =>
       .toBe(true);
     const sortie = await readFile(chemin, "utf8");
     const ligne = sortie.split("\n").find((l) => l.includes(corps.incident ?? "absent"));
-    expect(ligne).toBe(`[auth] ${JSON.stringify({ niveau: "error", incident: corps.incident })}`);
+    expect(causeConforme(ligne ?? "")).toMatchObject({ niveau: "error", incident: corps.incident });
     expect(sortie.includes(email)).toBe(false);
     expect(sortie.includes(motDePasse)).toBe(false);
   });
@@ -448,7 +493,7 @@ test.describe("identifiant d'incident, étape du code sur le serveur en panne", 
       .toBe(true);
     const sortie = await readFile(chemin, "utf8");
     const ligne = sortie.split("\n").find((l) => l.includes(corps.incident ?? "absent"));
-    expect(ligne).toBe(`[auth] ${JSON.stringify({ niveau: "error", incident: corps.incident })}`);
+    expect(causeConforme(ligne ?? "")).toMatchObject({ niveau: "error", incident: corps.incident });
     expect(sortie.includes(code)).toBe(false);
     expect(sortie.includes(identifiant)).toBe(false);
   });

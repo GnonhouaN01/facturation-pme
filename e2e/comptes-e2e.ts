@@ -27,9 +27,11 @@ const PROJETS = ["mobile-390", "ordinateur-1280"] as const;
 // docs/features/double-authentification.md) ; 31 rangs en PR 2 (rang 30, le
 // Propriétaire de la zone application). 1.5 : 35 rangs, pour les comptes
 // du profil et des sessions (rangs 31 à 34, docs/features/profil-sessions.md).
+// 10 répétitions au lieu de 5 : la preuve d'un correctif de test instable
+// demande --repeat-each=10.
 export const RANGS = 35;
 export const ESSAIS_MAX = 3;
-export const REPETITIONS_MAX = 5;
+export const REPETITIONS_MAX = 10;
 
 function borne(valeur: number, maximum: number): boolean {
   return Number.isInteger(valeur) && valeur >= 0 && valeur < maximum;
