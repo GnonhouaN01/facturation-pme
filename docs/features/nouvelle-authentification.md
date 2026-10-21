@@ -1,6 +1,6 @@
 # Fonctionnalité : nouvelle authentification avant une action sensible
 
-Statut : validée le 2026-10-21 par application des recommandations de l'assistant (consigne du développeur : une seule passe, recommandations appliquées) ; implémentée le 2026-10-21 (« Notes de l'implémentation ») ; les vrais choix restants sont listés à la fin (« Choix restants »).
+Statut : validée le 2026-10-21 par application des recommandations de l'assistant (consigne du développeur : une seule passe, recommandations appliquées) ; implémentée le 2026-10-21 (« Notes de l'implémentation ») ; les deux choix restants tranchés par le développeur le 2026-10-21 (« Décisions du développeur »).
 
 Jalon 1, fonctionnalité 1.6 de `docs/PLAN.md`. Taille M. Cas d'utilisation : UC-07 (étape 4), UC-10 (étape 2), UC-13 (étape 3), UC-30 (étape 1). Exigences : S-14, S-33 (partie « après nouvelle authentification »), S-10, S-11, S-81, S-85. Menaces : T-12, T-44, T-51, T-33 (session volée), T-01 (essais de mot de passe par une session volée), T-39, T-55.
 
@@ -86,7 +86,7 @@ Aucune raison nouvelle pour `/api/auth`. Le test d'inventaire passe à **dix-neu
 - **Où** : une ligne de `verification` (table de Better Auth, sans organisation, déjà utilisée par la 1.4 pour l'anti-rejeu), `identifier = "nouvelle-authentification:<identifiant de la session>"`, `value = <identifiant de l'utilisateur>`, `expires_at = now() + 5 minutes`. **Aucune migration.** Une nouvelle preuve remplace la précédente de la même session (suppression puis insertion, dans une transaction).
 - **Liée à la session** par son identifiant, jamais par son jeton : une autre session du même utilisateur (un autre navigateur, ou la copie d'un voleur ouverte par une nouvelle connexion) n'en profite pas. Une session fermée (déconnexion, changement de mot de passe) laisse une ligne orpheline, inutilisable, qui expire.
 - **Durée : 5 minutes**, constante unique (`DUREE_NOUVELLE_AUTHENTIFICATION_SECONDES`). Assez pour saisir puis valider le formulaire de l'action ; assez court pour qu'un poste laissé ouvert après une action sensible ne serve pas à une autre plus tard.
-- **Usage unique** : consommée par l'action qu'elle autorise (section 4). Deux actions sensibles demandent deux saisies (UC-10 : changer deux rôles).
+- **Usage unique** : consommée par l'action qu'elle autorise (section 4). Deux actions sensibles demandent deux saisies ; plusieurs changements validés ensemble forment une seule action, donc une seule saisie (décision du développeur, 2) : l'écran des rôles (UC-10) valide plusieurs rôles en une fois.
 - Purge : les lignes expirées de `verification` sont déjà supprimées par la tâche quotidienne (`purgerJetonsExpires`, 1.3).
 
 ### 4. L'étape 8 de la chaîne
@@ -117,7 +117,7 @@ Better Auth ne limite ni le mot de passe ni le code vérifiés avec une session 
 
 ### 6. Les facteurs exigés
 
-Le mot de passe, **et** le code du second facteur quand il est actif. Toute action de S-14 est réservée au Propriétaire (matrice), qui a toujours le second facteur (S-12, étape 7) : en pratique, mot de passe et code. UC-13 l'écrit ainsi ; UC-07, UC-10 et UC-30 ne citent que le mot de passe (écart, « Choix restants », 1). Raison : un mot de passe hameçonné plus un cookie volé ne suffisent pas à détourner les règlements (T-12) ; le téléphone reste nécessaire. Les autres exigences propres à une action (le nom de l'organisation pour UC-13) restent dans l'entrée de l'action.
+Le mot de passe, **et** le code du second facteur quand il est actif. Toute action de S-14 est réservée au Propriétaire (matrice), qui a toujours le second facteur (S-12, étape 7) : en pratique, mot de passe et code. UC-13 l'écrivait ainsi ; UC-07, UC-10 et UC-30 ne citaient que le mot de passe : même règle que UC-13 pour UC-07, UC-10 et UC-30 (décision du développeur, 1), `USECASES.md` mis à jour ; UC-13 est inchangé. Raison : un mot de passe hameçonné plus un cookie volé ne suffisent pas à détourner les règlements (T-12) ; le téléphone reste nécessaire. Les autres exigences propres à une action (le nom de l'organisation pour UC-13) restent dans l'entrée de l'action.
 
 ### 7. Journal et email (S-70, T-39)
 
@@ -142,12 +142,12 @@ Inchangé : le mot de passe actuel suffit. L'analyse de la 1.5 (section 4) tient
 | Alternative | Raison de l'écarter |
 |---|---|
 | `freshAge` de Better Auth (session récente) | Mesure l'âge de la session, pas une saisie (section 1) ; « rafraîchir » obligerait à une nouvelle connexion, donc une nouvelle session, et l'organisation active serait perdue |
-| Preuve valable une fenêtre de temps, pour plusieurs actions | Un poste laissé ouvert juste après une action sensible en permettrait d'autres ; usage unique plus simple à prouver |
+| Preuve valable une fenêtre de temps, pour plusieurs actions | Un poste laissé ouvert juste après une action sensible en permettrait d'autres ; usage unique plus simple à prouver. Écartée par le développeur (décision 2) : plusieurs changements se valident en une action |
 | Mot de passe (et code) dans l'entrée de chaque action sensible | Chaque service relirait des identifiants ; secrets mêlés aux données métier, au schéma et aux erreurs `invalide` ; l'étape 8 ne pourrait plus précéder la lecture de l'entrée |
 | Colonne sur `session` (date de la dernière saisie) | Migration d'une table de Better Auth générée ; la ligne de `verification` suffit et expire seule |
 | Preuve dans un cookie signé | Une copie du cookie volée avec celui de la session la porterait aussi ; aucune révocation ni usage unique côté serveur |
 | `refuse` pour une preuve absente | L'interface ne saurait pas qu'il faut demander les identifiants |
-| Mot de passe seul pour UC-07, UC-10, UC-30 | Voir section 6 et « Choix restants », 1 |
+| Mot de passe seul pour UC-07, UC-10, UC-30 | Écarté par le développeur (décision 1) : même règle que UC-13 (section 6) |
 | Écran de confirmation dès la 1.6 | Aucune action ne l'utiliserait ; testé à vide (section 8) |
 
 ## Règles de sécurité et permissions
@@ -235,10 +235,10 @@ Recommandations de l'assistant, appliquées :
 6. Pas d'écran avant la 2.2 (section 8).
 7. Pas de code pour changer de mot de passe (section 9).
 
-## Choix restants
+## Décisions du développeur (2026-10-21)
 
-1. **Le code du second facteur pour UC-07, UC-10 et UC-30**, que les cas d'utilisation n'écrivent pas (section 6). Revenir au mot de passe seul demanderait un niveau par déclaration (`nouvelleAuthentification: "mot_de_passe" | "second_facteur"`).
-2. **Usage unique ou fenêtre de 5 minutes** (section 3) : l'usage unique impose une saisie par rôle changé (UC-10).
+1. **Même règle que UC-13 pour UC-07, UC-10 et UC-30** : mot de passe, et code du second facteur quand il est actif (section 6) ; UC-13 l'écrivait déjà et reste inchangé. Aucun changement de code : c'est la règle implémentée ; `USECASES.md` (UC-07 étape 4, UC-10 étape 2, UC-30 étape 1) et `DESIGN-SYSTEM.md` (« Action sensible ») la reprennent.
+2. **Usage unique** (section 3), gardé. Pour ne pas imposer une saisie par rôle changé, plusieurs changements se valident en une seule action, donc une seule nouvelle authentification ; noté dans `PLAN.md` pour la 2.2 (formulaire de confirmation) et la 2.4 (écran des rôles). Aucun changement de code.
 
 ## Notes de l'implémentation
 

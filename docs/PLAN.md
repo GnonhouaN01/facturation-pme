@@ -95,6 +95,8 @@ Jusque-là, les comptes restent fermés en production, et les fonctionnalités s
 - **Nom de l'utilisateur dans la barre latérale** (`socle-interface.md`, section 10) : demande une lecture de `user`, table de Better Auth (RR-8).
 - **Scénario « base injoignable avec une session valide »** (`socle-interface.md`, section 4.3) : une vraie session dans le navigateur du serveur en panne.
 
+**Nouvelle authentification dans les écrans du jalon 2** (décisions du développeur du 2026-10-21, `docs/features/nouvelle-authentification.md`) : la preuve est d'usage unique. La 2.2 livre le formulaire de confirmation (mot de passe, et code quand le second facteur est actif, pour toute action de S-14) ; une validation peut porter plusieurs changements, pour une seule saisie. La 2.4 s'en sert pour valider plusieurs rôles en une fois (UC-10).
+
 **Report de la 1.5 à la 2.1** (`docs/features/profil-sessions.md`, section 4 et « Reporté ») : après un changement de mot de passe, la session neuve créée par Better Auth perd l'organisation active. La 2.1 la rétablit (ou la redemande), et le teste.
 
 **La 2.4 se fait après la 3.1** (décision du développeur du 2026-10-21, section « Paliers et ordre ») : le retrait d'un membre impose de réaffecter ses clients (F-017), qui n'existent qu'avec la 3.1. La 2.4 porte la réaffectation des clients, par le Propriétaire comme au retrait d'un membre.

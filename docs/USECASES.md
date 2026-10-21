@@ -193,7 +193,7 @@ Les cas marqués ★ sont les plus sensibles pour la sécurité.
 1. Le Propriétaire modifie la fiche : logo, adresse, NCC, régime d'imposition, mentions légales.
 2. Il gère la liste des taux de TVA et les délais par défaut.
 3. Il renseigne les instructions de paiement (numéro mobile money marchand, coordonnées bancaires).
-4. Pour l'étape 3, le système exige une nouvelle saisie du mot de passe.
+4. Pour l'étape 3, le système exige une nouvelle saisie du mot de passe et un code de double authentification (S-14, décision du 2026-10-21, fonctionnalité 1.6).
 5. Le système enregistre, inscrit la modification au journal d'audit et, pour les instructions de paiement, notifie tous les Propriétaires par email.
 
 **Erreurs**
@@ -267,7 +267,7 @@ Les cas marqués ★ sont les plus sensibles pour la sécurité.
 
 **Scénario nominal**
 1. Le Propriétaire choisit un membre, puis un nouveau rôle ou le retrait.
-2. Le système exige une nouvelle saisie du mot de passe.
+2. Le système exige une nouvelle saisie du mot de passe et un code de double authentification (S-14, décision du 2026-10-21, fonctionnalité 1.6). Plusieurs changements de rôle se valident ensemble, en une seule saisie.
 3. En cas de retrait, le système demande à qui réaffecter les clients du membre.
 4. Le système applique le changement, ferme les sessions du membre sur cette organisation et inscrit l'opération au journal d'audit.
 
@@ -739,7 +739,7 @@ Les cas marqués ★ sont les plus sensibles pour la sécurité.
 2. Le système produit un fichier CSV et inscrit l'export au journal d'audit.
 
 **Scénario nominal (export complet)**
-1. Le Propriétaire demande l'export complet et ressaisit son mot de passe.
+1. Le Propriétaire demande l'export complet, ressaisit son mot de passe et un code de double authentification (S-14, décision du 2026-10-21, fonctionnalité 1.6).
 2. Le système produit l'archive et inscrit l'export au journal d'audit.
 
 **Résultat :** un fichier téléchargé, limité à l'organisation active.
