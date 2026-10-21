@@ -2,11 +2,12 @@ import "server-only";
 
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import type { Pool } from "pg";
 import { z } from "zod";
 
 import { env } from "../env";
 
+import { creerPool, REGLAGES_POOL } from "./pool";
 import { authRelations } from "./schema/auth";
 
 // Fiche : docs/features/acces-donnees.md, section 1.
@@ -73,7 +74,8 @@ export function creerAcces(pool: Pool): Acces {
   return { db: base, executerDansOrganisation: executer };
 }
 
-const principal = creerAcces(new Pool({ connectionString: env.DATABASE_URL }));
+// Pool qui écarte une connexion coupée pendant une suspension (pool.ts).
+const principal = creerAcces(creerPool({ connectionString: env.DATABASE_URL, ...REGLAGES_POOL }));
 
 // db n'a pas d'organisation active : réservé à Better Auth (règle ESLint).
 export const db = principal.db;
