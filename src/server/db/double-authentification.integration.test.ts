@@ -1,7 +1,7 @@
 import { randomInt, randomUUID } from "node:crypto";
 
 import { and, eq, inArray, like } from "drizzle-orm";
-import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { codeHotp, trancheCourante } from "../auth/tranche-totp";
 import { env } from "../env";
@@ -105,7 +105,11 @@ type Active = Awaited<ReturnType<typeof compteVerifie>> & {
   codes: string[];
 };
 
-async function activer(compte?: Awaited<ReturnType<typeof compteVerifie>>): Promise<Active> {
+// Activation par le parcours réel (enable, puis confirm-enable avec le code de
+// la tranche courante), sans avancer l'horloge.
+async function activerSansAvancer(
+  compte?: Awaited<ReturnType<typeof compteVerifie>>,
+): Promise<Active> {
   const c = compte ?? (await compteVerifie());
   const activation = await banc.traiter(
     post("/two-factor/enable", { motDePasse: MOT_DE_PASSE }, c.cookie),
@@ -118,9 +122,51 @@ async function activer(compte?: Awaited<ReturnType<typeof compteVerifie>>): Prom
   );
   expect(confirmation.status).toBe(200);
   const cookie = paire(confirmation, SESSION) ?? c.cookie;
-  trancheSuivante();
   return { ...c, cookie, secret, cle: lu.cle, codes: lu.codes };
 }
+
+async function activer(compte?: Awaited<ReturnType<typeof compteVerifie>>): Promise<Active> {
+  const actif = await activerSansAvancer(compte);
+  trancheSuivante();
+  return actif;
+}
+
+// Comptes à second facteur actif dont l'activation n'est pas le sujet du
+// test : préparés ensemble avant les tests, par le même parcours et les mêmes
+// vérifications que activer(), au lieu d'un à la suite de l'autre dans chaque
+// test. Chaque compte ne sert qu'à un test. Sur dev, chaque appel enchaîne 4 à
+// 21 allers-retours d'environ 140 ms vers Neon : faites une à une, ces
+// activations prenaient la moitié de la durée du fichier, et poussaient les
+// tests les plus longs au-delà des 60 s quand le réseau ralentissait.
+const ACTIFS_PREPARES = 15;
+let reserve: Active[] = [];
+
+function compteActif(): Active {
+  const actif = reserve.shift();
+  if (!actif) throw new Error("réserve de comptes actifs épuisée");
+  return actif;
+}
+
+function simulerHibp(): void {
+  vi.stubGlobal("fetch", async (entree: string | URL | Request) => {
+    const url = new URL(entree instanceof Request ? entree.url : entree);
+    if (url.hostname !== "api.pwnedpasswords.com") throw new Error("appel inattendu");
+    return new Response("0000000000000000000000000000000000A:1\r\n");
+  });
+}
+
+beforeAll(async () => {
+  simulerHibp();
+  try {
+    reserve = await Promise.all(
+      Array.from({ length: ACTIFS_PREPARES }, () => activerSansAvancer()),
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+  // Une tranche de plus : les codes des tests suivent celle des confirmations.
+  decalage += 30_000;
+});
 
 async function demanderCode(email: string): Promise<string> {
   const reponse = await banc.traiter(post("/sign-in/email", { email, motDePasse: MOT_DE_PASSE }));
@@ -137,11 +183,7 @@ async function sessions(id: string) {
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(Date.now() + decalage);
-  vi.stubGlobal("fetch", async (entree: string | URL | Request) => {
-    const url = new URL(entree instanceof Request ? entree.url : entree);
-    if (url.hostname !== "api.pwnedpasswords.com") throw new Error("appel inattendu");
-    return new Response("0000000000000000000000000000000000A:1\r\n");
-  });
+  simulerHibp();
 });
 
 afterEach(() => {
@@ -210,7 +252,7 @@ describe("activation (UC-04)", () => {
 
 describe("connexion à deux étapes (UC-02, 3a et 3b)", () => {
   test("étape 1 sans session ; code juste : session ; même code ensuite, ou tranche plus ancienne : refusés (décision 4)", async () => {
-    const actif = await activer();
+    const actif = compteActif();
     const avant = (await sessions(actif.id)).length;
     const attente = await demanderCode(actif.email);
     expect((await sessions(actif.id)).length).toBe(avant);
@@ -241,7 +283,7 @@ describe("connexion à deux étapes (UC-02, 3a et 3b)", () => {
   });
 
   test("cinq codes faux puis le bon, sur une même attente : connexion_expiree", async () => {
-    const actif = await activer();
+    const actif = compteActif();
     const attente = await demanderCode(actif.email);
     const juste = code(actif.secret);
     const faux = juste === "000000" ? "000001" : "000000";
@@ -257,7 +299,7 @@ describe("connexion à deux étapes (UC-02, 3a et 3b)", () => {
   });
 
   test("code de secours : accepté une fois, refusé ensuite ; notification", async () => {
-    const actif = await activer();
+    const actif = compteActif();
     const [premier] = actif.codes;
     const a = await demanderCode(actif.email);
     expect(
@@ -281,7 +323,7 @@ describe("connexion à deux étapes (UC-02, 3a et 3b)", () => {
   });
 
   test("concurrence : deux usages simultanés d'un même code, sur deux attentes, donnent une seule session", async () => {
-    const actif = await activer();
+    const actif = compteActif();
     for (const [chemin, valeur] of [
       ["/two-factor/verify-backup-code", actif.codes[1] ?? ""],
       ["/two-factor/verify-totp", code(actif.secret)],
@@ -302,7 +344,7 @@ describe("limite par compte (décision 3)", () => {
   // Délai de 180 s : 21 essais et 5 connexions, chacun avec plusieurs
   // allers-retours vers Neon (dev), et 800 ms de plancher par connexion.
   test("le 21e code en 24 heures, depuis des adresses IP différentes : trop_de_requetes et alerte ; aucune valeur en clair", async () => {
-    const actif = await activer();
+    const actif = compteActif();
     const juste = code(actif.secret);
     const faux = juste === "000000" ? "000001" : "000000";
     let essais = 0;
@@ -333,7 +375,7 @@ describe("limite par compte (décision 3)", () => {
 
 describe("gestion (UC-04, section 5)", () => {
   test("nouveaux codes : exigent mot de passe et code ; les anciens refusés ensuite", async () => {
-    const actif = await activer();
+    const actif = compteActif();
     const reponse = await banc.traiter(
       post(
         "/two-factor/generate-backup-codes",
@@ -361,7 +403,7 @@ describe("gestion (UC-04, section 5)", () => {
   });
 
   test("mauvais mot de passe : mot_de_passe_incorrect, le code de secours sert encore ensuite", async () => {
-    const actif = await activer();
+    const actif = compteActif();
     const reponse = await banc.traiter(
       post(
         "/two-factor/disable",
@@ -381,7 +423,7 @@ describe("gestion (UC-04, section 5)", () => {
   });
 
   test("remplacement : second facteur actif tout du long ; ancien secret refusé dès l'étape 3 ; nouvelle application acceptée", async () => {
-    const actif = await activer();
+    const actif = compteActif();
     const etape3 = await banc.traiter(
       post("/two-factor/replace", { motDePasse: MOT_DE_PASSE, code: actif.codes[4] }, actif.cookie),
     );
@@ -423,7 +465,7 @@ describe("gestion (UC-04, section 5)", () => {
   });
 
   test("désactivation : ligne supprimée, autres sessions supprimées ; la connexion ne demande plus de code", async () => {
-    const actif = await activer();
+    const actif = compteActif();
     const autre = await demanderCode(actif.email);
     await banc.traiter(post("/two-factor/verify-backup-code", { code: actif.codes[5] }, autre));
     expect((await sessions(actif.id)).length).toBe(2);
@@ -448,9 +490,9 @@ describe("rôle exigeant : désactivation impossible (section 7.3)", () => {
   test("Propriétaire de A, Comptable de B : refusée ; Commercial : acceptée ; seules les adhésions de l'utilisateur comptent", async () => {
     const organisations = await creerDeuxOrganisations({ tables: [] });
     try {
-      const proprietaire = await activer();
-      const comptable = await activer();
-      const commercial = await activer();
+      const proprietaire = compteActif();
+      const comptable = compteActif();
+      const commercial = compteActif();
       await db.insert(member).values([
         {
           organizationId: organisations.a,
@@ -504,7 +546,7 @@ describe("rôle exigeant : désactivation impossible (section 7.3)", () => {
 
 describe("T-04 (report de la 1.3) : la réinitialisation ne contourne pas le second facteur", () => {
   test("après une réinitialisation réussie, la connexion demande toujours le code", async () => {
-    const actif = await activer();
+    const actif = compteActif();
     await banc.traiter(post("/request-password-reset", { email: actif.email }));
     await banc.envoyer();
     const message = [...banc.transport.messages].reverse().find((m) => m.a === actif.email);
@@ -537,7 +579,7 @@ describe("requêtes de db/double-authentification.ts et db/sessions.ts", () => {
 
   test("état, codes restants, préparation du remplacement, adresse : sur l'utilisateur visé seulement", async () => {
     const lectures = await import("./double-authentification");
-    const actif = await activer();
+    const actif = compteActif();
     const autre = await compteVerifie();
     expect(await lectures.etatDoubleAuth(actif.id)).toEqual({ ligne: "active", codesRestants: 10 });
     expect(await lectures.etatDoubleAuth(autre.id)).toEqual({ ligne: "aucune", codesRestants: 0 });
@@ -549,7 +591,7 @@ describe("requêtes de db/double-authentification.ts et db/sessions.ts", () => {
 
   test("reserverTranche : une tranche réservée une fois ; deux réservations simultanées, une seule réussit ; une tranche plus ancienne refusée", async () => {
     const lectures = await import("./double-authentification");
-    const actif = await activer();
+    const actif = compteActif();
     const t = trancheCourante(Date.now()) + 100;
     const simultanees = await Promise.all([
       lectures.reserverTranche(actif.id, t),
