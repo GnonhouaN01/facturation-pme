@@ -51,7 +51,9 @@ export type BancInscription = {
   // absente ; et l'utilisateur dont l'adresse n'est pas vérifiée compte comme
   // absent, comme lireSession.
   lireSession: (entetes: Headers) => Promise<{ utilisateurId: string; jeton: string } | null>;
-  // Exécute les envois planifiés par les rappels (after() en production).
+  // Exécute les envois planifiés par les rappels (after() en production), et
+  // attend aussi ceux qu'un appel simultané a déjà pris : au retour, tout
+  // envoi planifié avant l'appel est fait.
   envoyer: () => Promise<void>;
   // Adresse de test neuve, autorisée par la porte (hors production).
   adresse: () => string;
@@ -105,6 +107,7 @@ export function bancInscription(options: OptionsBanc): BancInscription {
   const verificateur = creerVerificateur({ limites: LIMITES, compteur, secret });
 
   const taches: (() => Promise<void>)[] = [];
+  let envois: Promise<void> = Promise.resolve();
   const emails = creerEmailsCompte({
     planifier: (tache) => {
       taches.push(tache);
@@ -206,8 +209,17 @@ export function bancInscription(options: OptionsBanc): BancInscription {
       if (!lue || lue.user.emailVerified !== true) return null;
       return { utilisateurId: lue.user.id, jeton: lue.session.token };
     },
-    envoyer: async () => {
-      for (const tache of taches.splice(0)) await tache();
+    // Les appels s'enchaînent : chacun attend les lots pris avant lui. Sans
+    // cela, des comptes préparés en parallèle (double-authentification
+    // .integration.test.ts) vidaient la file l'un pour l'autre, et un appel
+    // revenait avant l'envoi de son email (constaté en CI, base rapide).
+    envoyer: () => {
+      const lot = taches.splice(0);
+      const suite = envois.then(async () => {
+        for (const tache of lot) await tache();
+      });
+      envois = suite.catch(() => {});
+      return suite;
     },
     adresse: () => {
       const adresse = adresses[suivante++];
