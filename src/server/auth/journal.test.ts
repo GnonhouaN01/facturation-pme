@@ -34,8 +34,77 @@ describe("consignerIncidentAuth", () => {
     expect(consignerIncidentAuth()).not.toBe(consignerIncidentAuth());
   });
 
-  test("ne lit aucun argument : rien d'autre que le niveau et l'identifiant ne peut sortir", () => {
-    expect(consignerIncidentAuth.length).toBe(0);
+  // Modifié le 2026-10-21 (fix(1.2)) : une 500 sans cause était
+  // inexploitable. La cause est décrite, jamais le message de l'erreur ni ses
+  // paramètres (T-39) : le point, les appels internes, la classe, le code SQL,
+  // la contrainte et les emplacements de la pile.
+  test("avec une cause : point, appels, classe, code SQL, contrainte et pile ; jamais le message", () => {
+    const lignes = capturer();
+    const base = Object.assign(new Error("duplicate key (jeton-secret-123) awa@exemple.invalid"), {
+      name: "DatabaseError",
+      code: "23505",
+      constraint: "verification_pkey",
+    });
+    const erreur = new Error("Failed query: insert ... params: jeton-secret-123", { cause: base });
+    erreur.name = "DrizzleQueryError";
+
+    const incident = consignerIncidentAuth({
+      point: "/two-factor/verify-totp",
+      appels: [
+        { chemin: "/two-factor/verify-totp", statut: 500, code: "FAILED_TO_CREATE_SESSION" },
+      ],
+      erreur,
+    });
+
+    expect(lignes).toHaveLength(1);
+    const [prefixe, json] = [lignes[0]?.slice(0, 7), lignes[0]?.slice(7)];
+    expect(prefixe).toBe("[auth] ");
+    const lu = JSON.parse(json ?? "{}") as Record<string, unknown>;
+    expect(lu).toMatchObject({
+      niveau: "error",
+      incident,
+      point: "/two-factor/verify-totp",
+      appels: [
+        { chemin: "/two-factor/verify-totp", statut: 500, code: "FAILED_TO_CREATE_SESSION" },
+      ],
+      erreur: {
+        classes: ["DrizzleQueryError", "DatabaseError"],
+        code: "23505",
+        contrainte: "verification_pkey",
+      },
+    });
+    const pile = (lu.erreur as { pile: string[] }).pile;
+    expect(pile.length).toBeGreaterThan(0);
+    for (const cadre of pile) expect(cadre).toMatch(/^[A-Za-z0-9_@.\-/]+:\d+:\d+$/u);
+    for (const interdit of [
+      "jeton-secret-123",
+      "awa@exemple.invalid",
+      "Failed query",
+      "duplicate key",
+    ]) {
+      expect(lignes[0]).not.toContain(interdit);
+    }
+  });
+
+  test("valeurs hors forme : remplacées, jamais recopiées", () => {
+    const lignes = capturer();
+    const erreur = { name: "x y <script>", code: "pas un code", constraint: "Drop Table;" };
+    consignerIncidentAuth({
+      point: "/../etc?x=jeton-secret-123",
+      appels: [
+        { chemin: "/x?jeton=jeton-secret-123", statut: 500, code: "code avec jeton-secret-123" },
+      ],
+      erreur,
+    });
+    expect(lignes[0]).not.toContain("jeton-secret-123");
+    expect(lignes[0]).not.toContain("<script>");
+    expect(lignes[0]).not.toContain("Drop Table");
+    const lu = JSON.parse(lignes[0]?.slice(7) ?? "{}") as Record<string, unknown>;
+    expect(lu).toMatchObject({
+      point: "autre",
+      appels: [{ chemin: "autre", statut: 500, code: null }],
+      erreur: { classes: ["object"], pile: [] },
+    });
   });
 
   test("console défaillante : rend quand même un identifiant, sans lever", () => {

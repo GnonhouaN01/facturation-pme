@@ -138,7 +138,7 @@ async function activer(compte?: Awaited<ReturnType<typeof compteVerifie>>): Prom
 // 21 allers-retours d'environ 140 ms vers Neon : faites une à une, ces
 // activations prenaient la moitié de la durée du fichier, et poussaient les
 // tests les plus longs au-delà des 60 s quand le réseau ralentissait.
-const ACTIFS_PREPARES = 15;
+const ACTIFS_PREPARES = 17;
 let reserve: Active[] = [];
 
 function compteActif(): Active {
@@ -337,6 +337,67 @@ describe("connexion à deux étapes (UC-02, 3a et 3b)", () => {
       expect(reponses.map((r) => r.status).sort(), chemin).toEqual([200, 400]);
       trancheSuivante();
     }
+  });
+});
+
+// Diagnostic d'une réponse 500 vue une fois sur verify-totp (2026-10-21) :
+// aucun code rejoué, concurrent ou pris à la frontière d'une tranche ne doit
+// donner 500 ; un refus a la forme exacte de celle d'un code faux, et une
+// seule vérification réussit.
+describe("verify-totp : jamais de 500 (rejeu, concurrence, frontière de tranche)", () => {
+  async function forme(reponse: Response) {
+    return {
+      statut: reponse.status,
+      entetes: [...reponse.headers.entries()].filter(([nom]) => nom !== "set-cookie"),
+      corps: await reponse.text(),
+    };
+  }
+
+  async function codeFaux(actif: Active) {
+    const attente = await demanderCode(actif.email);
+    const faux = code(actif.secret) === "000000" ? "111111" : "000000";
+    return forme(await banc.traiter(post("/two-factor/verify-totp", { code: faux }, attente)));
+  }
+
+  test("deux vérifications simultanées du même code valide, sur la même attente : une session, l'autre refusée comme un code faux", async () => {
+    const actif = compteActif();
+    const reference = await codeFaux(actif);
+    trancheSuivante();
+    const attente = await demanderCode(actif.email);
+    const juste = code(actif.secret);
+
+    const reponses = await Promise.all([
+      banc.traiter(post("/two-factor/verify-totp", { code: juste }, attente)),
+      banc.traiter(post("/two-factor/verify-totp", { code: juste }, attente)),
+    ]);
+
+    const statuts = reponses.map((r) => r.status).sort();
+    expect(statuts).toEqual([200, 400]);
+    const refus = reponses.find((r) => r.status !== 200);
+    expect(await forme(refus as Response)).toEqual(reference);
+    const reussie = reponses.find((r) => r.status === 200);
+    const cookie = paire(reussie as Response, SESSION);
+    expect(await banc.lireSession(new Headers({ cookie: cookie ?? "" }))).not.toBeNull();
+  });
+
+  test("à la frontière d'une tranche : le code de la tranche qui finit est accepté à la première milliseconde de la suivante ; hors fenêtre, refusé comme un code faux ; jamais 500", async () => {
+    const actif = compteActif();
+    const reference = await codeFaux(actif);
+    // Horloge figée (beforeEach), placée explicitement de part et d'autre
+    // d'une frontière de tranche : déterministe.
+    const debut = (trancheCourante(Date.now()) + 2) * 30_000;
+    vi.setSystemTime(debut - 1);
+    const a = await demanderCode(actif.email);
+    const finissant = code(actif.secret);
+    vi.setSystemTime(debut);
+    const acceptee = await banc.traiter(post("/two-factor/verify-totp", { code: finissant }, a));
+    expect(acceptee.status).toBe(200);
+
+    const b = await demanderCode(actif.email);
+    vi.setSystemTime(debut + 60_000);
+    const horsFenetre = await banc.traiter(post("/two-factor/verify-totp", { code: finissant }, b));
+    expect(horsFenetre.status).not.toBe(500);
+    expect(await forme(horsFenetre)).toEqual(reference);
   });
 });
 
