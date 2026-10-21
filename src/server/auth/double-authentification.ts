@@ -415,6 +415,28 @@ async function fermerAutresSessions(
   return nouveaux;
 }
 
+// Le code d'une opération de gestion (replace, generate-backup-codes,
+// disable). Pendant un remplacement (ligne à confirmer, second facteur
+// actif), un code de l'application vérifié avec le cookie de session marque
+// la ligne vérifiée chez Better Auth (verify-totp) : le remplacement est
+// achevé par ce chemin. Comme à la confirmation : autres sessions fermées,
+// avant l'opération, et email (section 7.1). Un code de secours ne touche pas
+// la ligne : rien n'est achevé.
+async function verifierCodeGestion(
+  code: Code,
+  contexte: Contexte,
+  outils: OutilsPoint,
+): Promise<{ raison: RaisonDoubleAuth } | null> {
+  const { session } = contexte;
+  const refus = await verifierCode(code, session.utilisateurId, contexte.paire, outils);
+  if (refus !== null) return refus;
+  if (contexte.etat === "a_confirmer" && code.sorte === "application") {
+    await outils.dependances.revoquerAutresSessions(session.utilisateurId, session.jeton);
+    notifier(outils.dependances, "compte.double_auth_remplacee", session.utilisateurId);
+  }
+  return null;
+}
+
 async function activer(
   contexte: Contexte,
   motDePasse: string,
@@ -514,12 +536,7 @@ export const POINTS_DOUBLE_AUTH: Readonly<Record<string, PointCompose>> = Object
       if (!(await motDePasseJuste(contexte, motDePasse, outils))) {
         return { raison: "mot_de_passe_incorrect" };
       }
-      const refus = await verifierCode(
-        code,
-        contexte.session.utilisateurId,
-        contexte.paire,
-        outils,
-      );
+      const refus = await verifierCodeGestion(code, contexte, outils);
       if (refus !== null) return refus;
       await outils.dependances.preparerRemplacement(contexte.session.utilisateurId);
       return activer(contexte, motDePasse, outils);
@@ -541,12 +558,7 @@ export const POINTS_DOUBLE_AUTH: Readonly<Record<string, PointCompose>> = Object
       if (!(await motDePasseJuste(contexte, motDePasse, outils))) {
         return { raison: "mot_de_passe_incorrect" };
       }
-      const refus = await verifierCode(
-        code,
-        contexte.session.utilisateurId,
-        contexte.paire,
-        outils,
-      );
+      const refus = await verifierCodeGestion(code, contexte, outils);
       if (refus !== null) return refus;
       const lue = await outils.appeler(
         "/two-factor/generate-backup-codes",
@@ -584,12 +596,7 @@ export const POINTS_DOUBLE_AUTH: Readonly<Record<string, PointCompose>> = Object
       if (!(await motDePasseJuste(contexte, motDePasse, outils))) {
         return { raison: "mot_de_passe_incorrect" };
       }
-      const refus = await verifierCode(
-        code,
-        contexte.session.utilisateurId,
-        contexte.paire,
-        outils,
-      );
+      const refus = await verifierCodeGestion(code, contexte, outils);
       if (refus !== null) return refus;
       const lue = await outils.appeler(
         "/two-factor/disable",

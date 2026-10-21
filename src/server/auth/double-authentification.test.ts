@@ -690,6 +690,117 @@ describe("après le succès : sessions et emails (sections 8 et 10)", () => {
     expect(notifier).toHaveBeenCalledWith("compte.codes_secours_regeneres", "u-a");
   });
 
+  // Pendant un remplacement (ligne à confirmer, second facteur actif), un code
+  // de l'application vérifié avec le cookie de session marque la ligne
+  // vérifiée chez Better Auth : le remplacement est achevé. Comme à la
+  // confirmation : autres sessions fermées, avant l'opération, et email.
+  describe("chemins qui achèvent un remplacement en cours", () => {
+    const pendantRemplacement = (journal: Journal, surcharges = {}) => {
+      const revoquerAutresSessions = vi.fn(async () => {
+        journal.appels.push("revoquerAutresSessions");
+      });
+      const notifier = vi.fn();
+      const traiter = gerer(journal, {
+        deps: { revoquerAutresSessions, notifier, etatLigne: async () => "a_confirmer" },
+        ...surcharges,
+      });
+      return { traiter, revoquerAutresSessions, notifier };
+    };
+    const avant = (journal: Journal, a: string, b: string) => {
+      const ia = journal.appels.findIndex((appel) => appel.startsWith(a));
+      const ib = journal.appels.findIndex((appel) => appel.startsWith(b));
+      expect(ia).toBeGreaterThanOrEqual(0);
+      expect(ib).toBeGreaterThan(ia);
+    };
+
+    test("nouveaux codes avec le code de la nouvelle application : autres sessions fermées avant l'opération ; email de remplacement", async () => {
+      const journal = nouveauJournal();
+      const { traiter, revoquerAutresSessions, notifier } = pendantRemplacement(journal);
+      const recue = await traiter(
+        post("/two-factor/generate-backup-codes", { motDePasse: MOT_DE_PASSE, code: "123456" }),
+      );
+      expect(recue.status).toBe(200);
+      expect(revoquerAutresSessions).toHaveBeenCalledExactlyOnceWith("u-a", "jeton-a");
+      avant(journal, "BA /two-factor/verify-totp", "revoquerAutresSessions");
+      avant(journal, "revoquerAutresSessions", "BA /two-factor/generate-backup-codes");
+      expect(notifier).toHaveBeenCalledWith("compte.double_auth_remplacee", "u-a");
+    });
+
+    test("nouveau remplacement avec le code de la nouvelle application : autres sessions fermées avant la nouvelle préparation ; email de remplacement", async () => {
+      const journal = nouveauJournal();
+      const { traiter, revoquerAutresSessions, notifier } = pendantRemplacement(journal);
+      const recue = await traiter(
+        post("/two-factor/replace", { motDePasse: MOT_DE_PASSE, code: "123456" }),
+      );
+      expect(recue.status).toBe(200);
+      expect(revoquerAutresSessions).toHaveBeenCalledExactlyOnceWith("u-a", "jeton-a");
+      avant(journal, "BA /two-factor/verify-totp", "revoquerAutresSessions");
+      avant(journal, "revoquerAutresSessions", "preparerRemplacement");
+      expect(notifier).toHaveBeenCalledWith("compte.double_auth_remplacee", "u-a");
+    });
+
+    test("désactivation avec le code de la nouvelle application, refusée ensuite par Better Auth : autres sessions déjà fermées", async () => {
+      const journal = nouveauJournal();
+      const { traiter, revoquerAutresSessions, notifier } = pendantRemplacement(journal, {
+        betterAuth: { "/two-factor/disable": () => reponse(500, {}) },
+      });
+      const recue = await traiter(
+        post("/two-factor/disable", { motDePasse: MOT_DE_PASSE, code: "123456" }),
+      );
+      expect(await recue.json()).toMatchObject({ ok: false, raison: "erreur" });
+      expect(revoquerAutresSessions).toHaveBeenCalledExactlyOnceWith("u-a", "jeton-a");
+      avant(journal, "revoquerAutresSessions", "BA /two-factor/disable");
+      expect(notifier).toHaveBeenCalledWith("compte.double_auth_remplacee", "u-a");
+    });
+
+    test("désactivation réussie : autres sessions fermées à l'achèvement, puis avec la session neuve ; deux emails", async () => {
+      const journal = nouveauJournal();
+      const { traiter, revoquerAutresSessions, notifier } = pendantRemplacement(journal);
+      await traiter(post("/two-factor/disable", { motDePasse: MOT_DE_PASSE, code: "123456" }));
+      expect(revoquerAutresSessions.mock.calls).toEqual([
+        ["u-a", "jeton-a"],
+        ["u-a", "jeton-neuf"],
+      ]);
+      expect(notifier.mock.calls).toEqual([
+        ["compte.double_auth_remplacee", "u-a"],
+        ["compte.double_auth_desactivee", "u-a"],
+      ]);
+    });
+
+    test("code de secours : la ligne reste à confirmer, rien n'est achevé ni fermé", async () => {
+      const journal = nouveauJournal();
+      const { traiter, revoquerAutresSessions, notifier } = pendantRemplacement(journal);
+      await traiter(
+        post("/two-factor/generate-backup-codes", {
+          motDePasse: MOT_DE_PASSE,
+          code: "abcde-fghjk",
+        }),
+      );
+      expect(revoquerAutresSessions).not.toHaveBeenCalled();
+      expect(notifier).not.toHaveBeenCalledWith("compte.double_auth_remplacee", "u-a");
+    });
+
+    test("fermeture en échec à l'achèvement : erreur avec incident, opération jamais appelée, aucun email", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const journal = nouveauJournal();
+      const notifier = vi.fn();
+      const recue = await gerer(journal, {
+        deps: {
+          notifier,
+          etatLigne: async () => "a_confirmer",
+          revoquerAutresSessions: async () => {
+            throw new Error("panne");
+          },
+        },
+      })(post("/two-factor/generate-backup-codes", { motDePasse: MOT_DE_PASSE, code: "123456" }));
+      expect(recue.status).toBe(500);
+      expect(journal.appels.some((a) => a.startsWith("BA /two-factor/generate-backup-codes"))).toBe(
+        false,
+      );
+      expect(notifier).not.toHaveBeenCalled();
+    });
+  });
+
   test("fermeture des autres sessions en échec : erreur avec incident, aucun cookie, aucun email", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const journal = nouveauJournal();
