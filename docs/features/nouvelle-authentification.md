@@ -1,6 +1,6 @@
 # Fonctionnalité : nouvelle authentification avant une action sensible
 
-Statut : validée le 2026-10-21 par application des recommandations de l'assistant (consigne du développeur : une seule passe, recommandations appliquées) ; les vrais choix restants sont listés à la fin (« Choix restants »).
+Statut : validée le 2026-10-21 par application des recommandations de l'assistant (consigne du développeur : une seule passe, recommandations appliquées) ; implémentée le 2026-10-21 (« Notes de l'implémentation ») ; les vrais choix restants sont listés à la fin (« Choix restants »).
 
 Jalon 1, fonctionnalité 1.6 de `docs/PLAN.md`. Taille M. Cas d'utilisation : UC-07 (étape 4), UC-10 (étape 2), UC-13 (étape 3), UC-30 (étape 1). Exigences : S-14, S-33 (partie « après nouvelle authentification »), S-10, S-11, S-81, S-85. Menaces : T-12, T-44, T-51, T-33 (session volée), T-01 (essais de mot de passe par une session volée), T-39, T-55.
 
@@ -105,7 +105,7 @@ RETURNING id
 - **Concurrence** : deux actions simultanées avec une même preuve ; la seconde attend le verrou de la ligne, puis ne trouve plus rien : une seule passe.
 - `nouvelleAuthentification: false` : aucune lecture. Les lectures des pages (`etablirContexte`) ne consomment jamais de preuve.
 
-**Le refus `nouvelle_authentification_requise`** est distinct de `refuse`, pour que l'interface ouvre le formulaire de confirmation (comme `connexion_requise` renvoie vers la connexion). Il ne révèle rien sur une ressource : il n'est atteint qu'après le contrôle du droit (un non-membre, un rôle sans le droit, un Propriétaire sans second facteur reçoivent `refuse` avant), et avant toute lecture de l'entrée. Ajouté au type `Resultat` de `refus.ts`.
+**Le refus `nouvelle_authentification_requise`** est distinct de `refuse`, pour que l'interface ouvre le formulaire de confirmation (comme `connexion_requise` renvoie vers la connexion). Il ne révèle rien sur une ressource : il n'est atteint qu'après le contrôle du droit (un non-membre, un rôle sans le droit, un Propriétaire sans second facteur reçoivent `refuse` avant), et avant toute lecture de l'entrée. Ajouté au type `Resultat` de `refus.ts`, avec son libellé dans `src/textes/resultats.ts` : « Confirmez votre identité pour continuer. » (affiché par le formulaire de la 2.2).
 
 ### 5. La limite (S-11, T-01)
 
@@ -239,3 +239,18 @@ Recommandations de l'assistant, appliquées :
 
 1. **Le code du second facteur pour UC-07, UC-10 et UC-30**, que les cas d'utilisation n'écrivent pas (section 6). Revenir au mot de passe seul demanderait un niveau par déclaration (`nouvelleAuthentification: "mot_de_passe" | "second_facteur"`).
 2. **Usage unique ou fenêtre de 5 minutes** (section 3) : l'usage unique impose une saisie par rôle changé (UC-10).
+
+## Notes de l'implémentation
+
+**Phase rouge** (commit `test(1.6)`). Unitaires : 46 échecs (étape 8 de `action.test.ts`, point `/verify-password`, inventaire à dix-neuf, limite), plus les erreurs de type des dépendances absentes. Intégration (sur `dev`) : 15 échecs (11 dans `nouvelle-authentification.integration.test.ts`, 4 dans `chaine.integration.test.ts`). Bout en bout (site construit avant le code) : 2 échecs (`/verify-password` sans session, origine étrangère). Trois tests passaient à vide avant le code (journal sans secret, service qui refuse avec preuve) : un témoin leur a été ajouté avant le commit (statut attendu, étape « preuve » franchie).
+
+**Écarts à la fiche, signalés :**
+
+- La lecture de la session avec son identifiant est une fabrique partagée, `creerLectureSession` (`dependances-double-auth.ts`), utilisée par la double authentification et par la nouvelle authentification : `SessionGestion` de la 1.4 reste inchangée, ses tests aussi.
+- `verifierCode` de la 1.4 prend l'utilisateur et le cookie au lieu du contexte de gestion ; ses trois appels sont adaptés, sans changement de comportement.
+- `ResultatLecture` garde son type : une lecture ne produit jamais `nouvelle_authentification_requise`, et `traduireLecture` traiterait ce cas inatteignable comme une erreur.
+- Les fabriques de chaîne des tests (`action-debit.test.ts`, `action-email.test.ts`, `chaine-debit*.integration.test.ts`, `outils-test/email.ts`) reçoivent la nouvelle dépendance ; la table de limites de `outils-test/email.ts` reçoit la nouvelle limite.
+- `scripts/controle-deploiement.mjs` est dans le commit des tests : outil de vérification, dont le test (`e2e/controle-deploiement.spec.ts`) change avec lui.
+
+**Lenteur de `double-authentification.integration.test.ts`** (trois dépassements de 60 s dans un passage complet ralenti) : déjà présente sur `origin/main` (302 à 352 s ; 265 à 298 s sur cette branche), corrigée dans `fix/tests-instables` (activations préparées ensemble avant les tests) : 177 à 198 s, 5 passages verts sur 5 ; passage complet de l'intégration en 187 s.
+

@@ -98,6 +98,15 @@ export const LIMITES = {
   "auth.profil_compte": { maximum: 30, fenetreSecondes: 60 * 60, par: "utilisateur" },
   "auth.mot_de_passe_compte": { maximum: 8, fenetreSecondes: 24 * 60 * 60, par: "utilisateur" },
   "auth.changement_mot_de_passe": { maximum: 4, fenetreSecondes: 10 * 60, par: "adresse_ip" },
+  // Nouvelle authentification (1.6) : essais du mot de passe et du code par
+  // une session, dans notre passerelle, avant toute vérification ; Better
+  // Auth ne limite ni l'un ni l'autre avec une session. Fiche :
+  // docs/features/nouvelle-authentification.md, section 5.
+  "auth.nouvelle_authentification": {
+    maximum: 10,
+    fenetreSecondes: 24 * 60 * 60,
+    par: "utilisateur",
+  },
 } as const satisfies Record<string, Limite>;
 
 // Valeur comptée par les limites « par application » : un seul compte Gmail

@@ -15,6 +15,7 @@ import {
   type Role,
 } from "../autorisation/matrice";
 import { executerDansOrganisation, type TransactionOrganisation } from "../db/client";
+import { consommerPreuve } from "../db/nouvelle-authentification";
 import { lireAdhesion } from "../db/requetes/adhesions";
 import { verifierDebit } from "../debit/debit";
 import { LIMITES, VALEUR_APPLICATION, type NomLimite } from "../debit/limites";
@@ -33,6 +34,7 @@ import { journaliser, type EntreeJournal } from "../journal/audit";
 import { verifierOrigine } from "./origine";
 import {
   connexionRequise,
+  nouvelleAuthentificationRequise,
   refus,
   RefusUniforme,
   traduireErreur,
@@ -141,12 +143,23 @@ export type DependancesChaine = {
   verifierDebit(nom: NomLimite, valeur: string): Promise<boolean>;
   // Porte d'envoi, appelée après la validation de la transaction.
   envoyerEmail: (demande: DemandeEmail) => Promise<ResultatEnvoi>;
+  // Étape 8 (1.6) : supprime, dans la transaction de l'action, la preuve de
+  // nouvelle authentification valable de cette session pour cet
+  // utilisateur ; vrai si elle existait. Fiche :
+  // docs/features/nouvelle-authentification.md, section 4.
+  consommerNouvelleAuthentification: (
+    tx: TransactionOrganisation,
+    utilisateurId: string,
+    sessionId: string,
+  ) => Promise<boolean>;
 };
 
 // Contexte d'une lecture par une page : sans trace (section 3.2, décision 9).
 export type ContexteLecture = Omit<Contexte<null>, "journaliser" | "preparerEmail">;
 
-// Une lecture n'a pas d'entrée à valider : jamais invalide.
+// Une lecture n'a pas d'entrée à valider : jamais invalide. Elle ne demande
+// jamais de nouvelle authentification non plus (étape 8 réservée aux
+// actions) ; traduireLecture traite ce refus inatteignable comme une erreur.
 export type ResultatLecture<T> = Exclude<Resultat<T>, { raison: "invalide" }>;
 
 export type Chaine = {
@@ -182,6 +195,16 @@ class ModeleNonDeclare extends Error {
   constructor() {
     super("Modèle d'email absent de la déclaration.");
     this.name = "ModeleNonDeclare";
+  }
+}
+
+// Entrée invalide après la consommation d'une preuve de nouvelle
+// authentification : levée pour annuler la transaction, qui rend la preuve ;
+// la chaîne la traduit en « invalide ». Message fixe.
+class EntreeInvalideApresPreuve extends Error {
+  constructor(readonly champs: string[]) {
+    super("Entrée invalide.");
+    this.name = "EntreeInvalideApresPreuve";
   }
 }
 
@@ -430,14 +453,29 @@ export function creerChaine(dependances: DependancesChaine): Chaine {
         declaration.droit,
         declaration.debit,
         async (base) => {
-          // 8. Nouvelle authentification : fermée tant que la 1.6 n'est pas
-          // livrée (décision 10).
-          if (declaration.nouvelleAuthentification) throw new RefusUniforme();
+          // 8. Nouvelle authentification (S-14, 1.6) : la preuve de cette
+          // session, consommée dans la transaction ; rendue si l'action est
+          // annulée. Fiche : docs/features/nouvelle-authentification.md,
+          // section 4.
+          if (
+            declaration.nouvelleAuthentification &&
+            !(await dependances.consommerNouvelleAuthentification(
+              base.tx,
+              base.utilisateurId,
+              base.session.sessionId,
+            ))
+          ) {
+            return nouvelleAuthentificationRequise();
+          }
 
-          // 9. Validation de l'entrée, par un membre autorisé seulement.
+          // 9. Validation de l'entrée, par un membre autorisé seulement. Une
+          // preuve vient d'être consommée : la transaction est annulée, et la
+          // preuve rendue.
           const lue = declaration.entree.safeParse(entreeBrute);
           if (!lue.success) {
-            return { ok: false, raison: "invalide", champs: champsInvalides(lue.error) } as const;
+            const champs = champsInvalides(lue.error);
+            if (declaration.nouvelleAuthentification) throw new EntreeInvalideApresPreuve(champs);
+            return { ok: false, raison: "invalide", champs } as const;
           }
 
           // 10. Le service, dans la transaction. L'action et l'auteur de la
@@ -493,6 +531,9 @@ export function creerChaine(dependances: DependancesChaine): Chaine {
       );
       return { ...resultat, emails };
     } catch (erreur) {
+      if (erreur instanceof EntreeInvalideApresPreuve) {
+        return { ok: false, raison: "invalide", champs: erreur.champs };
+      }
       return traduireErreur(erreur, declaration.nom);
     }
   }
@@ -527,6 +568,7 @@ const chaine = creerChaine({
   journaliser,
   verifierDebit,
   envoyerEmail,
+  consommerNouvelleAuthentification: consommerPreuve,
 });
 
 // Chaîne liée aux vraies dépendances : seul chemin d'une action vers un

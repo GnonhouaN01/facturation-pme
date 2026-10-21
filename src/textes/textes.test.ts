@@ -108,6 +108,8 @@ describe("textes fixés par la fiche", () => {
       connexion_requise: "Votre session a expiré. Connectez-vous à nouveau.",
       refuse: "Cette action n'est pas disponible.",
       trop_de_requetes: "Trop de tentatives. Patientez un instant, puis réessayez.",
+      // 1.6 (docs/features/nouvelle-authentification.md, section 4).
+      nouvelle_authentification_requise: "Confirmez votre identité pour continuer.",
       invalide: "Certains champs sont à corriger.",
       erreur: "Une erreur est survenue.",
     });
@@ -137,6 +139,8 @@ describe("clés exhaustives", () => {
     connexion_requise: true,
     refuse: true,
     trop_de_requetes: true,
+    // 1.6 (docs/features/nouvelle-authentification.md, section 4).
+    nouvelle_authentification_requise: true,
     invalide: true,
     erreur: true,
   } satisfies Record<Raison, true>;

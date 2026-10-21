@@ -71,7 +71,9 @@ La 1.6 livre le mécanisme qu'attend la chaîne de contrôles : jusque-là, tout
 
 Jusque-là, les comptes restent fermés en production, et les fonctionnalités suivantes du jalon 1 s'y ajoutent fermées. Base de production vérifiée le 2026-10-18 : 9 migrations, 11 tables, droits conformes, aucun compte. Si la 1.4 est fusionnée avant #52, celle-ci passe à quatorze points d'entrée (`docs/features/double-authentification.md`, section 13) ; dix-huit si la 1.5 l'est aussi (`docs/features/profil-sessions.md`, section 11).
 
-**Report de la 1.5 à la 1.6** (décision du développeur du 2026-10-21) : le code du second facteur pour changer de mot de passe, écarté par la 1.5 (`docs/features/profil-sessions.md`, section 4), est à trancher dans la fiche de la 1.6.
+**Report de la 1.5 à la 1.6** (décision du développeur du 2026-10-21) : le code du second facteur pour changer de mot de passe, écarté par la 1.5 (`docs/features/profil-sessions.md`, section 4), est à trancher dans la fiche de la 1.6. Tranché par la 1.6 : pas de code (`docs/features/nouvelle-authentification.md`, section 9).
+
+**1.6 livrée** (`docs/features/nouvelle-authentification.md`) : l'étape 8 de la chaîne exige une preuve de nouvelle authentification de la session (mot de passe, et code si le second facteur est actif), posée par `POST /api/auth/verify-password`, consommée par l'action. Le formulaire de confirmation arrive avec la 2.2. #52 passe à dix-neuf points d'entrée.
 
 **Démontrable à la fin :** un visiteur crée un compte, le vérifie, active la double authentification et gère ses sessions.
 

@@ -11,6 +11,7 @@ import type {
   ModeleDoubleAuth,
   SessionGestion,
 } from "./double-authentification";
+import type { SessionNouvelleAuthentification } from "./nouvelle-authentification";
 import { jetonDeSession } from "./points-entree";
 import { trancheDuCode } from "./tranche-totp";
 
@@ -26,7 +27,7 @@ type Contexte = {
   authCookies: { sessionToken: { name: string } };
   internalAdapter: {
     findSession: (jeton: string) => Promise<{
-      session: { token: string; expiresAt: Date };
+      session: { id: string; token: string; expiresAt: Date };
       user: { id: string; emailVerified: boolean; twoFactorEnabled?: boolean | null };
     } | null>;
     findVerificationValue: (
@@ -57,24 +58,45 @@ export type OptionsDependancesDoubleAuth = {
   maintenant?: () => number;
 };
 
+// La session du cookie reçu, relue par l'adaptateur interne ; null si
+// absente, expirée ou d'un utilisateur non vérifié. Partagée avec la nouvelle
+// authentification (1.6), qui lit aussi l'identifiant de la session.
+export function creerLectureSession(options: {
+  contexte: () => Promise<unknown>;
+  maintenant?: () => number;
+}): (entetes: Headers) => Promise<SessionNouvelleAuthentification | null> {
+  const maintenant = options.maintenant ?? (() => Date.now());
+  return async (entetes) => {
+    const ctx = (await options.contexte()) as Contexte;
+    const jeton = jetonDeSession(entetes.get("cookie"), ctx.authCookies.sessionToken.name);
+    if (jeton === null) return null;
+    const lue = await ctx.internalAdapter.findSession(jeton);
+    if (!lue || lue.user.emailVerified !== true) return null;
+    if (new Date(lue.session.expiresAt).getTime() <= maintenant()) return null;
+    return {
+      utilisateurId: lue.user.id,
+      sessionId: lue.session.id,
+      doubleAuthentification: lue.user.twoFactorEnabled === true,
+      jeton: lue.session.token,
+    };
+  };
+}
+
 export function creerDependancesDoubleAuth(
   options: OptionsDependancesDoubleAuth,
 ): DependancesDoubleAuth {
   const contexte = async () => (await options.contexte()) as Contexte;
   const maintenant = options.maintenant ?? (() => Date.now());
+  const lireSessionCompte = creerLectureSession({ contexte: options.contexte, maintenant });
 
   return {
     lireSession: async (entetes): Promise<SessionGestion | null> => {
-      const ctx = await contexte();
-      const jeton = jetonDeSession(entetes.get("cookie"), ctx.authCookies.sessionToken.name);
-      if (jeton === null) return null;
-      const lue = await ctx.internalAdapter.findSession(jeton);
-      if (!lue || lue.user.emailVerified !== true) return null;
-      if (new Date(lue.session.expiresAt).getTime() <= maintenant()) return null;
+      const lue = await lireSessionCompte(entetes);
+      if (lue === null) return null;
       return {
-        utilisateurId: lue.user.id,
-        doubleAuthentification: lue.user.twoFactorEnabled === true,
-        jeton: lue.session.token,
+        utilisateurId: lue.utilisateurId,
+        doubleAuthentification: lue.doubleAuthentification,
+        jeton: lue.jeton,
       };
     },
     etatLigne: async (utilisateurId) =>

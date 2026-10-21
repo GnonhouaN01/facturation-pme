@@ -3,6 +3,7 @@ import "server-only";
 import { isPasswordCompromised } from "better-auth/plugins";
 
 import * as requetesDoubleAuth from "../db/double-authentification";
+import { enregistrerPreuve } from "../db/nouvelle-authentification";
 import { supprimerJetonsReinitialisation } from "../db/reinitialisation";
 import { revoquerAutresSessions, revoquerSessionDe } from "../db/sessions";
 import { verifierDebit } from "../debit/debit";
@@ -12,6 +13,7 @@ import { configurationEmail, env } from "../env";
 import { empreinteCodeSecours } from "./codes-secours";
 import { auth } from "./config";
 import { creerDependancesDoubleAuth } from "./dependances-double-auth";
+import { creerDependancesNouvelleAuthentification } from "./dependances-nouvelle-authentification";
 import { creerDependancesProfil } from "./dependances-profil";
 import { planifierEmailDoubleAuth, planifierEmailProfil } from "./emails";
 import { creerTraitementAuth, jetonDeSession } from "./points-entree";
@@ -42,6 +44,10 @@ import { matriceQr } from "./qr";
 // et sessions (1.5) : dépendances liées par creerDependancesProfil, sur la
 // même lecture de session et la même vérification du mot de passe que la
 // double authentification. Fiche : docs/features/profil-sessions.md.
+// Nouvelle authentification (1.6) : dépendances liées par
+// creerDependancesNouvelleAuthentification, mêmes lecture de session et
+// vérification du mot de passe, preuve posée par db/nouvelle-authentification.ts.
+// Fiche : docs/features/nouvelle-authentification.md.
 const doubleAuth = creerDependancesDoubleAuth({
   contexte: () => auth.$context,
   verifierDebit,
@@ -88,5 +94,11 @@ export const traiterRequeteAuth = creerTraitementAuth({
       adresseUtilisateur: requetesDoubleAuth.adresseUtilisateur,
     },
     emailProfil: planifierEmailProfil,
+  }),
+  nouvelleAuthentification: creerDependancesNouvelleAuthentification({
+    contexte: () => auth.$context,
+    doubleAuth,
+    verifierDebit,
+    enregistrerPreuve,
   }),
 });
