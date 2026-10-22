@@ -334,12 +334,26 @@ La procédure est écrite et relue avec la PR 1, et éprouvée sur `dev` par le 
 |---|---|---|
 | Activation confirmée | Remplacée par Better Auth (nouveau jeton, 7 jours à partir de là) | **Fermées** |
 | Remplacement confirmé | Gardée (Better Auth ne la remplace pas : `two_factor_enabled` était déjà vrai) | **Fermées** |
+| Remplacement achevé par un autre chemin (section 8.3) | Gardée | **Fermées**, avant l'opération |
 | Désactivation | Remplacée par Better Auth | **Fermées** |
 | Nouveaux codes de secours | Gardée | Gardées |
 
 - **Autres sessions fermées** (`revoquerAutresSessions(utilisateurId, jetonGarde)`, `src/server/db/sessions.ts`, `DELETE FROM session WHERE user_id = $1 AND token <> $2`) : une session ouverte avant l'activation, peut-être par quelqu'un qui avait le mot de passe, ne garde pas un accès que le second facteur lui refuserait aujourd'hui. Le jeton gardé est celui du cookie de session de la réponse quand Better Auth en pose un, sinon celui du cookie reçu. Échec : `erreur` avec incident, et aucun cookie transmis ; le changement est fait, les sessions vivent encore, une nouvelle tentative les ferme (« Limites connues »).
 - **Échéance neuve de 7 jours** à l'activation et à la désactivation (section 1) : acceptée. La rotation exige le mot de passe, et le code pour la désactivation : elle vaut une nouvelle connexion, qui ouvrirait elle aussi 7 jours. Un vol de cookie seul ne permet aucune des deux.
 - **Réinitialisation du mot de passe** : toutes les sessions fermées (1.3), second facteur gardé.
+
+#### 8.3 Remplacement achevé hors de `confirm-enable` (correctif du 2026-10-22, `fix(1.4)`)
+
+**Constat.** Entre les étapes 3 et 4 du remplacement (section 7.1), la ligne `two_factor` est non vérifiée et `two_factor_enabled` vrai. `replace`, `generate-backup-codes` et `disable` vérifient le code saisi par `/two-factor/verify-totp` avec le cookie de session. Or Better Auth (`plugins/two-factor/totp/index.mjs`, version 1.7.7), sur un code juste et une ligne non vérifiée, marque la ligne vérifiée : avec le code de la nouvelle application, ces trois chemins achevaient le remplacement **sans fermer les autres sessions** ni prévenir le titulaire. `disable` ne les fermait qu'après une désactivation réussie, et `replace` relançait un remplacement sur la ligne tout juste vérifiée.
+
+**Chemins qui n'achèvent rien** : la connexion (Better Auth refuse une ligne non vérifiée, `TOTP_NOT_ENABLED`) ; un code de secours (`verify-backup-code` ne touche pas `verified`) ; la nouvelle authentification de la 1.6, qui refuse pendant un remplacement (`docs/features/nouvelle-authentification.md`).
+
+**Correctif** (`verifierCodeGestion`, `src/server/auth/double-authentification.ts`) : pour ces trois chemins, si la ligne était à confirmer et que le code de l'application est juste, les autres sessions sont fermées (jeton du cookie reçu gardé) **avant l'opération**, et `compte.double_auth_remplacee` est envoyé, comme à la confirmation. Échec de la fermeture : `erreur` avec incident, l'opération n'est pas appelée, aucun email. Une désactivation réussie ferme ensuite à nouveau, avec la session neuve, et envoie aussi `compte.double_auth_desactivee`.
+
+**Tests** (phase rouge : 5 tests unitaires et 2 d'intégration en échec avant le correctif ; dans ces derniers, l'autre session survivait) :
+
+- `src/server/auth/double-authentification.test.ts`, « chemins qui achèvent un remplacement en cours » : un test par chemin (`generate-backup-codes`, `replace`, `disable` refusée par Better Auth après le code), ordre code, fermeture, opération ; désactivation réussie (deux fermetures, deux emails) ; code de secours (rien de fermé) ; fermeture en échec.
+- `src/server/db/double-authentification.integration.test.ts`, vraie instance : remplacement achevé par nouveaux codes (ligne vérifiée, autre session supprimée, email) ; par un nouveau remplacement (autre session supprimée). Le chemin `disable` réussi fermait déjà les autres sessions : son défaut n'apparaît qu'en cas d'échec après le code, prouvé par le test unitaire.
 
 ### 9. PR 2 : la double authentification exigée par rôle (S-12, S-13, T-02)
 

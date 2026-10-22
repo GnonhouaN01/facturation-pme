@@ -138,7 +138,7 @@ async function activer(compte?: Awaited<ReturnType<typeof compteVerifie>>): Prom
 // 21 allers-retours d'environ 140 ms vers Neon : faites une à une, ces
 // activations prenaient la moitié de la durée du fichier, et poussaient les
 // tests les plus longs au-delà des 60 s quand le réseau ralentissait.
-const ACTIFS_PREPARES = 17;
+const ACTIFS_PREPARES = 19;
 let reserve: Active[] = [];
 
 function compteActif(): Active {
@@ -523,6 +523,58 @@ describe("gestion (UC-04, section 5)", () => {
         (m) => m.a === actif.email && m.sujet === "Application d'authentification remplacée",
       ),
     ).toBe(true);
+  });
+
+  // Un remplacement en cours, et une autre session ouverte avant : le code de
+  // la nouvelle application, vérifié par un autre chemin que confirm-enable,
+  // achève le remplacement (ligne vérifiée par Better Auth).
+  async function remplacementEnCours(actif: Active) {
+    const autre = await demanderCode(actif.email);
+    await banc.traiter(post("/two-factor/verify-backup-code", { code: actif.codes[6] }, autre));
+    const etape = await banc.traiter(
+      post("/two-factor/replace", { motDePasse: MOT_DE_PASSE, code: actif.codes[7] }, actif.cookie),
+    );
+    const { cle } = (await etape.json()) as { cle: string };
+    expect((await sessions(actif.id)).length).toBe(2);
+    return base32(cle);
+  }
+
+  const ligneVerifiee = async (id: string) =>
+    (await db.select({ v: twoFactor.verified }).from(twoFactor).where(eq(twoFactor.userId, id)))[0]
+      ?.v;
+
+  test("remplacement achevé par nouveaux codes : autres sessions fermées, email de remplacement", async () => {
+    const actif = compteActif();
+    const secret = await remplacementEnCours(actif);
+    expect(await ligneVerifiee(actif.id)).toBe(false);
+
+    const reponse = await banc.traiter(
+      post(
+        "/two-factor/generate-backup-codes",
+        { motDePasse: MOT_DE_PASSE, code: code(secret) },
+        actif.cookie,
+      ),
+    );
+    expect(reponse.status).toBe(200);
+    expect(await ligneVerifiee(actif.id)).toBe(true);
+    expect((await sessions(actif.id)).length).toBe(1);
+    await banc.envoyer();
+    expect(
+      banc.transport.messages.some(
+        (m) => m.a === actif.email && m.sujet === "Application d'authentification remplacée",
+      ),
+    ).toBe(true);
+  });
+
+  test("remplacement achevé par un nouveau remplacement : autres sessions fermées", async () => {
+    const actif = compteActif();
+    const secret = await remplacementEnCours(actif);
+
+    const reponse = await banc.traiter(
+      post("/two-factor/replace", { motDePasse: MOT_DE_PASSE, code: code(secret) }, actif.cookie),
+    );
+    expect(reponse.status).toBe(200);
+    expect((await sessions(actif.id)).length).toBe(1);
   });
 
   test("désactivation : ligne supprimée, autres sessions supprimées ; la connexion ne demande plus de code", async () => {
