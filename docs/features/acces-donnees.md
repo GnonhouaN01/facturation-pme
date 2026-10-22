@@ -314,6 +314,48 @@ Le garde-fou refuse si `marque` n'est pas exactement `environnement:test`, si `r
 - Message de refus : « Tests refusés : » suivi de la raison (« la base visée n'est pas marquée comme base de test », « le rôle de connexion n'est pas app_facturation », « le rôle de connexion contourne l'isolation »). Jamais l'hôte, le nom de la base, l'adresse, ni la valeur lue de la marque ou du rôle (S-54).
 - Il n'y a aucun moyen de désactiver le garde-fou (ni variable, ni option).
 
+### 6. Connexions coupées pendant une suspension (correctif du 2026-10-21, `fix(db)`)
+
+#### 6.1 Constat et cause prouvée
+
+Symptômes : `ECONNRESET` dans `pg-pool`, `DrizzleQueryError` au compteur de débit. Le `Pool` principal avait les réglages par défaut (`max` 10, `idleTimeoutMillis` 10 s) et aucun écouteur `error`.
+
+Cause, reproduite sur `dev` par une sonde hors dépôt : une connexion est rendue au `Pool`, puis le processus est bloqué (ni minuteur ni événement réseau, comme une fonction Vercel suspendue entre deux requêtes), puis une requête part.
+
+| Essai | Résultat |
+| --- | --- |
+| Blocage de 7 min, calcul libre de se mettre en veille | 1re requête en échec (`Connection terminated unexpectedly`), 2e réussie sur une connexion neuve |
+| Blocage de 7 min, calcul tenu éveillé par un second processus | les deux requêtes réussissent |
+
+La mise en veille du calcul de Neon (5 min sans activité, `docs/STACK.md`) coupe toutes les connexions ; le regroupement ne ferme pas une connexion inactive pendant au moins 7 min. `idleTimeoutMillis` repose sur un minuteur, qui ne s'exécute pas pendant une suspension : au réveil, `pg-pool` remet une connexion morte. Second défaut : dans un processus actif, une connexion inactive coupée fait émettre `error` au `Pool` ; sans écouteur, l'événement lève hors de toute requête.
+
+**Non expliquée** : la 500 vue une fois sur `/two-factor/verify-totp` (`double-authentification.integration.test.ts`, 1 passage sur environ 23). Pendant une suite, le calcul reste éveillé et le processus n'est pas suspendu : rien ne prouve que cette cause en soit l'origine. Si elle revient, la ligne `[auth]` corrigée par `fix(1.2)` (`docs/features/connexion.md`) donnera sa cause.
+
+#### 6.2 Correctif
+
+`src/server/db/pool.ts`, `creerPool(config, horloge = Date.now)`, utilisé par `client.ts` :
+
+- **Contrôle à la remise.** L'heure de remise de chaque connexion est notée sur l'horloge murale (événement `release`), qui avance pendant une suspension. À chaque `connect()`, une connexion inactive depuis plus de deux `idleTimeoutMillis` est détruite (`release(true)`) sans avoir servi, et une autre est prise. Dans un processus actif, le minuteur l'aurait déjà retirée : elle ne peut venir que d'une suspension. Aucune requête n'est envoyée dessus, donc aucune n'est relancée.
+- **Borné.** Au plus `max + 1` essais : `max` connexions inactives à écarter au plus, puis une neuve (sans heure de remise, donc jamais écartée). Au-delà, cas impossible avec `pg-pool`, `ConnexionsPerimees` est levée.
+- **`query()` redéfinie sur `connect()`.** `pg-pool` fait passer `query()` par `this.connect()`, mais ce n'est pas documenté : la sous-classe ne compte pas dessus. Comme `pg-pool`, la connexion d'une requête en échec est détruite.
+- **API publique seulement** : `connect()`, `query()`, `release()`, événements `release` et `error`. Aucun champ interne de `pg-pool`.
+- **Écouteur `error`** : une ligne fixe, `console.error("[base]", {"evenement":"connexion-inactive-perdue","classe":…,"code":…})`. Classe : nom du constructeur, forme stricte. Code : SQLSTATE ou code système (`ECONNRESET`), forme stricte, omis sinon. Jamais le message (T-39).
+- **Réglages** : `max: 10` (Vercel déconseille 1 avec Fluid compute), `idleTimeoutMillis: 5000` (recommandation de Vercel : moins de connexions laissées ouvertes sur le regroupement pendant une suspension).
+
+Effet en production : après plus de 5 min sans accès à la base, la première requête d'une instance réveillée ouvre une connexion neuve (négociation TLS, 100 à 300 ms, en plus du réveil du calcul) au lieu d'échouer. En charge continue, rien ne change.
+
+Écartés :
+
+- `keepAlive` : sans effet pendant une suspension, le processus ne traite aucun paquet.
+- `maxLifetimeSeconds` : repose aussi sur un minuteur de `pg-pool`.
+- Relance d'une requête en échec : impossible de prouver qu'une requête partie sur une connexion morte n'a pas été exécutée ; une écriture pourrait être faite deux fois.
+- `attachDatabasePool` de `@vercel/functions` (ferme les connexions inactives avant la suspension) : nouvelle dépendance, écartée par décision du 2026-10-21.
+
+#### 6.3 Tests
+
+- `src/server/db/pool.test.ts` (sans base, connexions factices, horloge injectée) : réglages ; connexion périmée détruite et une autre prise ; connexion récente gardée ; toutes les inactives périmées, une neuve ouverte ; borne de `max + 1` essais ; formes à rappel de `connect` et `query` ; requête en échec ; ligne fixe de l'écouteur `error`, message, `name` forgé et code hors forme écartés.
+- `src/server/db/pool.integration.test.ts` (sur `dev`) : sockets fournis par l'option publique `stream` ; le socket est détruit et la requête part dans le même tour de boucle. Témoin : un `Pool` nu échoue. `creerPool`, horloge avancée de 6 min : connexion écartée, requête réussie sur un second socket. Sans suspension, la connexion est réutilisée. Phase rouge : avec un `Pool` nu, 11 tests unitaires et le test d'intégration échouaient (`write EBADF`).
+
 ### Alternatives écartées
 
 Les options écartées de chaque difficulté figurent ci-dessus. S'y ajoutent :

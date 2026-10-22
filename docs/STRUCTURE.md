@@ -107,6 +107,7 @@ src/server/
 │   ├── client.ts            Connexion, transaction avec organisation active
 │   ├── debit.ts             Compteur de débit : incrément atomique, purge (seul accès à compteur_debit)
 │   ├── outils-test/         Outillage des tests avec base (tests seulement)
+│   ├── pool.ts              Pool de pg : connexion périmée par une suspension écartée avant tout envoi
 │   ├── schema/              Description des tables
 │   │   ├── auth.ts          Tables de Better Auth (fichier généré)
 │   │   ├── isolation.ts     Modèle de règle d'isolation
