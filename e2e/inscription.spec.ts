@@ -1,13 +1,11 @@
 import { randomInt } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import { type Page, type Response, type TestInfo, expect, test } from "@playwright/test";
 
 import { TEXTES_COMPTE } from "../src/textes/compte";
 import { TEXTES_EMAILS } from "../src/textes/emails";
 
+import { type Message, messagesPour } from "./boite-emails";
 import { adresseE2E } from "./comptes-e2e";
 import { MOT_DE_PASSE_COMPROMIS_E2E } from "./hibp-simule.mjs";
 import { observerViolations, violations } from "./outils";
@@ -21,28 +19,9 @@ import { observerViolations, violations } from "./outils";
 // docs/features/inscription.md, tests 12 et 13, sections 4.3, 5 et 6.
 
 const ADRESSE = "http://localhost:3000";
-// Même dossier que playwright.config.ts (EMAILS_E2E).
-const DOSSIER_EMAILS = join(tmpdir(), "facturation-pme-e2e-emails");
 const MOT_DE_PASSE = "Phrase de passe solide 2026";
 const DUREE_PLANCHER_MS = 800;
 const JETON = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
-
-type Message = { a: string; sujet: string; corps: string };
-
-async function messagesPour(adresse: string): Promise<Message[]> {
-  let noms: string[];
-  try {
-    noms = (await readdir(DOSSIER_EMAILS)).filter((nom) => nom.endsWith(".json")).sort();
-  } catch {
-    return [];
-  }
-  const messages = await Promise.all(
-    noms.map(
-      async (nom) => JSON.parse(await readFile(join(DOSSIER_EMAILS, nom), "utf8")) as Message,
-    ),
-  );
-  return messages.filter((message) => message.a === adresse);
-}
 
 // Attend que l'adresse ait reçu autant d'emails que de sujets attendus, puis
 // vérifie la liste exacte de ses emails, dans l'ordre de remise : ni un de

@@ -1,10 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { defineConfig, devices } from "@playwright/test";
 
+import { DOSSIER_EMAILS } from "./e2e/boite-emails";
 import { ADRESSES_E2E } from "./e2e/comptes-e2e";
 import { DOSSIER_JOURNAUX, preparerJournaux } from "./e2e/journaux";
 import { ADRESSE_PANNE, CONFIGURATION_PANNE, PORT_PANNE } from "./e2e/serveur-panne";
@@ -19,11 +19,12 @@ const ADRESSE = "http://localhost:3000";
 // next start charge .env.local (NODE_ENV=production). Chaque serveur impose
 // le transport fichier, dans un dossier propre aux tests : aucun ne peut
 // envoyer un vrai email, même si une variable d'envoi se trouvait par erreur
-// dans .env.local. Les variables passées par env l'emportent. Fiche :
+// dans .env.local. Les variables passées par env l'emportent. Un dossier
+// par exécution, supprimé à la fin (e2e/boite-emails.ts). Fiche :
 // docs/features/envoi-emails.md, section 2.1.
 const EMAILS_E2E = {
   EMAIL_TRANSPORT: "fichier",
-  EMAIL_DOSSIER: join(tmpdir(), "facturation-pme-e2e-emails"),
+  EMAIL_DOSSIER: DOSSIER_EMAILS,
 };
 
 // Secret de la tâche quotidienne pour le serveur du port 3000 : tiré au

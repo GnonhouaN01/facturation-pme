@@ -97,15 +97,17 @@ test.describe("double authentification, parcours UC-04 puis UC-02", () => {
     // Aucune adresse demandée par le navigateur ne porte un code envoyé, un
     // code de secours ou la clé : on cherche ces valeurs mêmes (un motif
     // général prendrait aussi « ouble-authe » ou une empreinte de fichier).
+    // Une assertion par liste, pas une par paire : environ 240 adresses et
+    // 12 secrets donnaient près de 3 000 expect, chacun une étape de
+    // Playwright, soit environ 5 s du test sous charge (fix(e2e)).
     const secrets = [cle.replaceAll(" ", ""), codeConnexion, ...codes];
-    for (const adresse of vus.adresses) {
-      for (const secret of secrets) expect(adresse).not.toContain(secret);
-    }
-    for (const corps of vus.corps) {
-      expect(corps).not.toContain("otpauth");
-      expect(corps).not.toContain('"token"');
-      expect(corps).not.toContain('"user"');
-    }
+    expect(
+      vus.adresses.filter((adresse) => secrets.some((secret) => adresse.includes(secret))),
+    ).toEqual([]);
+    const interdits = ["otpauth", '"token"', '"user"'];
+    expect(
+      vus.corps.filter((corps) => interdits.some((interdit) => corps.includes(interdit))),
+    ).toEqual([]);
     expect(await violations(page)).toEqual([]);
   });
 });

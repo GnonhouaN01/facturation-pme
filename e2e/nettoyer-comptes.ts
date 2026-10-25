@@ -1,6 +1,7 @@
 import { config } from "dotenv";
 import { Pool } from "pg";
 
+import { supprimerBoite } from "./boite-emails";
 import { ADRESSES_E2E } from "./comptes-e2e";
 
 // Fin de l'exécution de bout en bout (globalTeardown) : suppression des
@@ -62,4 +63,6 @@ export default async function nettoyerComptes(): Promise<void> {
     ouvrir: (adresse) => new Pool({ connectionString: adresse, max: 1 }),
   });
   console.log(`Comptes de bout en bout supprimés : ${supprimes}.`);
+  // Boîte des emails de l'exécution (e2e/boite-emails.ts).
+  await supprimerBoite();
 }
