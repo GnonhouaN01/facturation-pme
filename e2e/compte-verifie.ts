@@ -1,10 +1,8 @@
 import { randomInt } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import { expect, type TestInfo } from "@playwright/test";
 
+import { messagesPour } from "./boite-emails";
 import { adresseE2E } from "./comptes-e2e";
 
 // Comptes de bout en bout de la connexion (1.2), créés par le parcours réel
@@ -15,8 +13,6 @@ import { adresseE2E } from "./comptes-e2e";
 // 1.2. Fiche : docs/features/connexion.md, section 8.1.
 
 export const ADRESSE = "http://localhost:3000";
-// Même dossier que playwright.config.ts (EMAILS_E2E).
-const DOSSIER_EMAILS = join(tmpdir(), "facturation-pme-e2e-emails");
 export const MOT_DE_PASSE = "Phrase de passe solide 2026";
 export const NOM_COOKIE = "better-auth.session_token";
 
@@ -42,23 +38,6 @@ export function adresseConnexion(info: TestInfo, rang: keyof typeof RANGS_CONNEX
 // et aucune limite par adresse IP n'est partagée entre deux tests.
 export function ipAuHasard(): string {
   return `10.${randomInt(256)}.${randomInt(256)}.${randomInt(1, 255)}`;
-}
-
-type Message = { a: string; sujet: string; corps: string };
-
-async function messagesPour(adresse: string): Promise<Message[]> {
-  let noms: string[];
-  try {
-    noms = (await readdir(DOSSIER_EMAILS)).filter((nom) => nom.endsWith(".json")).sort();
-  } catch {
-    return [];
-  }
-  const messages = await Promise.all(
-    noms.map(
-      async (nom) => JSON.parse(await readFile(join(DOSSIER_EMAILS, nom), "utf8")) as Message,
-    ),
-  );
-  return messages.filter((message) => message.a === adresse);
 }
 
 function poster(chemin: string, corps: unknown, entetes: Record<string, string> = {}) {

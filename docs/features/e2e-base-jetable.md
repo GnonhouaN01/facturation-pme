@@ -71,6 +71,26 @@ Durées affichées à chaque exécution : préparation (étapes 3 à 6) et suppr
 
 Inscrit dans `docs/CONFIGURATION.md` (étape 9 et commandes de référence). Image tirée à la première exécution.
 
+### 6. Boîte des emails et test 46 de la double authentification (correctif du 2026-10-25, `fix(e2e)`)
+
+**Constat.** `e2e/double-authentification.spec.ts:46` (parcours complet : activation, connexion par code, par code de secours) dépassait sa limite de 30 s, de façon intermittente depuis plusieurs jours, avant comme après le filtre de `console.error` (T-39). Mesure sur `origin/main`, 10 passages lancés ensemble (`--repeat-each=10`, `ordinateur-1280`, traçage) : **2 réussis sur 10**, de 23,6 à 34,6 s, chute à l'attente de l'email « Code de secours utilisé ».
+
+**Causes, établies par les traces de Playwright :**
+
+1. **Boîte des emails jamais vidée et relue en entier.** Le transport `fichier` écrivait dans un dossier commun à toutes les exécutions (`<tmp>/facturation-pme-e2e-emails`), jamais vidé depuis la 0.7 : 3 131 fichiers (15 Mo) le 2026-10-25. Chaque tentative d'un `expect.poll` sur les emails (`messagesPour`) relisait et analysait tous les fichiers : 396 ms par tentative, davantage avec les tests lancés ensemble (10 lectures simultanées : `EMFILE`). Les deux attentes d'email du test coûtaient 3,2 à 7,4 s, et le coût croissait à chaque exécution.
+2. **Près de 3 000 `expect` pour une vérification.** La vérification finale des adresses demandées (environ 240 adresses × 12 secrets) faisait un `expect` par paire, chacun une étape de Playwright : environ 5 s du test sous charge.
+
+Écartés par les traces : hachage du mot de passe, redirections, hydratation (aucune étape au-delà de 2 s).
+
+**Correctif, dans `e2e/` seulement, limite de 30 s inchangée :**
+
+- `e2e/boite-emails.ts` : un dossier par exécution (`<tmp>/facturation-pme-e2e-emails/<exécution>`, l'identifiant de `comptes-e2e.ts`), posé sur chaque serveur par `playwright.config.ts` et supprimé en fin d'exécution par `e2e/nettoyer-comptes.ts` (seul un enfant direct de la racine au nom d'une exécution peut l'être) ; lecture incrémentale, chaque fichier lu une fois par processus, un fichier incomplet repris à la tentative suivante. `compte-verifie.ts` et `inscription.spec.ts` s'en servent au lieu de leur copie de `messagesPour`. Test : `e2e/boite-emails.spec.ts`, sans navigateur.
+- Test 46 : une assertion par liste (adresses portant un secret, corps portant une valeur interdite), aussi stricte, qui nomme les éléments fautifs.
+
+**Preuve**, mêmes conditions (10 passages lancés ensemble) : avec traçage, **10 sur 10**, de 12,8 à 25,9 s (moyenne 21,4 s, contre 30,9 s avant) ; avec la configuration normale (traçage au premier nouvel essai), **10 sur 10**, de 8,9 à 15,7 s (moyenne 12,1 s).
+
+Le dossier commun laissé par les exécutions antérieures n'est plus lu ; il peut être supprimé à la main (`<tmp>/facturation-pme-e2e-emails/*.json`).
+
 ### Alternatives écartées
 
 | Alternative | Raison de l'écarter |
