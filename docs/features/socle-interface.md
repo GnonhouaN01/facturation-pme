@@ -216,6 +216,30 @@ Trois niveaux :
 
 Le scénario « base injoignable avec une session valide » demande une vraie session dans le navigateur : reporté à la 1.2.
 
+#### 4.4 Le filtre de `console.error` du serveur (T-39, correctif du 2026-10-22, `fix(journal)`)
+
+**Constat.** `@better-auth/core` 1.7.7 (`dist/db/adapter/factory.mjs`, `handleFallbackJoin`) écrit l'erreur entière par `console.error(error)` quand la lecture jointe d'une jointure de secours échoue (par exemple l'utilisateur d'une session). Le message d'une erreur de Drizzle contient la requête et ses paramètres (`Failed query: ... params: ...`), dont un jeton de session. Ce `console.error` direct échappe au journal de Better Auth, déjà réduit à une ligne fixe (`consignerAuth`, 1.1). Le même module passe aussi la clause `where` (valeur comprise) à son journal par défaut, qui écrit les erreurs par `console.error` ; dans l'application, ce journal est remplacé.
+
+**Correctif, sans dépendance et sans toucher `node_modules`.** `src/server/erreurs/console.ts`, `installerFiltreConsole()`, appelé en premier par `register` (`src/instrumentation.ts`). **Seul `console.error` est remplacé** (décision du 2026-10-22) ; `log`, `info`, `warn`, `debug` et les autres méthodes restent intacts. Chaque argument de `console.error` passe par `argumentSur` avant la méthode d'origine :
+
+- un objet (erreur comprise) n'est jamais formaté : ni message, ni pile, ni cause, ni propriétés ; il devient `[Classe]` ou `[Classe code]` (nom du constructeur en forme stricte ; SQLSTATE suivi dans la chaîne des causes, ou code système `E...`) ;
+- un texte qui ressemble à une requête (`Failed query`, `params:`, `select ... from`, `insert into`, `update ... set`, `delete from`) devient `[texte retiré]`. La recherche est linéaire : `select ... from` et `update ... set` cherchent le second mot après la première occurrence du premier. Une première version, `select[\s\S]*from`, repartait de chaque `select` jusqu'à la fin du texte : 1,7 s pour 99 000 caractères (test « coût linéaire ») ;
+- nombres, booléens, `null`, `undefined` et autres textes passent inchangés : nos lignes fixes (`[requete]`, `[auth]`, `[base]`, JSON de valeurs en forme stricte) et les lignes de Next.js ;
+- une valeur hostile (accesseur ou `Proxy` qui lève) donne `[valeur retirée]`, sans exception ;
+- un second appel ne pose pas un second filtre ; la fonction rendue remet la méthode d'origine (tests).
+
+**Nom de classe raccourci par la construction.** Sur le site construit, les noms des classes du projet sont raccourcis par la minification : une `ErreurPage` écrite par Next.js apparaît `⨯ [q]` (constaté le 2026-10-22 dans `.e2e-journaux/`). Les classes des dépendances non regroupées (`DrizzleQueryError`, `DatabaseError`) gardent leur nom. La ligne reste utile par son code et par l'identifiant d'incident de `onRequestError` (section 4.2) ; elle ne sert pas à identifier une classe du projet.
+
+**Conséquences acceptées.** Une erreur écrite par Next.js par `console.error` perd son message et sa pile ; `onRequestError` garde l'identifiant d'incident, et la ligne `[auth]` sa cause en forme stricte (`docs/features/connexion.md`). Ne sont pas couverts : une dépendance qui écrirait une erreur par `console.log` ou `console.warn` (aucune connue sur ces chemins), et une écriture directe sur `process.stdout` ou `process.stderr`.
+
+**Coût** (10 000 lignes typiques, mesuré le 2026-10-22) : `argumentSur` environ 1,4 µs par ligne ; une erreur filtrée coûte moins qu'une erreur formatée avec sa pile.
+
+**Essais de bout en bout.** Mesure sur les 10 tests de bout en bout tombés au premier `npm run verifier` de ce correctif, en alternant sans et avec le filtre étroit, site reconstruit à chaque bascule : sans, 30 réussis sur 30 (76, 79, 84 s) ; avec, 29 sur 30 (76, 80, 89 s), le seul échec étant un dépassement de délai de `e2e/double-authentification.spec.ts:46`, déjà vu avant le filtre. Ce test fait l'objet d'un correctif à part (`fix(e2e)`).
+
+**Tests.** `src/server/erreurs/console.test.ts` : vraie fabrique d'adaptateurs de Better Auth (`createAdapterFactory`, `better-auth/adapters`), lecture d'une session avec jointure de l'utilisateur, la lecture jointe lève une erreur au format de Drizzle (requête, paramètres dont un jeton, cause `57P01`) : la sortie ne contient ni le jeton, ni `Failed query`, ni `params:`, ni la requête, mais `[DrizzleQueryError 57P01]` ; `console.error` filtré, les autres méthodes intactes ; nos lignes inchangées ; double installation et retrait ; `argumentSur`, dont le coût linéaire. `src/instrumentation.test.ts` : après `register`, une erreur de Drizzle écrite à la console donne `[Error]`. Phase rouge : les tests du filtre et celui de `register` échouaient, la sortie contenant `Failed query: select ... params: u-1,jeton-de-session-...` et la pile ; le test du coût linéaire échouait (1 760 ms pour une limite de 50).
+
+Signalement au projet Better Auth : brouillon dans `docs/signalements/better-auth-fallback-join.md`, envoyé par le développeur.
+
 ### 5. La politique de sécurité du contenu (S-80, T-34)
 
 #### 5.1 Ce que dit Next.js 16.3.8
