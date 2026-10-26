@@ -10,7 +10,7 @@ import {
   nomCookieAttente,
   nomCookieSession,
 } from "./double-authentification";
-import { codeHotp, trancheCourante } from "./tranche-totp";
+import { codeHotp, PERIODE_TOTP, trancheCourante } from "./tranche-totp";
 
 // L'extension twoFactor telle que la version installée de Better Auth
 // (1.7.7) l'exécute, avec nos réglages, sur son adaptateur en mémoire, sans
@@ -255,15 +255,26 @@ describe("connexion d'un compte à second facteur", () => {
     expect(await essayer(auth, cookie, code)).toBe("INVALID_TWO_FACTOR_COOKIE");
   });
 
+  // L'horloge de JavaScript, que lit Better Auth (Date.now), est figée pendant
+  // la vérification : la tranche t ne change pas entre son calcul et les
+  // essais. Avant, le passage d'une frontière de 30 s entre les deux faisait
+  // sortir t - 1 de la fenêtre (INVALID_CODE). Figée au pire moment, 1 ms
+  // avant une frontière.
   test("fenêtre de ±1 tranche, rien au-delà", async () => {
     const { auth, secret } = await activer();
-    const t = trancheCourante(Date.now());
-    for (const ecart of [-1, 1]) {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime((trancheCourante(Date.now()) + 2) * PERIODE_TOTP * 1000 - 1);
+      const t = trancheCourante(Date.now());
+      for (const ecart of [-1, 1]) {
+        const { cookie } = await demanderCode(auth);
+        expect(await essayer(auth, cookie, codeHotp(secret, t + ecart))).toBe("ok");
+      }
       const { cookie } = await demanderCode(auth);
-      expect(await essayer(auth, cookie, codeHotp(secret, t + ecart))).toBe("ok");
+      expect(await essayer(auth, cookie, codeHotp(secret, t + 3))).toBe("INVALID_CODE");
+    } finally {
+      vi.useRealTimers();
     }
-    const { cookie } = await demanderCode(auth);
-    expect(await essayer(auth, cookie, codeHotp(secret, t + 3))).toBe("INVALID_CODE");
   });
 
   test("5 essais par attente, puis TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE même avec le bon code", async () => {
