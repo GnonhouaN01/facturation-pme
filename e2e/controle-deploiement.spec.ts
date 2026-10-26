@@ -102,7 +102,9 @@ type Defaut =
   | "profil-ouvert"
   | "liste-sessions-ouverte"
   | "profil-200"
-  | "sessions-distingue";
+  | "sessions-distingue"
+  // Optimiseur d'images (GHSA-2464-fhr4-w9xw).
+  | "image-ouverte";
 
 // Les dix-neuf points d'entrée ouverts hors production, en POST (1.1 à 1.6).
 const POINTS_COMPTES = [
@@ -320,6 +322,7 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
     const tableau = chemin === "/tableau-de-bord";
     const lien = chemin.startsWith("/lien/devis/");
     const inexistante = chemin.startsWith("/adresse-inexistante-");
+    const image = chemin.startsWith("/_next/image");
     if (defaut === "variable-dans-un-entete" && tableau) entetes["X-Indice"] = "BETTER_AUTH_SECRET";
 
     // Aucune valeur de la requête n'est recopiée dans la réponse (pas de
@@ -393,7 +396,8 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
       (tableau && defaut === "tableau-de-bord-200") ||
       (chemin === "/compte" && defaut === "compte-200") ||
       (doubleAuth && defaut === "double-authentification-200") ||
-      (profil && defaut === "profil-200")
+      (profil && defaut === "profil-200") ||
+      (image && defaut === "image-ouverte")
         ? 200
         : 404;
     reponse.writeHead(statutPage, entetes);
@@ -431,6 +435,8 @@ const PAGES = [
   "sessions",
   "mot-de-passe-oublie",
   "lien-reinitialisation",
+  // Optimiseur d'images fermé, servi comme une adresse sans page.
+  "image",
 ] as const;
 const surToutes = (controle: string) => PAGES.map((p) => `${p}:${controle}`);
 // Politique et en-têtes : vérifiés aussi sur les pages « tache » (8.3) et
@@ -481,7 +487,9 @@ test.describe("contrôle après déploiement, serveur factice", () => {
       // /list-sessions.
       // 1.6 (modifié, signalé) : 50 requêtes par passage, un POST de plus
       // (nouvelle authentification).
-      expect(factice.requetes).toHaveLength(100);
+      // Optimiseur d'images fermé : 51 requêtes par passage, un GET de
+      // /_next/image de plus.
+      expect(factice.requetes).toHaveLength(102);
       const posts = factice.requetes.filter((r) => r.methode !== "GET");
       expect(posts).toHaveLength(40);
       for (const requete of posts) {
@@ -552,6 +560,9 @@ test.describe("contrôle après déploiement, serveur factice", () => {
       expect(chemins.filter((c) => c === "/compte/double-authentification")).toHaveLength(4);
       expect(chemins.filter((c) => c === "/compte/profil")).toHaveLength(4);
       expect(chemins.filter((c) => c === "/compte/sessions")).toHaveLength(4);
+      expect(chemins.filter((c) => c === "/_next/image?url=%2Ffavicon.ico&w=64&q=75")).toHaveLength(
+        2,
+      );
       expect(inexistantes).toHaveLength(2);
       expect(inexistantes[0]).not.toBe(inexistantes[1]);
       expect(new Set(liens).size).toBe(4);
@@ -650,6 +661,7 @@ test.describe("contrôle après déploiement, serveur factice", () => {
       [
         "compte:anglais",
         "double-authentification:anglais",
+        "image:anglais",
         "inexistante:anglais",
         "lien:anglais",
         "profil:anglais",
@@ -706,6 +718,8 @@ test.describe("contrôle après déploiement, serveur factice", () => {
     ["liste-sessions-ouverte", ["auth:identique", "auth:statut"]],
     ["profil-200", ["profil:statut"]],
     ["sessions-distingue", ["sessions:identique"]],
+    // Optimiseur d'images rouvert.
+    ["image-ouverte", ["image:statut"]],
   ];
 
   for (const [defaut, attendus] of CAS) {

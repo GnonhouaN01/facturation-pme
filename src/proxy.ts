@@ -31,10 +31,12 @@ export function proxy(requete: NextRequest) {
   return reponse;
 }
 
-// Toutes les adresses sauf les fichiers compilés, les images optimisées et
-// l'icône. Les requêtes de préchargement ne sont pas exclues : une page ne
-// doit jamais partir sans politique, et un en-tête next-router-prefetch
-// envoyé par un client ne doit pas faire sauter le proxy.
+// Toutes les adresses sauf les fichiers compilés et l'icône. /_next/image
+// n'est plus exclu : l'optimiseur est fermé (next.config.ts), sa page
+// « introuvable » porte la politique comme toute autre. Les requêtes de
+// préchargement ne sont pas exclues : une page ne doit jamais partir sans
+// politique, et un en-tête next-router-prefetch envoyé par un client ne doit
+// pas faire sauter le proxy.
 export const config = {
-  matcher: ["/((?!_next/static/|_next/image(?:/|$)|favicon\\.ico$).*)"],
+  matcher: ["/((?!_next/static/|favicon\\.ico$).*)"],
 };
