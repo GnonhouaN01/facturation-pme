@@ -317,6 +317,9 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     await lire(origine, "/compte/sessions"),
     await lire(origine, "/compte/sessions", cookieForge()),
   ];
+  // Optimiseur d'images fermé (GHSA-2464-fhr4-w9xw, next.config.ts) : une
+  // image locale existante reçoit la page « introuvable ».
+  const image = await lire(origine, "/_next/image?url=%2Ffavicon.ico&w=64&q=75");
   // 1.3 : les pages publiques du mot de passe oublié.
   const [oubli, lienReinitialisation] = [
     await lire(origine, "/mot-de-passe-oublie"),
@@ -398,6 +401,7 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     ["sessions", sessions, 404, [sessions, sessionsForge]],
     ["mot-de-passe-oublie", oubli, 200, [oubli]],
     ["lien-reinitialisation", lienReinitialisation, 200, [lienReinitialisation]],
+    ["image", image, 404, [image]],
   ];
   for (const [nom, reponse, attendu, lues] of pages) {
     controler(`${nom}:statut`, [reponse], statut(attendu));

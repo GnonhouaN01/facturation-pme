@@ -47,6 +47,8 @@ node scripts/controle-deploiement.mjs https://facturation-pme.vercel.app [--essa
 
 Chaque contrôle porte un nom stable `<page>:<contrôle>` (pages `accueil`, `tableau-de-bord`, `inexistante`, `lien`), que les tests citent.
 
+Ajout du 2026-10-26 : page `image`, `GET /_next/image?url=%2Ffavicon.ico&w=64&q=75`, l'optimiseur d'images étant fermé (`socle-interface.md`, section 6.1). Contrôles `image:statut` (404), `image:politique`, `image:nonce-scripts`, `image:entetes`, `image:fuite` et `image:anglais`, comme une adresse sans page. Une requête de plus par passage (51) ; défaut `image-ouverte` dans le test du script.
+
 | Contrôle | Pages | Attendu |
 |---|---|---|
 | `statut` | toutes | `accueil` : 200. `tableau-de-bord`, `inexistante` et `lien` : 404. Une redirection, un 401 (protection de Vercel) ou un 500 échouent |

@@ -63,15 +63,15 @@ describe("sélecteur du proxy", () => {
     "/_next/data/essai.json",
     "/favicon.ico.html",
     "/_next/staticx",
+    // Optimiseur d'images fermé (images.unoptimized) : sa page « introuvable »
+    // porte la politique comme toute autre page.
+    "/_next/image?url=%2Fx.png&w=64&q=75",
+    "/_next/image",
   ])("%s : le proxy s'exécute", async (chemin) => {
     expect(await passe(chemin)).toBe(true);
   });
 
-  test.each([
-    "/_next/static/chunks/essai.js",
-    "/_next/image?url=%2Fx.png&w=64&q=75",
-    "/favicon.ico",
-  ])("%s : exclu", async (chemin) => {
+  test.each(["/_next/static/chunks/essai.js", "/favicon.ico"])("%s : exclu", async (chemin) => {
     expect(await passe(chemin)).toBe(false);
   });
 

@@ -307,7 +307,7 @@ Retenu : aucun attribut `style` permis ; la règle P l'interdit dans `src/` ; le
 #### 5.5 Où vit le code, et la lecture du mode développement
 
 - `src/lib/securite/entetes.ts` : fonctions pures, sans dépendance, `politiqueSecurite({ nonce, developpement })` et `ENTETES_SECURITE` (section 6). Dans `lib/` et non dans `server/`, parce que `next.config.ts` les importe (constaté possible, section 0, point 2) : il est chargé hors de Next.js, et `import "server-only"` y échouerait.
-- `src/proxy.ts` : tire le nonce, pose la politique sur la requête et la réponse. Sélecteur : toutes les adresses sauf `_next/static`, `_next/image` et `favicon.ico`. Contrairement au guide, les requêtes de préchargement **ne sont pas exclues** : une réponse sans politique ne doit pas exister pour une page, et un en-tête `next-router-prefetch` envoyé par un client ne doit pas faire sauter le proxy (test d'attaque).
+- `src/proxy.ts` : tire le nonce, pose la politique sur la requête et la réponse. Sélecteur : toutes les adresses sauf `_next/static` et `favicon.ico` (`_next/image` n'est plus exclu depuis le 2026-10-26, section 6.1). Contrairement au guide, les requêtes de préchargement **ne sont pas exclues** : une réponse sans politique ne doit pas exister pour une page, et un en-tête `next-router-prefetch` envoyé par un client ne doit pas faire sauter le proxy (test d'attaque).
 - **Mode développement** (décision 11, option M2) : `src/proxy.ts` lit `process.env.NODE_ENV`, et seulement cette propriété. La règle B d'`eslint.config.mjs` reçoit cette exception étroite en PR 2, et la règle 12 de `CLAUDE.md` la mentionne. Un test de règle prouve que toute autre variable lue dans `src/proxy.ts` est refusée, que `process.env` entier y est refusé, et que `process.env.NODE_ENV` reste refusé dans tout autre fichier de `src/`. Le proxy n'importe pas `env.ts` (règle S, section 7) : une variable invalide ne le fait pas échouer.
 
 ### 6. Les autres en-têtes
@@ -331,6 +331,16 @@ Posés par `next.config.ts` (`async headers()`, source `/(.*)`), qui s'applique 
 **`Cache-Control`.** Next.js envoie `private, no-cache, no-store, max-age=0, must-revalidate` sur une page dynamique (constaté, section 0, point 5). Vérifié en bout en bout sur les trois zones, sans le reposer.
 
 **Vérification sur le site construit** (décision 14). Les en-têtes de développement diffèrent (section 5.3). Les tests de bout en bout tournent donc sur le site construit, en CI comme en local : la commande du serveur de Playwright devient `npm run start` dans les deux cas, après `npm run build` (inscrit dans `CLAUDE.md`, « Commandes », à la validation ; `playwright.config.ts` modifié en PR 2). En local, le port 3000 est vérifié libre avant (`CLAUDE.md`, « Pièges connus »).
+
+#### 6.1 Optimiseur d'images fermé (correctif du 2026-10-26, `fix(config)`)
+
+L'application n'utilise aucune image, mais l'optimiseur de Next.js restait ouvert sur `/_next/image` : il servait l'icône optimisée (200), refusait une image distante par un 400 au texte anglais, et le proxy l'excluait, donc sans politique de sécurité du contenu. GHSA-2464-fhr4-w9xw (exécution de code à distance par l'optimisation d'images, corrigée par next 16.4.3) montre ce qu'une surface inutile coûte.
+
+- `next.config.ts` : `images: { unoptimized: true }`. Next.js répond alors à toute adresse de `/_next/image` par la page « introuvable » (`next-server.js`, `handleNextImageRequest`, `render404`) ; sur Vercel, l'optimiseur n'est pas déclaré.
+- `src/proxy.ts` : `_next/image` retiré des exclusions du sélecteur ; cette page « introuvable » porte la politique, comme toute autre.
+- Une image ajoutée plus tard passera par `<img>` ou par une décision écrite dans une fiche, jamais par la réouverture silencieuse de l'optimiseur.
+
+Tests : `e2e/images.attaque.spec.ts` (quatre adresses de `/_next/image` : 404, `text/html`, politique posée, texte « Cette page est introuvable » ; même statut et même type qu'une adresse sans page) ; `src/proxy.test.ts` (le proxy s'exécute sur `/_next/image`) ; contrôle `image:*` après déploiement (`docs/features/controle-deploiement.md`, section 2). Phase rouge : l'icône servie en 200, une image distante et `/_next/image` sans paramètre en 400, `/_next/image/x` sans politique.
 
 ### 7. Règles ESLint
 
