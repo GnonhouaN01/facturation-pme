@@ -387,6 +387,8 @@ Deux fichiers dans `.github/workflows/`.
 
 Les deux workflows n'ont que le droit de lire le code. Les mots de passe écrits dans `ci.yml` ne protègent qu'une base qui vit quelques minutes.
 
+**Machine fixée sur `ubuntu-24.04`** (depuis le 2026-10-27, dans tous les workflows, `controle-deploiement.yml` compris). `ubuntu-latest` désigne Ubuntu 26 depuis le 2026-10-19, que Playwright ne prend pas encore en charge pour ses dépendances système : l'étape « Installer Chromium » a pris 11 min 49 s au lieu d'environ 1 min, et la tâche « Base de données et bout en bout » a dépassé sa limite de 15 min. Cette étape a désormais sa propre limite de 5 min : une lenteur échoue vite et clairement. À repasser à Ubuntu 26 quand Playwright la prendra en charge (notes de version de Playwright, liste des systèmes pris en charge), en vérifiant la durée de l'étape sur une PR.
+
 ## Commandes de référence
 
 | Besoin | Commande |

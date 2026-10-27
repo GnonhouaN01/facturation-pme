@@ -15,7 +15,12 @@ concurrency:
 jobs:
   qualite:
     name: Qualité
-    runs-on: ubuntu-latest
+    # ubuntu-24.04 et non ubuntu-latest : ubuntu-latest est Ubuntu 26 depuis
+    # le 2026-10-19, que Playwright ne prend pas encore en charge pour ses
+    # dépendances système (installation de Chromium : 11 min 49 s au lieu
+    # d'environ 1 min). Passer à 26 quand Playwright la prendra en charge
+    # (docs/CONFIGURATION.md).
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     # Valeurs factices, identiques à celles du job d'intégration : aucune base
     # ne tourne ici, elles ne servent qu'à passer la validation de src/server/env.ts.
@@ -56,7 +61,12 @@ jobs:
 
   integration:
     name: Base de données et bout en bout
-    runs-on: ubuntu-latest
+    # ubuntu-24.04 et non ubuntu-latest : ubuntu-latest est Ubuntu 26 depuis
+    # le 2026-10-19, que Playwright ne prend pas encore en charge pour ses
+    # dépendances système (installation de Chromium : 11 min 49 s au lieu
+    # d'environ 1 min). Passer à 26 quand Playwright la prendra en charge
+    # (docs/CONFIGURATION.md).
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     services:
       postgres:
@@ -120,6 +130,9 @@ jobs:
         run: npm run build
 
       - name: Installer Chromium
+        # Environ 1 min d'habitude : une lenteur échoue vite et clairement, au
+        # lieu de consommer toute la limite de la tâche.
+        timeout-minutes: 5
         run: npx playwright install --with-deps chromium
 
       - name: Lancer les tests de bout en bout
