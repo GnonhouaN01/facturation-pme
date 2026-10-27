@@ -49,7 +49,7 @@ Chaque contrôle porte un nom stable `<page>:<contrôle>` (pages `accueil`, `tab
 
 | Contrôle | Pages | Attendu |
 |---|---|---|
-| `statut` | toutes | `accueil` : 200. `tableau-de-bord`, `inexistante` et `lien` : 404. Une redirection, un 401 (protection de Vercel) ou un 500 échouent |
+| `statut` | toutes | `accueil` : 200. `tableau-de-bord`, `inexistante` et `lien` : 404. Une redirection, un 401 (protection de Vercel) ou un 500 échouent. Page `donnees-personnelles` (200), contrôlée comme `connexion` : statut, politique, nonce des scripts, en-têtes, fuite (`docs/features/donnees-personnelles.md`, section 5) |
 | `politique` | toutes | `Content-Security-Policy` égale, directive par directive, à la politique de production (`socle-interface.md`, section 5.3) ; un seul nonce, le même dans `script-src` et `style-src`, de 16 octets en base64 ; aucun mot-clé `unsafe-` |
 | `nonce-scripts` | toutes | Au moins une balise `<script>`, et chacune porte `nonce="<nonce de l'en-tête>"` : la page est rendue à la requête (« Pièges connus », rendu dynamique) |
 | `nonce-neuf` | accueil | Deux requêtes successives reçoivent deux nonces différents |
