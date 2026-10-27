@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { FormulaireConnexion } from "@/components/compte/formulaire-connexion";
 import { TEXTES_COMPTE } from "@/textes/compte";
+import { TEXTES_DONNEES_PERSONNELLES } from "@/textes/donnees-personnelles";
 import { redirigerSiConnecte } from "@/server/actions/exposer";
 
 // Connexion (UC-02), dans la zone publique : ne lit jamais la session ; un
@@ -39,6 +40,10 @@ export default async function PageConnexion() {
         </Link>
         <Link href="/inscription" className={`self-start ${LIEN}`}>
           {TEXTES.creerCompte}
+        </Link>
+        {/* docs/features/donnees-personnelles.md, section 4. */}
+        <Link href="/donnees-personnelles" className={`self-start ${LIEN}`}>
+          {TEXTES_DONNEES_PERSONNELLES.liens.connexion}
         </Link>
       </div>
     </main>

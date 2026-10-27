@@ -93,6 +93,8 @@ type Defaut =
   | "lien-reinitialisation-ouvert"
   | "mot-de-passe-oublie-500"
   | "lien-reinitialisation-500"
+  // Données personnelles.
+  | "donnees-personnelles-500"
   // Double authentification (1.4).
   | "double-auth-ouverte"
   | "totp-uri-ouvert"
@@ -311,6 +313,8 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
     // 1.3 : pages publiques du mot de passe oublié.
     const oubli = chemin === "/mot-de-passe-oublie";
     const lienReinitialisation = chemin === "/lien/reinitialisation";
+    // Page publique « Données personnelles » (docs/features/donnees-personnelles.md).
+    const donnees = chemin === "/donnees-personnelles";
     // 1.4 : la page de la double authentification, servie comme /compte.
     const doubleAuth = chemin === "/compte/double-authentification";
     // 1.5 : le profil et les sessions, servis comme /compte.
@@ -349,6 +353,13 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
           defaut,
         ),
       );
+      return;
+    }
+
+    // Page publique « Données personnelles » : 200, comme la connexion.
+    if (donnees) {
+      reponse.writeHead(defaut === "donnees-personnelles-500" ? 500 : 200, entetes);
+      reponse.end(page(nonce, "Facturation PME", "<h1>Données personnelles</h1>", charge, defaut));
       return;
     }
 
@@ -431,6 +442,7 @@ const PAGES = [
   "sessions",
   "mot-de-passe-oublie",
   "lien-reinitialisation",
+  "donnees-personnelles",
 ] as const;
 const surToutes = (controle: string) => PAGES.map((p) => `${p}:${controle}`);
 // Politique et en-têtes : vérifiés aussi sur les pages « tache » (8.3) et
@@ -481,7 +493,9 @@ test.describe("contrôle après déploiement, serveur factice", () => {
       // /list-sessions.
       // 1.6 (modifié, signalé) : 50 requêtes par passage, un POST de plus
       // (nouvelle authentification).
-      expect(factice.requetes).toHaveLength(100);
+      // Données personnelles (modifié, signalé) : 51 requêtes par passage, un
+      // GET de /donnees-personnelles.
+      expect(factice.requetes).toHaveLength(102);
       const posts = factice.requetes.filter((r) => r.methode !== "GET");
       expect(posts).toHaveLength(40);
       for (const requete of posts) {
@@ -548,6 +562,7 @@ test.describe("contrôle après déploiement, serveur factice", () => {
       expect(chemins.filter((c) => c === "/connexion")).toHaveLength(2);
       expect(chemins.filter((c) => c === "/mot-de-passe-oublie")).toHaveLength(2);
       expect(chemins.filter((c) => c === "/lien/reinitialisation")).toHaveLength(2);
+      expect(chemins.filter((c) => c === "/donnees-personnelles")).toHaveLength(2);
       expect(chemins.filter((c) => c === "/compte")).toHaveLength(4);
       expect(chemins.filter((c) => c === "/compte/double-authentification")).toHaveLength(4);
       expect(chemins.filter((c) => c === "/compte/profil")).toHaveLength(4);
@@ -696,6 +711,7 @@ test.describe("contrôle après déploiement, serveur factice", () => {
     ["lien-reinitialisation-ouvert", ["auth:identique", "auth:statut"]],
     ["mot-de-passe-oublie-500", ["mot-de-passe-oublie:statut"]],
     ["lien-reinitialisation-500", ["lien-reinitialisation:statut"]],
+    ["donnees-personnelles-500", ["donnees-personnelles:statut"]],
     // 1.4.
     ["double-auth-ouverte", ["comptes:identique", "comptes:statut"]],
     ["totp-uri-ouvert", ["auth:identique", "auth:statut"]],

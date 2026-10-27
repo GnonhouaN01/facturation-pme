@@ -4,6 +4,7 @@ import { type Page, expect } from "@playwright/test";
 
 import { TEXTES_COMMUNS } from "../src/textes/commun";
 import { TEXTES_COMPTE } from "../src/textes/compte";
+import { ADRESSE_CONTACT, TEXTES_DONNEES_PERSONNELLES } from "../src/textes/donnees-personnelles";
 import { TEXTES_ERREURS } from "../src/textes/erreurs";
 
 import { ADRESSE_PANNE, COOKIE_SESSION, cookieSessionSigne } from "./serveur-panne";
@@ -29,6 +30,17 @@ async function attendreTitre(page: Page, texte: string) {
 }
 
 export const PAGES: readonly PageLivree[] = [
+  // Données personnelles (docs/features/donnees-personnelles.md, section 4) :
+  // le premier lien est l'adresse de contact.
+  {
+    nom: "donnees-personnelles",
+    ouvrir: async (page) => {
+      await page.goto("/donnees-personnelles");
+      await attendreTitre(page, TEXTES_DONNEES_PERSONNELLES.titre);
+    },
+    premiereAction: (page) =>
+      page.getByRole("main").getByRole("link", { name: ADRESSE_CONTACT }).first(),
+  },
   {
     nom: "publique",
     ouvrir: async (page) => {

@@ -322,6 +322,9 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     await lire(origine, "/mot-de-passe-oublie"),
     await lire(origine, "/lien/reinitialisation"),
   ];
+  // Page publique « Données personnelles » (docs/features/donnees-personnelles.md,
+  // section 5), contrôlée comme /connexion.
+  const donnees = await lire(origine, "/donnees-personnelles");
   const [tacheSans, tacheForgee, tacheAbsente] = [
     await lire(origine, "/api/taches/quotidienne"),
     await lire(origine, "/api/taches/quotidienne", undefined, autorisationForgee()),
@@ -398,6 +401,7 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     ["sessions", sessions, 404, [sessions, sessionsForge]],
     ["mot-de-passe-oublie", oubli, 200, [oubli]],
     ["lien-reinitialisation", lienReinitialisation, 200, [lienReinitialisation]],
+    ["donnees-personnelles", donnees, 200, [donnees]],
   ];
   for (const [nom, reponse, attendu, lues] of pages) {
     controler(`${nom}:statut`, [reponse], statut(attendu));

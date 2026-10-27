@@ -301,6 +301,11 @@ Avant de fusionner la PR 2, dans cet ordre. Une case non cochée : on ne fusionn
 - [ ] Capacité : Gmail bloque au-delà de 500 envois par jour. Nos plafonds : `email.application` 200 par 24 h, dont `email.compte` 100 et `email.reinitialisation` 50 ; par destinataire 3 par heure et 10 par jour ; aucune organisation n'envoie avant le jalon 4. Fenêtre fixe : au bord, deux fenêtres donnent 400 en 24 h glissantes, toujours sous 500.
 - [ ] Preuve de la PR 1 faite sur la prévisualisation (section 13) : email de réinitialisation reçu, `SPF`, `DKIM`, `DMARC` en `pass`.
 
+**Information des personnes** (`docs/features/donnees-personnelles.md`) :
+
+- [ ] Page `/donnees-personnelles` sans « À COMPLÉTER » (bases légales, durées, pays de Google, preuve d'identité, délai de réponse, formalités ARTCI) : le test `src/textes/donnees-personnelles.test.ts` (verrou) échoue sinon dans #52, qui retire la constante.
+- [ ] Formalité ARTCI accomplie, numéro de récépissé reporté sur la page (`PLAN.md`, décision D de la 1.3).
+
 **Exploitation** :
 
 - [ ] Dernier passage du workflow de contrôle après déploiement vert sur `main`.
