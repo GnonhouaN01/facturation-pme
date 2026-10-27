@@ -8,7 +8,8 @@ import { env } from "../env";
 import { db } from "./client";
 import { bancInscription } from "./outils-test/inscription";
 import { lireProfil } from "./profil";
-import { account, session, user, verification } from "./schema/auth";
+import { creerDeuxOrganisations } from "./outils-test/organisations";
+import { account, member, session, user, verification } from "./schema/auth";
 import { compteurDebit } from "./schema/technique";
 import { sessionsDe } from "./sessions";
 
@@ -17,7 +18,7 @@ import { sessionsDe } from "./sessions";
 // de Better Auth aux options de l'application. Transport en mémoire, Have I
 // Been Pwned simulé. Fiche : docs/features/profil-sessions.md, tests 12 à 14.
 
-const banc = bancInscription({ adresses: 16 });
+const banc = bancInscription({ adresses: 18 });
 const ORIGINE = new URL(env.BETTER_AUTH_URL).origin;
 const MOT_DE_PASSE = "une-phrase-de-passe-solide";
 const NOUVEAU = "une-autre-phrase-bien-longue";
@@ -271,5 +272,41 @@ describe("correction du nom (test 14)", () => {
     ).toBe(200);
     expect(await lireProfil(a.id)).toEqual({ nom: "Awa Koné", email: a.email });
     expect(await lireProfil(b.id)).toEqual({ nom: "Tiers", email: b.email });
+  });
+});
+
+// 2.1, report de la 1.5 : la session neuve reprend l'organisation active de
+// la session remplacée, adhésion relue (docs/features/organisations.md,
+// section 5).
+describe("changement du mot de passe : organisation active reprise (2.1)", () => {
+  test("membre de A, organisation active A : la session neuve garde A", async () => {
+    const orgs = await creerDeuxOrganisations({ tables: [] });
+    try {
+      const a = await compte(1);
+      const [courante] = a.cookies as [string];
+      await db
+        .insert(member)
+        .values({ organizationId: orgs.a, userId: a.id, role: "lecteur", createdAt: new Date() });
+      await db
+        .update(session)
+        .set({ activeOrganizationId: orgs.a })
+        .where(eq(session.userId, a.id));
+
+      const reponse = await banc.traiter(
+        post(
+          "/change-password",
+          { motDePasseActuel: MOT_DE_PASSE, nouveauMotDePasse: NOUVEAU },
+          courante,
+        ),
+      );
+      expect(reponse.status).toBe(200);
+      const lignes = await db
+        .select({ active: session.activeOrganizationId })
+        .from(session)
+        .where(eq(session.userId, a.id));
+      expect(lignes).toEqual([{ active: orgs.a }]);
+    } finally {
+      await orgs.nettoyer();
+    }
   });
 });

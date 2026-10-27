@@ -1,7 +1,17 @@
 import Link from "next/link";
 
-import { lireComptePourPage, lireEtatDoubleAuth } from "@/server/actions/exposer";
+import {
+  FormulaireCreationOrganisation,
+  ListeOrganisations,
+} from "@/components/compte/organisations";
+import {
+  lireComptePourPage,
+  lireEtatDoubleAuth,
+  lireOrganisations,
+} from "@/server/actions/exposer";
 import { TEXTES_COMPTE } from "@/textes/compte";
+
+import { changerOrganisation, creerOrganisation } from "./actions";
 
 // Page d'arrivée après la connexion (1.2, décision 2). Elle se protège
 // elle-même : sans session vérifiée, la page « introuvable ». La 2.1 y
@@ -9,9 +19,14 @@ import { TEXTES_COMPTE } from "@/textes/compte";
 // docs/features/connexion.md, sections 5.1 à 5.3. 1.4 : l'état de la double
 // authentification et le lien vers sa page (docs/features/
 // double-authentification.md, section 11). 1.5 : liens vers le profil et les
-// sessions (docs/features/profil-sessions.md, section 9).
+// sessions (docs/features/profil-sessions.md, section 9). 2.1 : la liste des
+// organisations de l'utilisateur et la création, en tête (UC-02, étape 4 ;
+// docs/features/organisations.md, section 9).
 export default async function PageCompte() {
-  const etat = await lireComptePourPage(lireEtatDoubleAuth);
+  const { etat, organisations } = await lireComptePourPage(async (compte) => ({
+    etat: await lireEtatDoubleAuth(compte),
+    organisations: await lireOrganisations(compte),
+  }));
   const textes = TEXTES_COMPTE.compte;
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-12">
@@ -19,6 +34,8 @@ export default async function PageCompte() {
         {textes.titre}
       </h1>
       <p className="text-[0.9375rem] leading-6 text-muted-foreground">{textes.connecte}</p>
+      <ListeOrganisations organisations={organisations} changer={changerOrganisation} />
+      <FormulaireCreationOrganisation creer={creerOrganisation} />
       <section className="flex flex-col gap-3 rounded-lg border border-border bg-card p-6">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="font-heading text-[1.25rem] leading-7 font-semibold text-foreground">

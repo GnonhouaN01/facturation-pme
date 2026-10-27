@@ -58,6 +58,15 @@ export type DependancesProfil = {
   modifierNom: (utilisateurId: string, nom: string) => Promise<void>;
   // Planifie l'email, après la réponse ; ne doit pas lever.
   notifier: (modele: ModeleProfil, utilisateurId: string) => void;
+  // 2.1, report de la 1.5 : l'organisation active de la session du jeton
+  // donné ; puis sa reprise sur la session neuve, adhésion exigée
+  // (docs/features/organisations.md, section 5).
+  organisationActive: (jeton: string) => Promise<string | null>;
+  reprendreOrganisationActive: (
+    utilisateurId: string,
+    jetonNeuf: string,
+    organisationId: string,
+  ) => Promise<void>;
 };
 
 // Le seul chemin de Better Auth que ces points appellent (limite par
@@ -135,6 +144,10 @@ async function changerMotDePasse(
   }
   if (await profil.motDePasseCompromis(nouveau)) return { raison: "mot_de_passe_compromis" };
 
+  // L'organisation active de la session remplacée, lue avant que Better Auth
+  // ne la supprime (2.1).
+  const organisation = await profil.organisationActive(contexte.session.jeton);
+
   const lue = await outils.appeler(
     "/change-password",
     { currentPassword: actuel, newPassword: nouveau, revokeOtherSessions: true },
@@ -149,6 +162,16 @@ async function changerMotDePasse(
   // session ouverte entre-temps est fermée ici. En échec : « erreur », aucun
   // cookie (section 4, étape 4).
   await profil.revoquerAutresSessions(utilisateurId, jetonNeuf);
+  // La session neuve reprend l'organisation active, si l'adhésion existe
+  // toujours. En échec, le changement reste fait : une ligne fixe, et
+  // l'utilisateur rouvre son organisation depuis /compte (2.1).
+  if (organisation !== null) {
+    try {
+      await profil.reprendreOrganisationActive(utilisateurId, jetonNeuf, organisation);
+    } catch {
+      consignerIncidentAuth();
+    }
+  }
   // Un lien demandé avant le changement ne permet plus de le défaire. En
   // échec, le changement reste fait : une ligne fixe, le lien expire seul.
   try {

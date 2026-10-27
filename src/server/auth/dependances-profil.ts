@@ -35,6 +35,13 @@ export type OptionsDependancesProfil = {
     revoquerAutresSessions: (utilisateurId: string, jetonGarde: string) => Promise<unknown>;
     supprimerJetonsReinitialisation: (utilisateurId: string) => Promise<unknown>;
     adresseUtilisateur: (utilisateurId: string) => Promise<string | null>;
+    // 2.1 (db/sessions.ts).
+    organisationActiveDe: (jeton: string) => Promise<string | null>;
+    reprendreOrganisationActive: (
+      utilisateurId: string,
+      jeton: string,
+      organisationId: string,
+    ) => Promise<void>;
   };
   emailProfil: (modele: ModeleProfil, lireAdresse: () => Promise<string | null>) => void;
 };
@@ -65,5 +72,7 @@ export function creerDependancesProfil(options: OptionsDependancesProfil): Depen
     notifier: (modele, utilisateurId) => {
       options.emailProfil(modele, () => requetes.adresseUtilisateur(utilisateurId));
     },
+    organisationActive: requetes.organisationActiveDe,
+    reprendreOrganisationActive: requetes.reprendreOrganisationActive,
   };
 }

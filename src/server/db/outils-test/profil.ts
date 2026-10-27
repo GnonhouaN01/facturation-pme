@@ -22,5 +22,7 @@ export function dependancesProfilInertes(): DependancesProfil {
     supprimerJetonsReinitialisation: async () => inattendue(),
     modifierNom: async () => inattendue(),
     notifier: () => inattendue(),
+    organisationActive: async () => inattendue(),
+    reprendreOrganisationActive: async () => inattendue(),
   };
 }

@@ -123,6 +123,23 @@ export const TEXTES_COMPTE = {
     sessionsAide: "Les navigateurs connectés à votre compte.",
     voirSessions: "Voir les sessions",
   },
+  // 2.1 (docs/features/organisations.md, section 9).
+  organisations: {
+    titre: "Vos organisations",
+    aucune: "Vous n'êtes membre d'aucune organisation.",
+    role: "Rôle :",
+    ouvrir: "Ouvrir l'organisation",
+    ouvertureEnCours: "Ouverture en cours",
+    doubleAuthRequise: "Activez la double authentification pour ouvrir cette organisation.",
+    creerTitre: "Créer une organisation",
+    raisonSociale: "Raison sociale",
+    aide: "Le nom de votre entreprise, tel qu'il apparaîtra sur vos documents. Vous compléterez la fiche ensuite.",
+    erreurRaisonSociale:
+      "Saisissez une raison sociale de 2 à 100 caractères, avec au moins une lettre ou un chiffre.",
+    creer: "Créer l'organisation",
+    creationEnCours: "Création en cours",
+    sansJavaScript: "Activez JavaScript dans votre navigateur pour gérer vos organisations.",
+  },
   // 1.5 (docs/features/profil-sessions.md, sections 4, 5 et 9).
   profil: {
     titre: "Profil",

@@ -50,6 +50,9 @@ const DEFINITIONS = {
   // organisation du titulaire ; ressource_id : son adhésion
   // (docs/exploitation/remise-a-zero-double-authentification.md).
   "membre.double_auth_remise_a_zero": { ressource: "membre", details: SANS_DETAILS },
+  // 2.1 : création d'une organisation, écrite dans sa transaction ;
+  // ressource_id : l'organisation (docs/features/organisations.md, section 8).
+  "organisation.creee": { ressource: "organisation", details: SANS_DETAILS },
 } as const satisfies Record<string, DefinitionAction>;
 
 export type ActionJournal = keyof typeof DEFINITIONS;

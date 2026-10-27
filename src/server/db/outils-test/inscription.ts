@@ -27,7 +27,12 @@ import { creerCompteur, type Compteur } from "../debit";
 import * as requetesDoubleAuth from "../double-authentification";
 import { enregistrerPreuve } from "../nouvelle-authentification";
 import { marquerAdresseVerifiee, supprimerJetonsReinitialisation } from "../reinitialisation";
-import { revoquerAutresSessions, revoquerSessionDe } from "../sessions";
+import {
+  organisationActiveDe,
+  reprendreOrganisationActive,
+  revoquerAutresSessions,
+  revoquerSessionDe,
+} from "../sessions";
 import { user, verification } from "../schema/auth";
 import { compteurDebit } from "../schema/technique";
 
@@ -201,6 +206,8 @@ export function bancInscription(options: OptionsBanc): BancInscription {
           revoquerAutresSessions,
           supprimerJetonsReinitialisation,
           adresseUtilisateur: requetesDoubleAuth.adresseUtilisateur,
+          organisationActiveDe,
+          reprendreOrganisationActive,
         },
         emailProfil: emails.emailProfil,
       }),

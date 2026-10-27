@@ -17,15 +17,20 @@ import {
   type Profil,
   type SessionAffichee,
 } from "../auth/sessions-compte";
-import type { Droit } from "../autorisation/matrice";
+import { ROLES, ROLES_DOUBLE_AUTH, type Droit, type Role } from "../autorisation/matrice";
 import type { ActionJournal } from "../journal/actions";
+import { lireOrganisationsDuCompte } from "../services/organisations";
 
 import {
   estDeclaration,
+  estDeclarationCompte,
   etablirContexte,
   executerChaine,
+  executerChaineCompte,
   type ContexteLecture,
   type DeclarationAction,
+  type DeclarationCompte,
+  type DeclarationCompteQuelconque,
   type DeclarationQuelconque,
   type ResultatLecture,
   type SchemaEntree,
@@ -43,14 +48,19 @@ export type ActionExposee<E extends SchemaEntree, T> = (entree: z.input<E>) => P
 // poser la marque.
 const MARQUE = Symbol("action exposée");
 
+// 2.1 : une action de compte (declarerActionCompte) s'expose par la même
+// fonction, et passe par la chaîne « portée compte »
+// (docs/features/organisations.md, section 3).
 export function exposer<E extends SchemaEntree, J extends ActionJournal | null, T>(
-  declaration: DeclarationAction<E, J, T>,
+  declaration: DeclarationAction<E, J, T> | DeclarationCompte<E, J, T>,
 ): ActionExposee<E, T> {
-  // Une déclaration qui n'est pas passée par declarerAction (objet écrit à la
-  // main, copie) est refusée au chargement du module : son schéma pourrait
-  // être non strict (section 7, « Déclarations marquées »). Le transtypage
-  // évite que la garde ne réduise le type de la déclaration (T perdu).
-  if (!estDeclaration(declaration as unknown)) {
+  // Une déclaration qui n'est pas passée par declarerAction ou
+  // declarerActionCompte (objet écrit à la main, copie) est refusée au
+  // chargement du module : son schéma pourrait être non strict (section 7,
+  // « Déclarations marquées »). Le transtypage évite que la garde ne réduise
+  // le type de la déclaration (T perdu).
+  const compte = estDeclarationCompte(declaration as unknown);
+  if (!compte && !estDeclaration(declaration as unknown)) {
     throw new Error("Action exposée sans declarerAction : déclaration refusée.");
   }
   // Rien n'est lu ici : le module "use server" se charge hors de toute
@@ -58,7 +68,9 @@ export function exposer<E extends SchemaEntree, J extends ActionJournal | null, 
   // relance) traversent cette fonction sans être interceptées.
   const action = async (entree: z.input<E>): Promise<Resultat<T>> => {
     const entetes = new Headers(await headers());
-    return executerChaine(declaration, { entetes }, entree);
+    return compte
+      ? executerChaineCompte(declaration as DeclarationCompte<E, J, T>, { entetes }, entree)
+      : executerChaine(declaration as DeclarationAction<E, J, T>, { entetes }, entree);
   };
   Object.defineProperty(action, MARQUE, { value: declaration });
   return action;
@@ -66,7 +78,9 @@ export function exposer<E extends SchemaEntree, J extends ActionJournal | null, 
 
 // Déclaration portée par une fonction renvoyée par exposer, undefined pour
 // toute autre valeur.
-export function declarationExposee(valeur: unknown): DeclarationQuelconque | undefined {
+export function declarationExposee(
+  valeur: unknown,
+): DeclarationQuelconque | DeclarationCompteQuelconque | undefined {
   if (typeof valeur !== "function" || !Object.hasOwn(valeur, MARQUE)) return undefined;
   return (valeur as unknown as Record<typeof MARQUE, DeclarationQuelconque>)[MARQUE];
 }
@@ -169,4 +183,40 @@ export function lireSessions(compte: ContexteCompte): Promise<SessionAffichee[]>
 }
 export function lireProfil(compte: ContexteCompte): Promise<Profil> {
   return lireProfilCompte(compte);
+}
+
+// Page /compte (2.1) : les organisations de l'utilisateur que
+// lireComptePourPage a lu dans la session, jamais d'un identifiant reçu. Un
+// rôle hors des quatre n'a aucun droit (T-51) : son organisation n'est pas
+// affichée. doubleAuthentificationRequise : le rôle impose le second facteur
+// et il n'est pas actif (UC-02 4a, UC-11 2a). Fiche :
+// docs/features/organisations.md, sections 6 et 9.
+export type OrganisationAffichee = {
+  id: string;
+  nom: string;
+  role: Role;
+  doubleAuthentificationRequise: boolean;
+};
+
+function estRoleConnu(role: string): role is Role {
+  return (ROLES as readonly string[]).includes(role);
+}
+
+export async function lireOrganisations(compte: ContexteCompte): Promise<OrganisationAffichee[]> {
+  const [organisations, etat] = await Promise.all([
+    lireOrganisationsDuCompte(compte.utilisateurId),
+    lireEtat(compte.utilisateurId),
+  ]);
+  return organisations.flatMap(({ id, nom, role }) =>
+    estRoleConnu(role)
+      ? [
+          {
+            id,
+            nom,
+            role,
+            doubleAuthentificationRequise: ROLES_DOUBLE_AUTH.includes(role) && !etat.actif,
+          },
+        ]
+      : [],
+  );
 }

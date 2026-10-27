@@ -549,6 +549,64 @@ describe(
   },
 );
 
+// 2.1 : mêmes règles pour la chaîne « portée compte »
+// (docs/features/organisations.md, section 3).
+const COMPTE_CHAINE = `import { executerChaineCompte } from "@/server/actions/action";
+export const f = executerChaineCompte;
+`;
+const COMPTE_CHAINE_LOCAL = `import { executerChaineCompte } from "./action";
+export const f = executerChaineCompte;
+`;
+const COMPTE_FABRIQUE = `import { creerChaineCompte } from "@/server/actions/action";
+export const f = creerChaineCompte;
+`;
+const COMPTE_FABRIQUE_LOCAL = `import { creerChaineCompte } from "./action";
+export const f = creerChaineCompte;
+`;
+const COMPTE_DECLARER = `import { declarerActionCompte } from "./action";
+export const f = declarerActionCompte;
+`;
+
+describe(
+  "M. chaîne de compte : executerChaineCompte dans exposer.ts, creerChaineCompte dans les tests",
+  { timeout: 60_000 },
+  () => {
+    test.each([
+      ["executerChaineCompte depuis un service", COMPTE_CHAINE, "src/server/services/essai.ts"],
+      ["executerChaineCompte depuis une page", COMPTE_CHAINE, "src/app/essai/page.tsx"],
+      ["executerChaineCompte depuis actions/", COMPTE_CHAINE_LOCAL, "src/server/actions/essai.ts"],
+      ["creerChaineCompte depuis un service", COMPTE_FABRIQUE, "src/server/services/essai.ts"],
+      [
+        "creerChaineCompte depuis exposer.ts",
+        COMPTE_FABRIQUE_LOCAL,
+        "src/server/actions/exposer.ts",
+      ],
+    ])("%s : refusé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).not.toEqual([]);
+    });
+
+    test.each([
+      [
+        "executerChaineCompte dans exposer.ts",
+        COMPTE_CHAINE_LOCAL,
+        "src/server/actions/exposer.ts",
+      ],
+      [
+        "creerChaineCompte dans un test de db/",
+        COMPTE_FABRIQUE,
+        "src/server/db/essai.integration.test.ts",
+      ],
+      [
+        "declarerActionCompte depuis un domaine",
+        COMPTE_DECLARER,
+        "src/server/actions/organisations.ts",
+      ],
+    ])("%s : autorisé", async (_nom, code, fichier) => {
+      expect(await refus(code, fichier)).toEqual([]);
+    });
+  },
+);
+
 // Aucun commentaire ne suspend une règle dans src/ (noInlineConfig) : une
 // exception passe par eslint.config.mjs, donc par une PR.
 const SUSPENDU_LIGNE_SUIVANTE = `// eslint-disable-next-line no-restricted-imports

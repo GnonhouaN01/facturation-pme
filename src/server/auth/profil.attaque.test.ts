@@ -26,6 +26,7 @@ const COOKIE_RECU = [
 ].join("; ");
 
 const ID_SESSION = "0b6f3c1e-6d1f-4f5e-9a63-2a4b7c8d9e10";
+const ORGANISATION = "7c1b2a3d-4e5f-4a6b-9c7d-8e9f0a1b2c3d";
 const MOT_DE_PASSE_ACTUEL = "phrase-actuelle-tres-longue";
 const NOUVEAU_MOT_DE_PASSE = "nouvelle-phrase-tres-longue";
 
@@ -84,6 +85,11 @@ function fauxProfil(
     ),
     modifierNom: vi.fn<DependancesProfil["modifierNom"]>(async () => {}),
     notifier: vi.fn<DependancesProfil["notifier"]>(() => {}),
+    // 2.1 (docs/features/organisations.md, section 5).
+    organisationActive: vi.fn<DependancesProfil["organisationActive"]>(async () => ORGANISATION),
+    reprendreOrganisationActive: vi.fn<DependancesProfil["reprendreOrganisationActive"]>(
+      async () => {},
+    ),
   };
 }
 
@@ -630,6 +636,69 @@ describe("changement du mot de passe : S-82 et après le succès", () => {
       expect(profil.notifier).not.toHaveBeenCalled();
     },
   );
+});
+
+describe("changement du mot de passe : organisation active reprise (2.1, report de la 1.5)", () => {
+  const CHANGEMENT = CORPS["/change-password"];
+
+  test("lue sur la session reçue avant Better Auth, écrite sur la session neuve après", async () => {
+    const ordre: string[] = [];
+    const { gerer, profil } = traitement({
+      reponse: () => {
+        ordre.push("better-auth");
+        return betterAuthReussit();
+      },
+      profil: (faux) => {
+        faux.organisationActive.mockImplementation(async () => {
+          ordre.push("lecture");
+          return ORGANISATION;
+        });
+        faux.reprendreOrganisationActive.mockImplementation(async () => {
+          ordre.push("reprise");
+        });
+      },
+    });
+    expect((await gerer(post("/change-password", CHANGEMENT))).status).toBe(200);
+    expect(profil.organisationActive).toHaveBeenCalledExactlyOnceWith("jeton-session-a");
+    expect(profil.reprendreOrganisationActive).toHaveBeenCalledExactlyOnceWith(
+      "u-a",
+      "jeton-neuf",
+      ORGANISATION,
+    );
+    expect(ordre).toEqual(["lecture", "better-auth", "reprise"]);
+  });
+
+  test("sans organisation active : rien n'est repris", async () => {
+    const { gerer, profil } = traitement({
+      profil: (faux) => faux.organisationActive.mockResolvedValue(null),
+    });
+    expect((await gerer(post("/change-password", CHANGEMENT))).status).toBe(200);
+    expect(profil.reprendreOrganisationActive).not.toHaveBeenCalled();
+  });
+
+  test("échec du changement : rien n'est repris", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { gerer, profil } = traitement({ reponse: reponse(400, { code: "INVALID_PASSWORD" }) });
+    await gerer(post("/change-password", CHANGEMENT));
+    expect(profil.reprendreOrganisationActive).not.toHaveBeenCalled();
+  });
+
+  test("reprise en échec : changement fait quand même, une ligne [auth] fixe", async () => {
+    const lignes: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...valeurs: unknown[]) => {
+      lignes.push(valeurs.map(String).join(" "));
+    });
+    const { gerer, profil } = traitement({
+      profil: (faux) => faux.reprendreOrganisationActive.mockRejectedValue(new Error("panne")),
+    });
+    const recue = await gerer(post("/change-password", CHANGEMENT));
+    expect(recue.status).toBe(200);
+    expect(recue.headers.getSetCookie()).toHaveLength(1);
+    expect(profil.notifier).toHaveBeenCalledTimes(1);
+    expect(lignes).toHaveLength(1);
+    expect(lignes[0]).toMatch(/^\[auth\] /u);
+    expect(lignes[0]).not.toContain(ORGANISATION);
+  });
 });
 
 describe("journal (S-54, T-39) : aucune valeur secrète ni personnelle", () => {

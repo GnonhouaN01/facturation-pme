@@ -62,6 +62,8 @@ export const LIMITES_TEST = {
   "auth.changement_mot_de_passe": { maximum: 4, fenetreSecondes: 600, par: "adresse_ip" },
   // 1.6 : même raison.
   "auth.nouvelle_authentification": { maximum: 10, fenetreSecondes: 86_400, par: "utilisateur" },
+  // 2.1 : même raison.
+  "organisation.creation": { maximum: 3, fenetreSecondes: 86_400, par: "utilisateur" },
 } as const satisfies Record<NomLimite, Limite>;
 
 const NOMS = Object.keys(LIMITES_TEST) as NomLimite[];

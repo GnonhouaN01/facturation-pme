@@ -4,9 +4,17 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { describe, expect, test, vi } from "vitest";
 
-import { declarerAction, estDeclaration } from "./action";
+import { declarerAction, estDeclaration, estDeclarationCompte } from "./action";
 import { declarationExposee } from "./exposer";
-import { REGISTRE } from "./registre";
+import { REGISTRE, REGISTRE_COMPTE } from "./registre";
+
+// Les deux registres (2.1 : actions de compte, docs/features/organisations.md,
+// section 3), parcourus ensemble : noms uniques sur les deux.
+const REGISTRES: readonly unknown[] = [...REGISTRE, ...REGISTRE_COMPTE];
+
+function estMarquee(valeur: unknown): boolean {
+  return estDeclaration(valeur) || estDeclarationCompte(valeur);
+}
 
 // Aucune action ne contourne la chaîne (T-50, T-72) : chaque export de chaque
 // src/app/**/actions.ts est une fonction d'exposer, dont la déclaration est
@@ -70,12 +78,13 @@ function problemesDuRegistre(registre: readonly unknown[]): string[] {
   const problemes: string[] = [];
   const vus = new Set<string>();
   registre.forEach((declaration, rang) => {
-    if (!estDeclaration(declaration)) {
+    if (!estMarquee(declaration)) {
       problemes.push(`registre[${rang}] : déclaration non marquée par declarerAction`);
       return;
     }
-    if (vus.has(declaration.nom)) problemes.push(`registre : nom en double ${declaration.nom}`);
-    vus.add(declaration.nom);
+    const { nom } = declaration as { nom: string };
+    if (vus.has(nom)) problemes.push(`registre : nom en double ${nom}`);
+    vus.add(nom);
   });
   return problemes;
 }
@@ -113,7 +122,7 @@ async function inventorier(
       const declaration = declarationExposee(valeur);
       if (declaration === undefined) {
         problemes.push(`${chemin} : ${exporte} n'est pas passé par exposer`);
-      } else if (!estDeclaration(declaration)) {
+      } else if (!estMarquee(declaration)) {
         problemes.push(`${chemin} : ${exporte} porte une déclaration non marquée`);
       } else if (!registre.includes(declaration)) {
         problemes.push(`${chemin} : ${exporte} est absent du registre`);
@@ -126,7 +135,7 @@ async function inventorier(
 
 describe("inventaire du dépôt", () => {
   test("src/app/ : aucun problème, et le parcours a bien eu lieu", async () => {
-    const { parcourus, problemes } = await inventorier(APP, REGISTRE);
+    const { parcourus, problemes } = await inventorier(APP, REGISTRES);
 
     expect(parcourus).toContain("layout.tsx");
     // 0.6, PR 3 (modifié, signalé) : l'accueil est déplacé dans la zone
@@ -136,7 +145,7 @@ describe("inventaire du dépôt", () => {
   });
 
   test("le registre : déclarations marquées, noms uniques", () => {
-    expect(problemesDuRegistre(REGISTRE)).toEqual([]);
+    expect(problemesDuRegistre(REGISTRES)).toEqual([]);
   });
 
   test("chaque route admise cite sa fiche", () => {
@@ -158,6 +167,15 @@ describe("inventaire de démonstration (tests/fixtures/inventaire/)", () => {
 
     expect(parcourus).toEqual(["essai/actions.ts"]);
     expect(problemes).toEqual([]);
+  });
+
+  test("action de compte exposée et inscrite (2.1) : aucun problème ; absente : refusée", async () => {
+    const { demoCompte } = await import("../../../tests/fixtures/inventaire/declarations");
+
+    expect((await demo("compte", [demoCompte])).problemes).toEqual([]);
+    expect((await demo("compte")).problemes).toEqual([
+      "essai/actions.ts : agirCompte est absent du registre",
+    ]);
   });
 
   test("la même action, absente du registre : refusée", async () => {

@@ -35,6 +35,8 @@ const RESSOURCES: Record<ActionJournal, string> = {
   "membre.parti": "membre",
   // 1.4 : remise à zéro manuelle de la double authentification (décision 2).
   "membre.double_auth_remise_a_zero": "membre",
+  // 2.1 : création d'une organisation.
+  "organisation.creee": "organisation",
 };
 
 function entreeValide(): EntreeJournal {

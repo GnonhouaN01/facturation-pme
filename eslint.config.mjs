@@ -219,9 +219,20 @@ const motifsM = (nom, message) => [
   { regex: "(^|/)actions/action$", importNames: [nom], message },
   { regex: "^\\./action$", importNames: [nom], message },
 ];
-const IMPORTS_M_FABRIQUE = { patterns: motifsM("creerChaine", MESSAGE_M_FABRIQUE) };
+// 2.1 : mêmes règles pour la chaîne « portée compte » (executerChaineCompte,
+// creerChaineCompte ; docs/features/organisations.md, section 3).
+const IMPORTS_M_FABRIQUE = {
+  patterns: [
+    ...motifsM("creerChaine", MESSAGE_M_FABRIQUE),
+    ...motifsM("creerChaineCompte", MESSAGE_M_FABRIQUE),
+  ],
+};
 const IMPORTS_M = {
-  patterns: [...motifsM("executerChaine", MESSAGE_M), ...IMPORTS_M_FABRIQUE.patterns],
+  patterns: [
+    ...motifsM("executerChaine", MESSAGE_M),
+    ...motifsM("executerChaineCompte", MESSAGE_M),
+    ...IMPORTS_M_FABRIQUE.patterns,
+  ],
 };
 const SYNTAXE_M = chargementsDynamiques("/((^|\\u002F)actions|^\\.)\\u002Faction$/", MESSAGE_M);
 
