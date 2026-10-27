@@ -22,7 +22,12 @@ jobs:
   migrer:
     name: Migrer ${{ inputs.environnement }}
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    # ubuntu-24.04 et non ubuntu-latest : ubuntu-latest est Ubuntu 26 depuis
+    # le 2026-10-19, que Playwright ne prend pas encore en charge pour ses
+    # dépendances système (installation de Chromium : 11 min 49 s au lieu
+    # d'environ 1 min). Passer à 26 quand Playwright la prendra en charge
+    # (docs/CONFIGURATION.md).
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: ${{ inputs.environnement }}
     steps:
