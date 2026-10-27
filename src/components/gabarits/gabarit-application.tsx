@@ -1,4 +1,5 @@
 import { Menu } from "lucide-react";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { BoutonDeconnexion } from "@/components/compte/bouton-deconnexion";
@@ -14,8 +15,9 @@ import { Navigation } from "./navigation";
 // contenu en dessous, navigation repliée dans un details natif « Menu »),
 // bandeau de simulation en haut du contenu. N'affiche que ce qu'il reçoit :
 // les entrées sont filtrées et le rôle lu côté serveur, par (app)/layout.tsx.
-// Le nom de l'organisation est facultatif : absent en 0.6, il arrive avec la
-// 2.1 ; il s'affiche comme du texte, échappé par React (S-51).
+// Le nom de l'organisation est facultatif : absent en 0.6, lu depuis la 2.1 ;
+// il s'affiche comme du texte, échappé par React (S-51). 2.1 : lien
+// « Changer d'organisation » vers /compte.
 // Fiche : docs/features/socle-interface.md, sections 2.4, 2.6 et 10.
 
 type Role = keyof typeof TEXTES_NAVIGATION.roles;
@@ -80,6 +82,14 @@ export function GabaritApplication({
           <span className="text-[0.8125rem] leading-5 text-muted-foreground">
             {TEXTES_NAVIGATION.roles[role]}
           </span>
+          {/* 2.1 : retour à la liste des organisations (F-014,
+              docs/features/organisations.md, section 5). */}
+          <Link
+            href="/compte"
+            className={`inline-flex min-h-11 items-center self-start text-[0.9375rem] leading-6 text-primary underline-offset-4 hover:underline ${FOCUS}`}
+          >
+            {TEXTES_NAVIGATION.changerOrganisation}
+          </Link>
           {/* 1.2 : déconnexion (docs/features/connexion.md, section 5.2). */}
           <BoutonDeconnexion />
         </div>

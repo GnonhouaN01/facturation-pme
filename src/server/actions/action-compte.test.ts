@@ -234,7 +234,7 @@ describe("refus", () => {
   test("origine étrangère ou absente : refuse, sans lire la session", async () => {
     const { deps } = dependances();
     const chaine = creerChaineCompte(deps);
-    for (const entetes of [{ origin: "https://autre.exemple" }, {}]) {
+    for (const entetes of [{ origin: "https://autre.exemple" }, {}] as Record<string, string>[]) {
       expect(await chaine.executerChaineCompte(creation(), requete(entetes), { nom: "A" })).toEqual(
         REFUS,
       );

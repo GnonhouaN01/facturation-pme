@@ -15,7 +15,9 @@ function creer(raisonSociale: unknown) {
 
 describe("raison sociale", () => {
   test("normalisée : espaces de bord retirés, suites réduites, NFC", () => {
-    const lue = creer("  Kouamé   & Fils\tSARL  ");
+    // Espace insécable compris (séparateur d'espace) ; la tabulation, caractère
+    // de contrôle, est refusée plus bas.
+    const lue = creer("  Kouamé   & Fils  SARL  ");
     expect(lue.success && lue.data.raisonSociale).toBe("Kouamé & Fils SARL");
     // « e » suivi de l'accent combinant devient « é » précomposé.
     const nfd = creer("Societé Ivoirienne");
@@ -31,6 +33,7 @@ describe("raison sociale", () => {
     ["signes seuls", "--- !!"],
     ["caractère de contrôle", "Kouamé\u0000SARL"],
     ["retour à la ligne", "Kouamé\nSARL"],
+    ["tabulation", "Kouamé\tSARL"],
     ["marque de direction", "Kouamé ‮LRAS"],
     ["espace sans chasse", "Kou​amé"],
     ["nombre", 42],

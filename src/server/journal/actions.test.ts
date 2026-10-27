@@ -60,7 +60,7 @@ function ecarts(schema: z.ZodType): string[] {
 }
 
 describe("liste fermée des actions", () => {
-  test("exactement les onze actions de la fiche, avec leur type de ressource", () => {
+  test("exactement les actions des fiches (onze de la 0.3, une de la 1.4, une de la 2.1), avec leur type de ressource", () => {
     const lues = Object.fromEntries(
       Object.entries(ACTIONS_JOURNAL).map(([action, definition]) => [action, definition.ressource]),
     );

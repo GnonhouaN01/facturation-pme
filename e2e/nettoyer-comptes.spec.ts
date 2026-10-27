@@ -132,8 +132,10 @@ test.describe("nettoyage des comptes de bout en bout", () => {
   // Modifié en 1.4, PR 2 : 31 rangs (rang 30, Propriétaire de la zone application).
   // Modifié en 1.5 : 35 rangs (rangs 31 à 34, profil et sessions,
   // docs/features/profil-sessions.md, tests 15 et 16).
-  test("RANGS : 35 rangs par projet, essai et répétition (1.5)", () => {
-    expect(RANGS).toBe(35);
+  // Modifié en 2.1 : 37 rangs (rangs 35 et 36, organisations,
+  // docs/features/organisations.md, « Tests de bout en bout »).
+  test("RANGS : 37 rangs par projet, essai et répétition (2.1)", () => {
+    expect(RANGS).toBe(37);
   });
   test("la liste : toutes les adresses que les tests peuvent créer, toutes en .invalid, sans caractère de motif", () => {
     const attendues = ["mobile-390", "ordinateur-1280"].flatMap((projet) =>
@@ -147,7 +149,7 @@ test.describe("nettoyage des comptes de bout en bout", () => {
     expect([...ADRESSES_E2E]).toEqual(attendues);
     expect(new Set(ADRESSES_E2E).size).toBe(ADRESSES_E2E.length);
     for (const adresse of ADRESSES_E2E) {
-      // Modifié en 1.5 : 1 050 adresses, numéro sur 4 chiffres au plus.
+      // Modifié en 1.5 : 1 050 adresses, numéro sur 4 chiffres au plus (2.1 : 2 220).
       expect(adresse).toMatch(/^e2e-[0-9a-f]{8}-\d{1,4}@exemple\.invalid$/);
     }
   });

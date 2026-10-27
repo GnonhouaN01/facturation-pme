@@ -6,6 +6,8 @@ export const TEXTES_NAVIGATION = {
   // Nom accessible de l'élément nav.
   nom: "Navigation principale",
   organisationActive: "Organisation active",
+  // 2.1 : retour à la liste des organisations, sur /compte.
+  changerOrganisation: "Changer d'organisation",
   entrees: {
     tableauDeBord: "Tableau de bord",
   },

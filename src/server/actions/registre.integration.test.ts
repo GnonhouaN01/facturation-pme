@@ -9,6 +9,7 @@ import {
   declarerAction,
   executerChaine,
   executerChaineCompte,
+  type DeclarationCompteQuelconque,
   type DeclarationQuelconque,
 } from "./action";
 import { REGISTRE, REGISTRE_COMPTE, type NomAction, type NomActionCompte } from "./registre";
@@ -125,14 +126,18 @@ describe("registre des actions de compte", () => {
   test("sans session : connexion_requise ; avec une session : acceptée", async () => {
     const sansSession = new Headers({ origin: membres.lecteur.entetes.get("origin") ?? "" });
     for (const declaration of REGISTRE_COMPTE) {
-      const cas = CAS_COMPTE[declaration.nom];
+      const cas: CasCompte = CAS_COMPTE[declaration.nom];
       const entree = cas.entree({ organisationId: orgs.a });
       expect(
-        await executerChaineCompte(declaration, { entetes: sansSession }, entree),
+        await executerChaineCompte(
+          declaration as DeclarationCompteQuelconque,
+          { entetes: sansSession },
+          entree,
+        ),
         declaration.nom,
       ).toEqual({ ok: false, raison: "connexion_requise" });
       const resultat = await executerChaineCompte(
-        declaration,
+        declaration as DeclarationCompteQuelconque,
         { entetes: membres.lecteur.entetes },
         entree,
       );

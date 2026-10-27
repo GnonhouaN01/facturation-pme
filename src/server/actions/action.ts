@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import { z } from "zod";
 
+import { COMPTES_OUVERTS_EN_PRODUCTION } from "../auth/points-entree";
 import { lireSession } from "../auth/session";
 import {
   DROITS,
@@ -27,7 +28,7 @@ import {
   type ResultatEnvoi,
 } from "../email/envoi";
 import { MODELES_EMAIL, type ModeleEmail } from "../email/modeles";
-import { env } from "../env";
+import { configurationEmail, env } from "../env";
 import { ACTIONS_JOURNAL, type ActionJournal } from "../journal/actions";
 import { journaliser, type EntreeJournal } from "../journal/audit";
 
@@ -560,6 +561,204 @@ export function creerChaine(dependances: DependancesChaine): Chaine {
   return { executerChaine, etablirContexte };
 }
 
+// Chaîne « portée compte » (2.1) : une action d'un utilisateur connecté qui
+// n'a pas encore d'organisation active, ou qui en choisit une. Fiche :
+// docs/features/organisations.md, section 3.
+
+// nouvelle_organisation : la chaîne tire l'identifiant et ouvre la
+// transaction de cette organisation, que le service crée. adhesion :
+// transaction de entree.organisationId, adhésion relue FOR SHARE avant le
+// service ; absente, même refus qu'une organisation inexistante (S-02).
+export const CIBLES_COMPTE = ["nouvelle_organisation", "adhesion"] as const;
+export type CibleCompte = (typeof CIBLES_COMPTE)[number];
+
+export type ContexteActionCompte<J extends ActionJournal | null> = {
+  utilisateurId: string;
+  sessionId: string;
+  // user.two_factor_enabled, relu avec la session : le service ne refuse
+  // rien sur lui, il dit seulement à l'interface où aller ensuite.
+  doubleAuthentification: boolean;
+  organisationId: string;
+  // null pour une nouvelle organisation ; le rôle relu sinon.
+  role: Role | null;
+  tx: TransactionOrganisation;
+  journaliser: J extends ActionJournal ? (trace: Trace) => Promise<void> : never;
+  introuvable: () => never;
+};
+
+export type DeclarationCompte<E extends SchemaEntree, J extends ActionJournal | null, T> = {
+  nom: string;
+  entree: E;
+  cible: CibleCompte;
+  journal: J;
+  // Limite « par utilisateur », ou null : champ obligatoire, sans défaut.
+  debit: NomLimite | null;
+  executer(ctx: ContexteActionCompte<J>, entree: z.output<E>): Promise<T>;
+};
+
+export type DeclarationCompteQuelconque = DeclarationCompte<
+  SchemaEntree,
+  ActionJournal | null,
+  unknown
+>;
+
+export type DependancesChaineCompte = Pick<
+  DependancesChaine,
+  | "origineAttendue"
+  | "lireSession"
+  | "executerDansOrganisation"
+  | "lireAdhesion"
+  | "journaliser"
+  | "verifierDebit"
+> & {
+  // Faux en production tant que COMPTES_OUVERTS_EN_PRODUCTION est faux.
+  comptesOuverts: boolean;
+  // Identifiant d'une nouvelle organisation (randomUUID en production).
+  nouvelIdentifiant: () => string;
+};
+
+export type ChaineCompte = {
+  executerChaineCompte: <E extends SchemaEntree, J extends ActionJournal | null, T>(
+    declaration: DeclarationCompte<E, J, T>,
+    requete: RequeteChaine,
+    entreeBrute: unknown,
+  ) => Promise<Resultat<T>>;
+};
+
+const DECLARATIONS_COMPTE = new WeakSet<object>();
+
+// Le champ organisationId d'un schéma, en z.uuid() : seule source de
+// l'organisation d'une action « adhesion ».
+function aIdentifiantOrganisation(schema: SchemaEntree): boolean {
+  return schema.shape.organisationId instanceof z.ZodUUID;
+}
+
+// Le nom garde son type littéral : une action du registre de compte sans
+// son cas de test ne compile pas (registre.integration.test.ts).
+export function declarerActionCompte<
+  const N extends string,
+  E extends SchemaEntree,
+  J extends ActionJournal | null,
+  T,
+>(declaration: DeclarationCompte<E, J, T> & { nom: N }): DeclarationCompte<E, J, T> & { nom: N } {
+  const { nom, entree, cible, journal, executer } = declaration;
+  if (typeof nom !== "string" || nom === "") throw new DeclarationInvalide("nom absent");
+  if (!estStrict(entree)) throw new DeclarationInvalide(`schéma d'entrée non strict (${nom})`);
+  if (!(CIBLES_COMPTE as readonly string[]).includes(cible)) {
+    throw new DeclarationInvalide(`cible inconnue (${nom})`);
+  }
+  if (cible === "adhesion" && !aIdentifiantOrganisation(entree)) {
+    throw new DeclarationInvalide(`organisationId absent du schéma (${nom})`);
+  }
+  if (journal !== null && !Object.hasOwn(ACTIONS_JOURNAL, journal)) {
+    throw new DeclarationInvalide(`action du journal inconnue (${nom})`);
+  }
+  const { debit } = declaration;
+  if (debit !== null && (typeof debit !== "string" || !Object.hasOwn(LIMITES, debit))) {
+    throw new DeclarationInvalide(`limite de débit inconnue ou absente (${nom})`);
+  }
+  if (debit !== null && LIMITES[debit].par !== "utilisateur") {
+    throw new DeclarationInvalide(`limite de débit hors de l'étape 4 (${nom})`);
+  }
+  if (typeof executer !== "function") throw new DeclarationInvalide(`executer absent (${nom})`);
+  const marquee = { ...declaration };
+  Object.defineProperty(marquee, MARQUE, { value: true });
+  DECLARATIONS_COMPTE.add(marquee);
+  return Object.freeze(marquee);
+}
+
+// Vrai pour une déclaration renvoyée par declarerActionCompte seulement.
+export function estDeclarationCompte(valeur: unknown): valeur is DeclarationCompteQuelconque {
+  return typeof valeur === "object" && valeur !== null && DECLARATIONS_COMPTE.has(valeur);
+}
+
+export function creerChaineCompte(dependances: DependancesChaineCompte): ChaineCompte {
+  async function executerChaineCompte<E extends SchemaEntree, J extends ActionJournal | null, T>(
+    declaration: DeclarationCompte<E, J, T>,
+    requete: RequeteChaine,
+    entreeBrute: unknown,
+  ): Promise<Resultat<T>> {
+    try {
+      // 1. Origine.
+      if (!verifierOrigine(requete.entetes, dependances.origineAttendue)) return refus();
+
+      // 2. Session, relue en base.
+      const session = await dependances.lireSession(requete.entetes);
+      if (session === null) return connexionRequise();
+
+      // 3. Comptes fermés en production (COMPTES_OUVERTS_EN_PRODUCTION).
+      if (!dependances.comptesOuverts) return refus();
+
+      // 4. Limitation de débit, pour l'utilisateur de la session, hors de
+      // toute transaction (règle 15).
+      if (
+        declaration.debit !== null &&
+        !(await dependances.verifierDebit(declaration.debit, session.utilisateurId))
+      ) {
+        return tropDeRequetes();
+      }
+
+      // 5. Validation de l'entrée : aucun rôle n'est à vérifier avant.
+      const lue = declaration.entree.safeParse(entreeBrute);
+      if (!lue.success)
+        return { ok: false, raison: "invalide", champs: champsInvalides(lue.error) };
+
+      // 6. L'organisation de la transaction : tirée ici, jamais par l'entrée,
+      // ou celle de l'entrée validée.
+      const organisationId =
+        declaration.cible === "nouvelle_organisation"
+          ? dependances.nouvelIdentifiant()
+          : String((lue.data as { organisationId: unknown }).organisationId);
+
+      return await dependances.executerDansOrganisation(organisationId, async (tx) => {
+        // 7. Adhésion FOR SHARE, rôle parmi les quatre.
+        let role: Role | null = null;
+        if (declaration.cible === "adhesion") {
+          const adhesion = await dependances.lireAdhesion(tx, session.utilisateurId);
+          if (adhesion === null || !estRole(adhesion.role)) throw new RefusUniforme();
+          role = adhesion.role;
+        }
+
+        // 8. Le service, dans la transaction ; trace liée à l'action
+        // déclarée et à l'auteur de la session.
+        let tracee = false;
+        const action = declaration.journal;
+        const journaliser =
+          action === null
+            ? undefined
+            : async (trace: Trace) => {
+                await dependances.journaliser(tx, {
+                  action,
+                  auteurId: session.utilisateurId,
+                  ressourceId: trace.ressourceId,
+                  ...(trace.details === undefined ? {} : { details: trace.details }),
+                });
+                tracee = true;
+              };
+        const ctx = Object.freeze({
+          utilisateurId: session.utilisateurId,
+          sessionId: session.sessionId,
+          doubleAuthentification: session.doubleAuthentification === true,
+          organisationId,
+          role,
+          tx,
+          introuvable,
+          ...(journaliser === undefined ? {} : { journaliser }),
+        }) as unknown as ContexteActionCompte<J>;
+        const donnees = await declaration.executer(ctx, lue.data);
+
+        // 9. Trace déclarée : obligatoire, sinon l'action est annulée.
+        if (action !== null && !tracee) throw new TraceManquante();
+        return { ok: true, donnees } as const;
+      });
+    } catch (erreur) {
+      return traduireErreur(erreur, declaration.nom);
+    }
+  }
+
+  return { executerChaineCompte };
+}
+
 const chaine = creerChaine({
   origineAttendue: env.BETTER_AUTH_URL,
   lireSession,
@@ -577,3 +776,26 @@ export const executerChaine: Chaine["executerChaine"] = chaine.executerChaine;
 
 // Noyau des lectures par les pages, lié aux vraies dépendances.
 export const etablirContexte: Chaine["etablirContexte"] = chaine.etablirContexte;
+
+// Chaîne « portée compte » liée aux vraies dépendances, construite au premier
+// appel : la production se lit dans la configuration validée (VERCEL_ENV),
+// comme la passerelle de /api/auth, et seulement quand une action s'exécute.
+let chaineCompte: ChaineCompte | undefined;
+
+export const executerChaineCompte: ChaineCompte["executerChaineCompte"] = (
+  declaration,
+  requete,
+  entreeBrute,
+) => {
+  chaineCompte ??= creerChaineCompte({
+    origineAttendue: env.BETTER_AUTH_URL,
+    comptesOuverts: !configurationEmail.estProduction || COMPTES_OUVERTS_EN_PRODUCTION,
+    nouvelIdentifiant: randomUUID,
+    lireSession,
+    executerDansOrganisation,
+    lireAdhesion,
+    journaliser,
+    verifierDebit,
+  });
+  return chaineCompte.executerChaineCompte(declaration, requete, entreeBrute);
+};

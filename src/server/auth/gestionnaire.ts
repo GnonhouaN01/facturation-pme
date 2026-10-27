@@ -5,7 +5,12 @@ import { isPasswordCompromised } from "better-auth/plugins";
 import * as requetesDoubleAuth from "../db/double-authentification";
 import { enregistrerPreuve } from "../db/nouvelle-authentification";
 import { supprimerJetonsReinitialisation } from "../db/reinitialisation";
-import { revoquerAutresSessions, revoquerSessionDe } from "../db/sessions";
+import {
+  organisationActiveDe,
+  reprendreOrganisationActive,
+  revoquerAutresSessions,
+  revoquerSessionDe,
+} from "../db/sessions";
 import { verifierDebit } from "../debit/debit";
 import { adressePourCompteur } from "../email/adresse";
 import { configurationEmail, env } from "../env";
@@ -92,6 +97,8 @@ export const traiterRequeteAuth = creerTraitementAuth({
       revoquerAutresSessions,
       supprimerJetonsReinitialisation,
       adresseUtilisateur: requetesDoubleAuth.adresseUtilisateur,
+      organisationActiveDe,
+      reprendreOrganisationActive,
     },
     emailProfil: planifierEmailProfil,
   }),

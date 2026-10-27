@@ -1,9 +1,10 @@
 import "server-only";
 
-import { and, desc, eq, gt, ne, sql } from "drizzle-orm";
+import { and, desc, eq, exists, gt, ne, sql } from "drizzle-orm";
+import { z } from "zod";
 
 import { db, type BaseDeDonnees } from "./client";
-import { session } from "./schema/auth";
+import { member, session } from "./schema/auth";
 
 // Les sessions d'un utilisateur. Table de Better Auth sans organisation_id :
 // par db, chaque requête filtrée sur l'utilisateur (RR-8). Fermeture des
@@ -74,3 +75,45 @@ export function creerRevocationSession(
 }
 
 export const revoquerSessionDe = creerRevocationSession(db);
+
+// 2.1, report de la 1.5 : l'organisation active d'une session, lue par son
+// jeton avant le changement du mot de passe ; null si absente. Fiche :
+// docs/features/organisations.md, section 5.
+export async function organisationActiveDe(jeton: string): Promise<string | null> {
+  const [ligne] = await db
+    .select({ active: session.activeOrganizationId })
+    .from(session)
+    .where(eq(session.token, jeton))
+    .limit(1);
+  return ligne?.active ?? null;
+}
+
+const identifiantOrganisation = z.uuid();
+
+// Écrit l'organisation sur la session neuve, par une seule requête : la
+// session est celle du jeton et de l'utilisateur, et l'adhésion doit exister
+// (une adhésion retirée entre-temps n'est pas reprise). Une valeur qui n'est
+// pas un UUID n'envoie aucune requête.
+export async function reprendreOrganisationActive(
+  utilisateurId: string,
+  jeton: string,
+  organisationId: string,
+): Promise<void> {
+  const lue = identifiantOrganisation.safeParse(organisationId);
+  if (!lue.success) return;
+  await db
+    .update(session)
+    .set({ activeOrganizationId: lue.data })
+    .where(
+      and(
+        eq(session.token, jeton),
+        eq(session.userId, utilisateurId),
+        exists(
+          db
+            .select({ un: sql`1` })
+            .from(member)
+            .where(and(eq(member.userId, utilisateurId), eq(member.organizationId, lue.data))),
+        ),
+      ),
+    );
+}

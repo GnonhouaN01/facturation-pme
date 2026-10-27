@@ -107,6 +107,10 @@ export const LIMITES = {
     fenetreSecondes: 24 * 60 * 60,
     par: "utilisateur",
   },
+  // Création d'une organisation (2.1, UC-06 abus, T-41) : par utilisateur,
+  // à l'étape 4 de la chaîne « portée compte ». Aucun plafond total. Fiche :
+  // docs/features/organisations.md, section 7.
+  "organisation.creation": { maximum: 3, fenetreSecondes: 24 * 60 * 60, par: "utilisateur" },
 } as const satisfies Record<string, Limite>;
 
 // Valeur comptée par les limites « par application » : un seul compte Gmail

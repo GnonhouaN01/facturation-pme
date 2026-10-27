@@ -1,6 +1,6 @@
 # Fonctionnalité : créer son organisation et en changer (2.1)
 
-Statut : en cours
+Statut : livrée (en attente de revue)
 
 ## Contexte
 
@@ -160,17 +160,17 @@ Aucune : `organization`, `member` et `session.active_organization_id` existent ;
 
 ## Critères d'acceptation
 
-- [ ] Un utilisateur connecté crée une organisation : organisation, adhésion `proprietaire`, organisation active de sa session et trace `organisation.creee`, dans une seule transaction (une panne de la trace annule tout).
-- [ ] Sans second facteur, la création aboutit, la réponse demande l'activation, et toute page de l'application reste « introuvable » jusqu'à l'activation.
-- [ ] Raison sociale invalide (vide, 1 caractère, 101 caractères, caractères de contrôle ou de direction, seulement des signes) : `invalide`, rien n'est écrit. Clé en trop (`organisationId`, `role`, `slug`) : `invalide`.
-- [ ] 4e création en 24 heures : `trop_de_requetes`.
-- [ ] Changer vers une organisation dont on est membre : session mise à jour, rôle de cette organisation à la requête suivante.
-- [ ] Changer vers une organisation inexistante, d'un tiers, ou un identifiant mal formé : `refuse` (même réponse), session inchangée.
-- [ ] Sans session : `connexion_requise` ; origine étrangère : `refuse` ; production avec comptes fermés : `refuse`.
-- [ ] Après un changement du mot de passe, la session neuve garde l'organisation active (si l'adhésion existe toujours).
-- [ ] `/compte` ne liste que les organisations de l'utilisateur de la session.
-- [ ] La barre latérale affiche le nom de l'organisation active et le lien « Changer d'organisation ».
-- [ ] `/api/auth/organization/*` répond toujours comme une adresse inexistante.
+- [x] Un utilisateur connecté crée une organisation : organisation, adhésion `proprietaire`, organisation active de sa session et trace `organisation.creee`, dans une seule transaction (une panne de la trace annule tout).
+- [x] Sans second facteur, la création aboutit, la réponse demande l'activation, et toute page de l'application reste « introuvable » jusqu'à l'activation.
+- [x] Raison sociale invalide (vide, 1 caractère, 101 caractères, caractères de contrôle ou de direction, seulement des signes) : `invalide`, rien n'est écrit. Clé en trop (`organisationId`, `role`, `slug`) : `invalide`.
+- [x] 4e création en 24 heures : `trop_de_requetes`.
+- [x] Changer vers une organisation dont on est membre : session mise à jour, rôle de cette organisation à la requête suivante.
+- [x] Changer vers une organisation inexistante, d'un tiers, ou un identifiant mal formé : `refuse` (même réponse), session inchangée.
+- [x] Sans session : `connexion_requise` ; origine étrangère : `refuse` ; production avec comptes fermés : `refuse`.
+- [x] Après un changement du mot de passe, la session neuve garde l'organisation active (si l'adhésion existe toujours).
+- [x] `/compte` ne liste que les organisations de l'utilisateur de la session.
+- [x] La barre latérale affiche le nom de l'organisation active et le lien « Changer d'organisation ».
+- [x] `/api/auth/organization/*` répond toujours comme une adresse inexistante.
 
 ## Tests à écrire
 
@@ -199,6 +199,15 @@ Aucune : `organization`, `member` et `session.active_organization_id` existent ;
 ## Fichiers concernés
 
 `src/server/actions/action.ts`, `exposer.ts`, `registre.ts`, `organisations.ts` (déclarations) ; `src/server/services/organisations.ts` ; `src/server/db/requetes/organisations.ts`, `src/server/db/organisations.ts`, `src/server/db/sessions.ts` ; `src/server/auth/config.ts`, `profil.ts`, `dependances-profil.ts`, `gestionnaire.ts` ; `src/server/debit/limites.ts` ; `src/server/journal/actions.ts` ; `src/schemas/organisation.ts` ; `src/app/(compte)/compte/page.tsx` et `actions.ts` ; `src/app/(app)/layout.tsx` ; `src/components/compte/organisations.tsx` ; `src/components/gabarits/gabarit-application.tsx` ; `src/textes/compte.ts`, `navigation.ts` ; `eslint.config.mjs` (règle M) ; tests ; `docs/SPEC.md` (point 5), `docs/THREATS.md` (RR-8), `docs/features/chaine-controles.md` (renvoi).
+
+## Notes de l'implémentation
+
+- `declarerActionCompte` garde le nom de l'action en type littéral : une action de `REGISTRE_COMPTE` sans son cas de test ne compile pas.
+- La chaîne de compte liée aux vraies dépendances est construite au premier appel : la production (`VERCEL_ENV`) n'est lue qu'à l'exécution d'une action.
+- L'organisation et l'adhésion sont insérées avec l'expression `ORGANISATION_ACTIVE` (identifiant de la transaction), jamais avec un paramètre ; le slug est l'identifiant en texte.
+- Raison sociale : la tabulation est un caractère de contrôle, refusée ; l'espace insécable est un séparateur, réduit à une espace. Règles sans Zod dans `src/schemas/regles-organisation.ts`, partagées par le formulaire et le schéma du serveur.
+- Règle ESLint M étendue à `executerChaineCompte` et `creerChaineCompte`, avec leurs cas dans `regles-import.test.ts`.
+- Bout en bout : rangs 35 et 36 ; `RANGS` passe à 37.
 
 ## Reporté
 

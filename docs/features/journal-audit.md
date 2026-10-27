@@ -166,6 +166,8 @@ Liste retenue (décision 4), tirée de S-70 et des cas d'utilisation qui « insc
 | `membre.retire` | `membre` | UC-10 |
 | `membre.parti` | `membre` | Départ volontaire (`THREATS.md` section 6, dernière phrase) ; S-70 « changements de membres » |
 
+Ajoutées depuis : `membre.double_auth_remise_a_zero` (`membre`, 1.4, procédure d'exploitation) ; `organisation.creee` (`organisation`, 2.1, UC-06, écrite dans la transaction de la création, `docs/features/organisations.md`, section 8).
+
 Les types de ressource sont donc, en 0.3 : `organisation`, `invitation`, `membre`.
 
 Les actions sur les clients, factures, avoirs, paiements, remboursements et exports sont **retirées** de la 0.3 (décision 4) : chacune sera ajoutée par sa propre fonctionnalité, quand sa table existera (section « Reporté »).
