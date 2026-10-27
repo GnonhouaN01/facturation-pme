@@ -5,8 +5,13 @@ import { peut, ROLES, type Role } from "../autorisation/matrice";
 import { creerMembre, nettoyerMembres, type Membre } from "../db/outils-test/membres";
 import { creerDeuxOrganisations, type Organisations } from "../db/outils-test/organisations";
 
-import { declarerAction, executerChaine, type DeclarationQuelconque } from "./action";
-import { REGISTRE, type NomAction } from "./registre";
+import {
+  declarerAction,
+  executerChaine,
+  executerChaineCompte,
+  type DeclarationQuelconque,
+} from "./action";
+import { REGISTRE, REGISTRE_COMPTE, type NomAction, type NomActionCompte } from "./registre";
 
 // Niveau 2 de la section 8.4 : pour chaque action du registre et chacun des
 // quatre rôles, un membre réel de ce rôle, avec une vraie session, appelle la
@@ -94,6 +99,45 @@ describe("registre réel", () => {
 
   test("pour chaque action et chaque rôle, la chaîne suit la matrice", async () => {
     expect(await ecartsParRole(REGISTRE, CAS)).toEqual([]);
+  });
+});
+
+// Actions de compte (2.1) : hors de la matrice, ouvertes à tout utilisateur
+// connecté. Pour chacune, un cas : sans session, connexion_requise ; avec
+// une vraie session et une entrée valide, acceptée. Une action de compte
+// sans cas ne compile pas. Fiche : docs/features/organisations.md, section 3.
+type CasCompte = {
+  entree: (contexte: { organisationId: string }) => unknown;
+};
+
+const CAS_COMPTE = {
+  // Laisse une organisation sur dev (trace en ajout seul).
+  "organisation.creer": { entree: () => ({ raisonSociale: "Test registre" }) },
+  "organisation.changer": { entree: ({ organisationId }) => ({ organisationId }) },
+} satisfies Record<NomActionCompte, CasCompte>;
+
+describe("registre des actions de compte", () => {
+  test("chaque action a son cas, et chaque cas son action", () => {
+    const noms = REGISTRE_COMPTE.map((declaration) => declaration.nom).sort();
+    expect(Object.keys(CAS_COMPTE).sort()).toEqual(noms);
+  });
+
+  test("sans session : connexion_requise ; avec une session : acceptée", async () => {
+    const sansSession = new Headers({ origin: membres.lecteur.entetes.get("origin") ?? "" });
+    for (const declaration of REGISTRE_COMPTE) {
+      const cas = CAS_COMPTE[declaration.nom];
+      const entree = cas.entree({ organisationId: orgs.a });
+      expect(
+        await executerChaineCompte(declaration, { entetes: sansSession }, entree),
+        declaration.nom,
+      ).toEqual({ ok: false, raison: "connexion_requise" });
+      const resultat = await executerChaineCompte(
+        declaration,
+        { entetes: membres.lecteur.entetes },
+        entree,
+      );
+      expect(resultat.ok, declaration.nom).toBe(true);
+    }
   });
 });
 

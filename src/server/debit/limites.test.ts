@@ -358,3 +358,15 @@ describe("limite de la nouvelle authentification (1.6)", () => {
     });
   });
 });
+
+// Fonctionnalité 2.1 : création d'une organisation, par utilisateur (UC-06,
+// abus ; T-41). Fiche : docs/features/organisations.md, section 7.
+describe("limite de la création d'organisation (2.1)", () => {
+  test("3 créations par 24 heures et par utilisateur", () => {
+    expect(LIMITES["organisation.creation"]).toStrictEqual({
+      maximum: 3,
+      fenetreSecondes: UN_JOUR,
+      par: "utilisateur",
+    });
+  });
+});

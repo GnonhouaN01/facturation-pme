@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { declarerAction, type DeclarationAction } from "@/server/actions/action";
+import {
+  declarerAction,
+  declarerActionCompte,
+  type DeclarationAction,
+} from "@/server/actions/action";
 
 // Déclarations de démonstration du test d'inventaire
 // (src/server/actions/inventaire.test.ts). Hors de src/ : elles ne créent
@@ -41,3 +45,13 @@ export const declarationALaMain: DeclarationAction<typeof schema, null, string> 
   emails: [],
   executer: async () => "fait",
 };
+
+// Action de compte (2.1) : sans organisation active ni adhésion.
+export const demoCompte = declarerActionCompte({
+  nom: "demo.inventaire_compte",
+  entree: z.strictObject({ nom: z.string() }),
+  cible: "nouvelle_organisation",
+  journal: null,
+  debit: null,
+  executer: async () => "fait",
+});

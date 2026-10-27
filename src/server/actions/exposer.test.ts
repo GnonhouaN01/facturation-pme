@@ -5,7 +5,13 @@ import { z } from "zod";
 
 import { lireSession } from "../auth/session";
 
-import { declarerAction, executerChaine, type DeclarationAction } from "./action";
+import {
+  declarerAction,
+  declarerActionCompte,
+  executerChaine,
+  executerChaineCompte,
+  type DeclarationAction,
+} from "./action";
 import {
   declarationExposee,
   ErreurPage,
@@ -28,6 +34,7 @@ vi.mock("../auth/session", () => ({ lireSession: vi.fn() }));
 vi.mock("./action", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./action")>()),
   executerChaine: vi.fn(),
+  executerChaineCompte: vi.fn(),
 }));
 // action.ts charge env.ts et client.ts : valeurs factices, aucune connexion
 // n'est ouverte.
@@ -196,6 +203,39 @@ describe("exposer : déclaration non marquée refusée", () => {
 
 // Fonctionnalité 0.6, PR 3 : traduction d'une lecture pour une page. Fiche :
 // docs/features/socle-interface.md, sections 2.1 et 4.2.
+// 2.1 : une action de compte s'expose par le même exposer, et passe par la
+// chaîne « portée compte » (docs/features/organisations.md, section 3).
+describe("exposer : action de compte", () => {
+  function declarationCompte() {
+    return declarerActionCompte({
+      nom: "demo.exposee_compte",
+      entree: schema(),
+      cible: "nouvelle_organisation",
+      journal: null,
+      debit: null,
+      executer: async () => "fait",
+    });
+  }
+
+  test("appelle la chaîne de compte, jamais celle d'organisation ; marque lue par l'inventaire", async () => {
+    const chaineCompte = vi.mocked(executerChaineCompte);
+    chaineCompte.mockReset();
+    chaineCompte.mockResolvedValue({ ok: true, donnees: "fait" });
+    const decl = declarationCompte();
+    const action = exposer(decl);
+    expect(declarationExposee(action)).toBe(decl);
+    expect(await action({ nom: "x" })).toEqual({ ok: true, donnees: "fait" });
+    expect(chaineCompte).toHaveBeenCalledTimes(1);
+    expect(chaineCompte.mock.calls[0]?.[0]).toBe(decl);
+    expect(chaineCompte.mock.calls[0]?.[2]).toEqual({ nom: "x" });
+    expect(chaine).not.toHaveBeenCalled();
+  });
+
+  test("une copie d'une déclaration de compte est refusée", () => {
+    expect(() => exposer({ ...declarationCompte() } as never)).toThrow();
+  });
+});
+
 describe("traduireLecture", () => {
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 

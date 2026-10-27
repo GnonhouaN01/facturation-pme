@@ -24,6 +24,9 @@ const ATTENDUES: Record<string, string> = {
   // d'un membre, écrite par la procédure d'exploitation
   // (docs/exploitation/remise-a-zero-double-authentification.md).
   "membre.double_auth_remise_a_zero": "membre",
+  // 2.1 : création d'une organisation (docs/features/organisations.md,
+  // section 8).
+  "organisation.creee": "organisation",
 };
 
 const TYPES_RESSOURCE = ["organisation", "invitation", "membre"];

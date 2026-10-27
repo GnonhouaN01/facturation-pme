@@ -98,6 +98,9 @@ export default defineConfig({
         // Données personnelles, aux deux largeurs
         // (docs/features/donnees-personnelles.md, « Tests de bout en bout »).
         /(^|\W)donnees-personnelles\.spec\.ts$/,
+        // 2.1 : créer son organisation et en changer, aux deux largeurs
+        // (docs/features/organisations.md, « Tests de bout en bout »).
+        /(^|\W)organisations\.spec\.ts$/,
       ],
       use: { ...devices["Desktop Chrome"], viewport: { width: 390, height: 844 } },
     },
