@@ -614,13 +614,15 @@ describe("modèles de la réinitialisation (1.3)", () => {
   });
 
   // Décision A : aucun modèle ne reçoit de lien, de page ni d'adresse de
-  // l'appelant ; seuls les jetons sont des paramètres.
+  // l'appelant ; seuls les jetons sont des paramètres. Modifié en 2.2 : et la
+  // raison sociale d'une organisation, texte affichable sur une ligne
+  // (docs/features/parametres-organisation.md, section 6).
   test.each(NOMS)("%s : aucun paramètre de lien ou de page", (nom) => {
     const schema = z.toJSONSchema(MODELES_EMAIL[nom].parametres) as {
       properties?: Record<string, unknown>;
     };
     for (const cle of Object.keys(schema.properties ?? {})) {
-      expect(cle).toMatch(/^jeton$/u);
+      expect(cle).toMatch(/^(jeton|organisation)$/u);
     }
   });
 });

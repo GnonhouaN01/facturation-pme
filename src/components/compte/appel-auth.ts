@@ -75,7 +75,10 @@ export type PointAuth =
   | "/revoke-session"
   | "/revoke-other-sessions"
   | "/change-password"
-  | "/update-user";
+  | "/update-user"
+  // 1.6, fenêtre de confirmation de la 2.2
+  // (docs/features/parametres-organisation.md, section 7).
+  | "/verify-password";
 
 const LIGNE_QR = /^[01]+$/u;
 const CLE = /^[A-Z2-7]{1,4}( [A-Z2-7]{1,4})*$/u;

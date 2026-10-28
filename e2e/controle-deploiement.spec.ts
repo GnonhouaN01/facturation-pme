@@ -921,8 +921,9 @@ test.describe("contrôle après déploiement, ligne de commande", () => {
       // 1.4 (modifié) : 14 lignes, la comparaison de la page de la double
       // authentification s'ajoute aux trois autres.
       // 1.5 (modifié) : 20 lignes, avec les comparaisons du profil et des
-      // sessions.
-      expect(lignes.filter((l) => /^ {9}\S/.test(l))).toHaveLength(20);
+      // sessions. 2.2 (modifié) : 23 lignes, avec la comparaison des
+      // paramètres.
+      expect(lignes.filter((l) => /^ {9}\S/.test(l))).toHaveLength(23);
 
       const l = await lancer(lien.adresse, "--detail");
       expect(l.code, l.sortie).toBe(1);
@@ -934,7 +935,8 @@ test.describe("contrôle après déploiement, ligne de commande", () => {
       // 1.4 (modifié) : quatre comparaisons de documents, avec la page de la
       // double authentification.
       // 1.5 (modifié) : six, avec le profil et les sessions.
-      expect(c.sortie.match(/documents normalisés identiques/g)).toHaveLength(6);
+      // 2.2 (modifié) : sept, avec les paramètres.
+      expect(c.sortie.match(/documents normalisés identiques/g)).toHaveLength(7);
     } finally {
       await cookie.fermer();
       await lien.fermer();

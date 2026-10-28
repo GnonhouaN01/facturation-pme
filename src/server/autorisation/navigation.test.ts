@@ -142,8 +142,9 @@ describe("liste livrée (0.6)", () => {
     expect(new Set(chemins(ENTREES_NAVIGATION)).size).toBe(ENTREES_NAVIGATION.length);
   });
 
+  // Modifié en 2.2 : le Propriétaire voit aussi « Organisation ».
   test.each(ROLES)("%s voit « Tableau de bord »", (role) => {
-    expect(chemins(entreesVisibles(role))).toEqual(["/tableau-de-bord"]);
+    expect(chemins(entreesVisibles(role))[0]).toBe("/tableau-de-bord");
   });
 });
 

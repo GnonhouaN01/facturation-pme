@@ -7,6 +7,16 @@ import { creerRappelSessionCreee } from "./organisation-unique";
 // Rappel databaseHooks.session.create.before de Better Auth. Fiche :
 // docs/features/parametres-organisation.md, section 9, test 7.
 
+// Le module charge la lecture réelle (db/sessions.ts, donc env.ts et
+// client.ts) : valeurs factices, aucune connexion n'est ouverte.
+vi.mock("../env", () => ({
+  env: {
+    DATABASE_URL: "postgresql://app_facturation:factice@localhost:5432/factice",
+    BETTER_AUTH_SECRET: "secret-factice-de-trente-deux-caracteres",
+    BETTER_AUTH_URL: "https://facturation.exemple.ci",
+  },
+}));
+
 const UTILISATEUR = "4b8c5f0e-2a1d-4e3f-9b7a-6c5d4e3f2a1b";
 const ORG_A = "1f2e3d4c-5b6a-4978-8a9b-0c1d2e3f4a5b";
 const ORG_B = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";

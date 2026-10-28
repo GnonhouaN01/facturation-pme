@@ -70,9 +70,12 @@ test.describe("paramètres de l'organisation", () => {
     await envoyerCode(page, codeTotp(cle, 1));
     await expect(page).toHaveURL(`${ADRESSE}/tableau-de-bord`);
 
+    // L'entrée « Organisation » est dans la navigation (repliée sous 768 px).
+    await expect(page.locator('nav a[href="/parametres"]').first()).toHaveText(
+      TEXTES_NAVIGATION.entrees.organisation,
+    );
     await observerViolations(page);
-    await page.getByRole("link", { name: TEXTES_NAVIGATION.entrees.organisation }).click();
-    await expect(page).toHaveURL(`${ADRESSE}/parametres`);
+    await page.goto("/parametres");
     await expect(page.getByRole("heading", { level: 1, name: TEXTES.titre })).toBeVisible();
     const { largeurContenu, largeurFenetre } = await defilementHorizontal(page);
     expect(largeurContenu).toBeLessThanOrEqual(largeurFenetre);
@@ -96,11 +99,11 @@ test.describe("paramètres de l'organisation", () => {
 
     // Taux : « 9,5 » ajouté ; « Exonération » désactivé.
     const taux = carte(page, TEXTES.taux.titre);
-    await expect(taux.getByRole("row", { name: /18 %/u })).toBeVisible();
+    await expect(taux.getByRole("row", { name: /TVA 18 %/u })).toBeVisible();
     await taux.getByLabel(TEXTES.taux.libelle).fill("Réduit");
     await taux.getByLabel(TEXTES.taux.taux).fill("9,5");
     await taux.getByRole("button", { name: TEXTES.taux.ajouter }).click();
-    await expect(taux.getByRole("row", { name: /Réduit/u })).toContainText("9,5 %");
+    await expect(taux.getByRole("row", { name: /Réduit/u })).toContainText(/9,5\s%/u);
     const exoneration = taux.getByRole("row", { name: /Exonération/u });
     await exoneration
       .getByRole("button", { name: `${TEXTES.taux.desactiver} Exonération` })
@@ -118,7 +121,10 @@ test.describe("paramètres de l'organisation", () => {
     await expect(logo.getByRole("status")).toHaveText(TEXTES.logo.succes);
     const apercu = logo.getByRole("img", { name: TEXTES.logo.apercu });
     await expect(apercu).toBeVisible();
-    expect(await apercu.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1);
+    // Image chargée par la route (largeur naturelle de 1 pixel).
+    await expect
+      .poll(() => apercu.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth))
+      .toBe(1);
     const servi = await page.request.get("/parametres/logo");
     expect(servi.status()).toBe(200);
     expect(servi.headers()["content-type"]).toBe("image/png");

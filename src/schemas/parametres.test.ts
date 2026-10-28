@@ -65,7 +65,7 @@ describe("schemaAjoutTaux", () => {
   test("taux converti en centièmes, libellé normalisé", () => {
     expect(schemaAjoutTaux.parse({ libelle: " Taux  réduit ", taux: "9,5" })).toEqual({
       libelle: "Taux réduit",
-      tauxCentiemes: 950,
+      taux: 950,
     });
   });
 
@@ -90,7 +90,7 @@ describe("schemaEtatTaux", () => {
 
 describe("schemaLogo", () => {
   test("PNG valide : octets décodés, type tiré de la signature", () => {
-    const lu = schemaLogo.parse({ contenu: PNG_1X1 });
+    const lu = schemaLogo.parse({ contenu: PNG_1X1 }).contenu;
     expect(lu.type).toBe("image/png");
     expect(lu.octets).toBeInstanceOf(Uint8Array);
     expect(lu.octets.length).toBeGreaterThan(8);

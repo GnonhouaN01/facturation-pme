@@ -117,3 +117,17 @@ export async function reprendreOrganisationActive(
       ),
     );
 }
+
+// 2.2, décision 1 du développeur : les adhésions d'un utilisateur, au plus
+// deux (une seule compte), lues par le rappel de création de session, hors
+// de toute organisation : par db, filtrées sur l'utilisateur de la session
+// créée (RR-8). Fiche : docs/features/parametres-organisation.md, section 9.
+export async function adhesionsPourSession(
+  utilisateurId: string,
+): Promise<{ organisationId: string; role: string }[]> {
+  return db
+    .select({ organisationId: member.organizationId, role: member.role })
+    .from(member)
+    .where(eq(member.userId, utilisateurId))
+    .limit(2);
+}

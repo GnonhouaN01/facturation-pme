@@ -709,7 +709,7 @@ const FORME_ROUTE_LOGO = [
 
 describe("route du logo (2.2)", () => {
   test("src/app/(app)/parametres/logo/route.ts est parcourue par l'inventaire", async () => {
-    const { parcourus, problemes } = await inventorier(APP, REGISTRE);
+    const { parcourus, problemes } = await inventorier(APP, REGISTRES);
 
     expect(parcourus).toContain("(app)/parametres/logo/route.ts");
     expect(problemes).toEqual([]);

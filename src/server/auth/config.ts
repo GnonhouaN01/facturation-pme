@@ -19,6 +19,7 @@ import {
 import { OPTIONS_DOUBLE_AUTH } from "./codes-secours";
 import { empreinteAttenteDoubleAuth } from "./double-authentification";
 import { consignerAuth } from "./journal";
+import { rappelSessionCreee } from "./organisation-unique";
 import { apresReinitialisation, empreinteJetonReinitialisation } from "./reinitialisation";
 
 // Options partagées avec l'instance de test (src/server/db/outils-test/),
@@ -106,6 +107,9 @@ export const optionsAuth = {
   // twoFactor (1.4) : nos options, docs/features/double-authentification.md,
   // section 1.
   plugins: [twoFactor(OPTIONS_DOUBLE_AUTH), organization(), haveIBeenPwned(), nextCookies()],
+  // 2.2 : l'organisation unique d'un membre devient active à la création de
+  // sa session (docs/features/parametres-organisation.md, section 9).
+  databaseHooks: { session: { create: { before: rappelSessionCreee } } },
 } satisfies BetterAuthOptions;
 
 export const auth = betterAuth(optionsAuth);

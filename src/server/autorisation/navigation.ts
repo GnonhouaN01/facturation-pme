@@ -23,6 +23,13 @@ export type EntreeNavigation = {
 // qu'avec sa page, à sa place dans cet ordre.
 export const ENTREES_NAVIGATION: readonly EntreeNavigation[] = Object.freeze([
   Object.freeze({ chemin: "/tableau-de-bord", cle: "tableauDeBord", droit: null }),
+  // 2.2 : les paramètres de l'organisation, réservés au Propriétaire
+  // (docs/features/parametres-organisation.md, section 8).
+  Object.freeze({
+    chemin: "/parametres",
+    cle: "organisation",
+    droit: "organisation.fiche.modifier",
+  }),
 ]);
 
 // Les entrées sans droit, et celles que peut(role, droit) accorde, dans
