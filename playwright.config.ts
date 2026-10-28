@@ -101,6 +101,9 @@ export default defineConfig({
         // 2.1 : créer son organisation et en changer, aux deux largeurs
         // (docs/features/organisations.md, « Tests de bout en bout »).
         /(^|\W)organisations\.spec\.ts$/,
+        // 2.2 : paramètres de l'organisation, aux deux largeurs
+        // (docs/features/parametres-organisation.md, tests 15 à 17).
+        /(^|\W)parametres\.spec\.ts$/,
       ],
       use: { ...devices["Desktop Chrome"], viewport: { width: 390, height: 844 } },
     },

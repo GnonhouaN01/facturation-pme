@@ -56,6 +56,8 @@ const ROUTES_ADMISES: Readonly<Record<string, string>> = {
   "api/auth/[...all]": "PLAN.md 1.1 : exposition de /api/auth, après fermeture de /organization/*",
   "api/taches/[tache]":
     "PLAN.md 8.3 : tâche quotidienne, avec son propre contrôle (docs/features/tache-quotidienne.md)",
+  "(app)/parametres/logo":
+    "PLAN.md 2.2 : logo servi aux membres par la chaîne de lecture (docs/features/parametres-organisation.md)",
 };
 
 const ACTIONS = /^actions\.(ts|tsx|js|jsx|mjs|mts)$/;
@@ -692,6 +694,34 @@ describe("route de /api/auth", () => {
     expect(Object.keys(route).sort()).toEqual(["GET", "POST"]);
     expect(route.GET).toBe(traiterRequeteAuth);
     expect(route.POST).toBe(traiterRequeteAuth);
+  });
+});
+
+// 2.2 : forme exacte de la route du logo : un import, GET égal à servirLogo.
+// Tout le contrôle vit dans src/server/actions/exposer.ts (chaîne de lecture,
+// membres de l'organisation, réponse uniforme). Fiche :
+// docs/features/parametres-organisation.md, section 5.
+const ROUTE_LOGO = join(APP, "(app)", "parametres", "logo", "route.ts");
+const FORME_ROUTE_LOGO = [
+  'import { servirLogo } from "@/server/actions/exposer";',
+  "export const GET = servirLogo;",
+];
+
+describe("route du logo (2.2)", () => {
+  test("src/app/(app)/parametres/logo/route.ts est parcourue par l'inventaire", async () => {
+    const { parcourus, problemes } = await inventorier(APP, REGISTRE);
+
+    expect(parcourus).toContain("(app)/parametres/logo/route.ts");
+    expect(problemes).toEqual([]);
+  });
+
+  test("forme exacte : un import, export const GET = servirLogo, commentaires mis à part", () => {
+    const lignes = readFileSync(ROUTE_LOGO, "utf8")
+      .split("\n")
+      .map((ligne) => ligne.trim())
+      .filter((ligne) => ligne !== "" && !ligne.startsWith("//"));
+
+    expect(lignes).toEqual(FORME_ROUTE_LOGO);
   });
 });
 

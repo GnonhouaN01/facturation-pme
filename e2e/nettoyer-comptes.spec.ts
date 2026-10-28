@@ -134,8 +134,10 @@ test.describe("nettoyage des comptes de bout en bout", () => {
   // docs/features/profil-sessions.md, tests 15 et 16).
   // Modifié en 2.1 : 37 rangs (rangs 35 et 36, organisations,
   // docs/features/organisations.md, « Tests de bout en bout »).
-  test("RANGS : 37 rangs par projet, essai et répétition (2.1)", () => {
-    expect(RANGS).toBe(37);
+  // Modifié en 2.2 : 39 rangs (rangs 37 et 38, paramètres,
+  // docs/features/parametres-organisation.md, tests 15 à 17).
+  test("RANGS : 39 rangs par projet, essai et répétition (2.2)", () => {
+    expect(RANGS).toBe(39);
   });
   test("la liste : toutes les adresses que les tests peuvent créer, toutes en .invalid, sans caractère de motif", () => {
     const attendues = ["mobile-390", "ordinateur-1280"].flatMap((projet) =>

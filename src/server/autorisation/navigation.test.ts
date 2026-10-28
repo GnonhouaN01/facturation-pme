@@ -110,10 +110,22 @@ describe("entreesVisibles", () => {
 });
 
 describe("liste livrée (0.6)", () => {
-  test("une seule entrée : « Tableau de bord », ouverte à tout membre", () => {
+  // 2.2 : « Organisation », dernière de l'ordre de la maquette, réservée au
+  // droit de modifier la fiche (docs/features/parametres-organisation.md,
+  // section 8).
+  test("deux entrées : « Tableau de bord » pour tout membre, « Organisation » sur droit", () => {
     expect(ENTREES_NAVIGATION).toEqual([
       { chemin: "/tableau-de-bord", cle: "tableauDeBord", droit: null },
+      { chemin: "/parametres", cle: "organisation", droit: "organisation.fiche.modifier" },
     ]);
+  });
+
+  test("« Organisation » : visible pour le Propriétaire seul", () => {
+    const visibles = (role: string) => entreesVisibles(role).map((entree) => entree.cle);
+    expect(visibles("proprietaire")).toEqual(["tableauDeBord", "organisation"]);
+    for (const role of ["comptable", "commercial", "lecteur", "owner"]) {
+      expect(visibles(role), role).toEqual(["tableauDeBord"]);
+    }
   });
 
   test("chaque clé désigne un libellé de src/textes/navigation.ts", () => {

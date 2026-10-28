@@ -104,7 +104,10 @@ type Defaut =
   | "profil-ouvert"
   | "liste-sessions-ouverte"
   | "profil-200"
-  | "sessions-distingue";
+  | "sessions-distingue"
+  // Paramètres de l'organisation (2.2).
+  | "parametres-200"
+  | "parametres-distingue";
 
 // Les dix-neuf points d'entrée ouverts hors production, en POST (1.1 à 1.6).
 const POINTS_COMPTES = [
@@ -322,6 +325,8 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
     const sessions = chemin === "/compte/sessions";
     const compte = chemin === "/compte" || doubleAuth || profil || sessions;
     const tableau = chemin === "/tableau-de-bord";
+    // 2.2 : page de la zone application, servie comme le tableau de bord.
+    const parametres = chemin === "/parametres";
     const lien = chemin.startsWith("/lien/devis/");
     const inexistante = chemin.startsWith("/adresse-inexistante-");
     if (defaut === "variable-dans-un-entete" && tableau) entetes["X-Indice"] = "BETTER_AUTH_SECRET";
@@ -399,9 +404,13 @@ async function demarrerFactice(defaut?: Defaut, redirection?: string): Promise<F
           ? INTROUVABLE_FR
           : "";
     }
+    if (parametres) {
+      corps = defaut === "parametres-distingue" && requete.headers.cookie ? INTROUVABLE_FR : "";
+    }
     if (lien && defaut === "lien-distingue") corps += `<p>${randomBytes(4).toString("hex")}</p>`;
     const statutPage =
       (tableau && defaut === "tableau-de-bord-200") ||
+      (parametres && defaut === "parametres-200") ||
       (chemin === "/compte" && defaut === "compte-200") ||
       (doubleAuth && defaut === "double-authentification-200") ||
       (profil && defaut === "profil-200")
@@ -443,6 +452,8 @@ const PAGES = [
   "mot-de-passe-oublie",
   "lien-reinitialisation",
   "donnees-personnelles",
+  // 2.2 : servie par le serveur factice comme le tableau de bord.
+  "parametres",
 ] as const;
 const surToutes = (controle: string) => PAGES.map((p) => `${p}:${controle}`);
 // Politique et en-têtes : vérifiés aussi sur les pages « tache » (8.3) et
@@ -495,7 +506,9 @@ test.describe("contrôle après déploiement, serveur factice", () => {
       // (nouvelle authentification).
       // Données personnelles (modifié, signalé) : 51 requêtes par passage, un
       // GET de /donnees-personnelles.
-      expect(factice.requetes).toHaveLength(102);
+      // 2.2 (modifié, signalé) : 53 requêtes par passage, GET de /parametres
+      // sans cookie et avec le cookie forgé.
+      expect(factice.requetes).toHaveLength(106);
       const posts = factice.requetes.filter((r) => r.methode !== "GET");
       expect(posts).toHaveLength(40);
       for (const requete of posts) {
@@ -538,11 +551,13 @@ test.describe("contrôle après déploiement, serveur factice", () => {
         "/compte/double-authentification",
         "/compte/profil",
         "/compte/sessions",
+        "/parametres",
         "/tableau-de-bord",
         "/compte",
         "/compte/double-authentification",
         "/compte/profil",
         "/compte/sessions",
+        "/parametres",
       ]);
       const valeurs = avecCookie.map((r) => {
         const trouve =
@@ -552,7 +567,7 @@ test.describe("contrôle après déploiement, serveur factice", () => {
         expect(trouve, r.entetes.cookie).not.toBeNull();
         return trouve?.[1];
       });
-      expect(valeurs[0]).not.toBe(valeurs[5]);
+      expect(valeurs[0]).not.toBe(valeurs[6]);
 
       const chemins = factice.requetes.map((r) => r.chemin);
       const inexistantes = chemins.filter((c) => /^\/adresse-inexistante-[0-9a-f]{16}$/.test(c));
@@ -567,6 +582,7 @@ test.describe("contrôle après déploiement, serveur factice", () => {
       expect(chemins.filter((c) => c === "/compte/double-authentification")).toHaveLength(4);
       expect(chemins.filter((c) => c === "/compte/profil")).toHaveLength(4);
       expect(chemins.filter((c) => c === "/compte/sessions")).toHaveLength(4);
+      expect(chemins.filter((c) => c === "/parametres")).toHaveLength(4);
       expect(inexistantes).toHaveLength(2);
       expect(inexistantes[0]).not.toBe(inexistantes[1]);
       expect(new Set(liens).size).toBe(4);
@@ -667,12 +683,16 @@ test.describe("contrôle après déploiement, serveur factice", () => {
         "double-authentification:anglais",
         "inexistante:anglais",
         "lien:anglais",
+        "parametres:anglais",
         "profil:anglais",
         "sessions:anglais",
         "tableau-de-bord:anglais",
       ],
     ],
     ["cookie-distingue", ["tableau-de-bord:identique"]],
+    // 2.2.
+    ["parametres-200", ["parametres:statut"]],
+    ["parametres-distingue", ["parametres:identique"]],
     ["lien-distingue", ["lien:identique"]],
     ["gabarit-dans-la-charge", ["tableau-de-bord:gabarit"]],
     ["pile", ["inexistante:fuite"]],
