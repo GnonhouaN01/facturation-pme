@@ -253,8 +253,15 @@ Accord conditionnel sur la migration (2026-10-28), corrections appliquées :
 - Obligation du NCC et du RCCM sur une facture : À CONFIRMER, avant l'émission (5.x).
 - Suppression d'une organisation qui a des paramètres : à trancher par la 2.5.
 
+## Décisions du développeur (2026-10-30)
+
+1. Trace au journal de chaque validation des instructions de paiement, même sans changement ; email aux Propriétaires sur un changement réel seulement (inchangé, section 6).
+2. Troisième forme de migration personnalisée (forçage, retrait de `DELETE` et `TRUNCATE`, `UPDATE` gardé) écrite dans `CLAUDE.md`, « Méthode de travail ».
+
+## Défaut constaté après la migration (2026-10-30)
+
+`parametres_logo_type` accepte un logo sans type : avec `logo` non nul et `logo_type` nul, `logo_type IN (...)` vaut `NULL`, la clause entière vaut `NULL`, et PostgreSQL admet un `CHECK` à `NULL`. Le test d'intégration « logo sans type : refusé » le montre. L'application écrit toujours les deux colonnes ensemble (`ecrireLogo`, `retirerLogo`) : seule la défense en base manque. Correctif proposé, en attente d'accord (nouvelle migration) : `(logo IS NULL AND logo_type IS NULL) OR (logo IS NOT NULL AND logo_type IS NOT NULL AND logo_type IN ('image/png', 'image/jpeg'))`.
+
 ## Choix restants
 
 1. Format du NCC, du RCCM, liste des régimes d'imposition : texte borné retenu ; à fermer quand une source (DGI) sera citée.
-2. Trace des validations sans changement des instructions (retenue : la tentative est une information) ou seulement des changements.
-3. `CLAUDE.md` : y écrire la troisième forme de migration personnalisée (forçage et retrait de `DELETE`) et `/parametres` dans la description du contrôle après déploiement (non fait : hors du périmètre sans accord).
