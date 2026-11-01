@@ -1,0 +1,1 @@
+ALTER TABLE "parametres_organisation" DROP CONSTRAINT "parametres_logo_type", ADD CONSTRAINT "parametres_logo_type" CHECK (("logo" IS NULL AND "logo_type" IS NULL) OR ("logo" IS NOT NULL AND "logo_type" IS NOT NULL AND "logo_type" IN ('image/png', 'image/jpeg')));

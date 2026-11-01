@@ -81,7 +81,9 @@ export const parametresOrganisation = pgTable.withRLS(
     ),
     check(
       "parametres_logo_type",
-      sql`(${table.logo} IS NULL AND ${table.logoType} IS NULL) OR (${table.logo} IS NOT NULL AND ${table.logoType} IN ('image/png', 'image/jpeg'))`,
+      // logo_type IS NOT NULL explicite : sans lui, un type nul rend la
+      // clause NULL, qu'un CHECK accepte (défaut constaté le 2026-10-30).
+      sql`(${table.logo} IS NULL AND ${table.logoType} IS NULL) OR (${table.logo} IS NOT NULL AND ${table.logoType} IS NOT NULL AND ${table.logoType} IN ('image/png', 'image/jpeg'))`,
     ),
   ],
 );
