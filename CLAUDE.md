@@ -60,8 +60,9 @@ Lis la section utile avant toute tâche. Ne les charge pas en entier.
 - Ne modifie jamais une migration déjà appliquée, ni le dossier `drizzle/` à la main. **Seules exceptions écrites**, deux formes de migration personnalisée :
   - une migration créée par `npx drizzle-kit generate --custom --name forcer-isolation-<table>`, dont le seul contenu est une ou plusieurs lignes `ALTER TABLE "<table>" FORCE ROW LEVEL SECURITY;` ;
   - pour une table en ajout seul, une migration créée par `npx drizzle-kit generate --custom --name retirer-droits-<table>`, dont le seul contenu est une ou plusieurs lignes `REVOKE UPDATE, DELETE, TRUNCATE ON TABLE "<table>" FROM "app_facturation";`. Jamais `GRANT`. Fiche : `docs/features/journal-audit.md`, section 2.2.
+  - pour une table sans suppression (modifiable, jamais supprimée : aujourd'hui `parametres_organisation` et `taux_tva`), une migration créée par `npx drizzle-kit generate --custom --name forcer-isolation-<nom>`, dont le seul contenu est, pour chaque table, `ALTER TABLE "<table>" FORCE ROW LEVEL SECURITY;` puis `REVOKE DELETE, TRUNCATE ON TABLE "<table>" FROM "app_facturation";`. `UPDATE` reste accordé. Jamais `GRANT`. La table se déclare avec `reglesSansSuppression()` (`src/server/db/schema/isolation.ts` : une règle par commande, `SELECT`, `INSERT`, `UPDATE`, aucune pour `DELETE`), figure dans `TABLES_SANS_SUPPRESSION` du test d'inventaire et passe `verifierIsolation(..., { sansSuppression: true })` ; une organisation qui y a une ligne ne se supprime plus, comme pour le journal. Fiche : `docs/features/parametres-organisation.md`, sections 1 et « Migration ».
 
-  Dans les deux cas, l'assistant crée le fichier vide par la commande et indique la ligne exacte ; le développeur la colle. L'assistant n'écrit jamais dans `drizzle/`.
+  Dans les trois cas, l'assistant crée le fichier vide par la commande et indique la ligne exacte ; le développeur la colle. L'assistant n'écrit jamais dans `drizzle/`.
 
 - Une branche par fonctionnalité (`feat/...`, `fix/...`). Commits au format `type(portée): message`, en français.
 - Interface en français, textes regroupés dans des fichiers dédiés (NF-01).

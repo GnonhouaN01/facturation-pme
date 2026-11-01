@@ -115,9 +115,14 @@ describe("textes fixés par la fiche", () => {
     });
   });
 
-  test("navigation : en 0.6, la seule entrée est « Tableau de bord »", () => {
+  // Modifié en 2.2 : « Organisation », la page des paramètres
+  // (docs/features/parametres-organisation.md, section 8).
+  test("navigation : « Tableau de bord » et « Organisation »", () => {
     expect(TEXTES_NAVIGATION.organisationActive).toBe("Organisation active");
-    expect(TEXTES_NAVIGATION.entrees).toEqual({ tableauDeBord: "Tableau de bord" });
+    expect(TEXTES_NAVIGATION.entrees).toEqual({
+      tableauDeBord: "Tableau de bord",
+      organisation: "Organisation",
+    });
     expect(TEXTES_NAVIGATION.nom.length).toBeGreaterThan(0);
   });
 

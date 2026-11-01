@@ -295,3 +295,19 @@ describe("1.4 : double authentification", () => {
     expect(options().accountLockout).toBeUndefined();
   });
 });
+
+// 2.2, décision 1 du développeur : l'organisation unique devient active à la
+// création de la session, par un seul rappel de Better Auth, le nôtre ; aucun
+// autre rappel de base de données. Fiche :
+// docs/features/parametres-organisation.md, section 9.
+describe("organisation unique active à la connexion (2.2)", () => {
+  test("databaseHooks : seul session.create.before, notre rappel", async () => {
+    const { rappelSessionCreee } = await import("./organisation-unique");
+    const rappels = optionsAuth.databaseHooks;
+
+    expect(Object.keys(rappels)).toEqual(["session"]);
+    expect(Object.keys(rappels.session)).toEqual(["create"]);
+    expect(Object.keys(rappels.session.create)).toEqual(["before"]);
+    expect(rappels.session.create.before).toBe(rappelSessionCreee);
+  });
+});

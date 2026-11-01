@@ -8,6 +8,7 @@ import {
   lireComptePourPage,
   lireEtatDoubleAuth,
   lireOrganisations,
+  redirigerApresConnexion,
 } from "@/server/actions/exposer";
 import { TEXTES_COMPTE } from "@/textes/compte";
 
@@ -21,12 +22,20 @@ import { changerOrganisation, creerOrganisation } from "./actions";
 // double-authentification.md, section 11). 1.5 : liens vers le profil et les
 // sessions (docs/features/profil-sessions.md, section 9). 2.1 : la liste des
 // organisations de l'utilisateur et la création, en tête (UC-02, étape 4 ;
-// docs/features/organisations.md, section 9).
-export default async function PageCompte() {
+// docs/features/organisations.md, section 9). 2.2 : arrivée après la
+// connexion (?depuis=connexion) : tableau de bord si l'organisation active,
+// posée à la création de la session, est utilisable, sinon /compte sans le
+// paramètre (docs/features/parametres-organisation.md, section 9).
+export default async function PageCompte({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { etat, organisations } = await lireComptePourPage(async (compte) => ({
     etat: await lireEtatDoubleAuth(compte),
     organisations: await lireOrganisations(compte),
   }));
+  if ((await searchParams).depuis === "connexion") await redirigerApresConnexion(organisations);
   const textes = TEXTES_COMPTE.compte;
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-12">

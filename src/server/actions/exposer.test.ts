@@ -14,10 +14,12 @@ import {
 } from "./action";
 import {
   declarationExposee,
+  destinationApresConnexion,
   ErreurPage,
   exposer,
   lireComptePourPage,
   redirigerSiConnecte,
+  reponseLogo,
   traduireLecture,
 } from "./exposer";
 import type { Resultat } from "./refus";
@@ -465,5 +467,87 @@ describe("redirigerSiConnecte", () => {
     session.mockResolvedValue(null);
     await issue();
     expect(session.mock.calls[0]?.[0].get("cookie")).toBe("jeton=valeur");
+  });
+});
+
+// 2.2, décision 1 du développeur : après la connexion, une organisation
+// active (posée par le rappel de la session) mène au tableau de bord, si le
+// second facteur n'est pas exigé et absent pour le rôle ; sinon /compte.
+// Fiche : docs/features/parametres-organisation.md, section 9.
+describe("destinationApresConnexion", () => {
+  const A = "6f1c3c1e-8a3d-4c5b-9f0e-2d7a1b4c5e6f";
+  const B = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+  const organisation = (id: string, doubleAuthentificationRequise = false) => ({
+    id,
+    nom: "Org",
+    role: "proprietaire" as const,
+    doubleAuthentificationRequise,
+  });
+
+  test("organisation active, membre, second facteur en règle : tableau de bord", () => {
+    expect(destinationApresConnexion(A, [organisation(A)])).toBe("/tableau-de-bord");
+  });
+
+  test.each([
+    ["aucune organisation active", null, [organisation(A)]],
+    ["organisation active absente de la liste du compte", B, [organisation(A)]],
+    ["second facteur exigé et inactif", A, [organisation(A, true)]],
+    ["liste vide", A, []],
+  ])("%s : rester sur /compte", (_nom, active, organisations) => {
+    expect(destinationApresConnexion(active, organisations)).toBeNull();
+  });
+});
+
+// 2.2, correction 4 du développeur : le logo est servi par notre route,
+// aux membres de l'organisation seulement. Refus, absence de session et
+// absence de logo : la même réponse (S-02). Fiche :
+// docs/features/parametres-organisation.md, section 5, test 9.
+describe("reponseLogo", () => {
+  const OCTETS = Uint8Array.from([0x89, 0x50, 0x4e, 0x47]);
+
+  async function corps(reponse: Response): Promise<number[]> {
+    return [...new Uint8Array(await reponse.arrayBuffer())];
+  }
+
+  test("logo lu : octets, type exact, nosniff, privé et jamais en cache", async () => {
+    const reponse = reponseLogo({ ok: true, donnees: { octets: OCTETS, type: "image/png" } });
+
+    expect(reponse.status).toBe(200);
+    expect(reponse.headers.get("content-type")).toBe("image/png");
+    expect(reponse.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(reponse.headers.get("cache-control")).toBe("private, no-store");
+    expect(reponse.headers.get("content-length")).toBe("4");
+    expect(await corps(reponse)).toEqual([...OCTETS]);
+  });
+
+  test("refus, sans session, sans logo : même statut, mêmes en-têtes, corps vide", async () => {
+    const reponses = [
+      reponseLogo({ ok: false, raison: "refuse" }),
+      reponseLogo({ ok: false, raison: "connexion_requise" }),
+      reponseLogo({ ok: true, donnees: null }),
+    ];
+    const formes = await Promise.all(
+      reponses.map(async (r) => ({
+        statut: r.status,
+        entetes: [...r.headers.entries()].sort(),
+        corps: await corps(r),
+      })),
+    );
+
+    expect(formes[0]?.statut).toBe(404);
+    expect(formes[0]?.corps).toEqual([]);
+    expect(formes[1]).toEqual(formes[0]);
+    expect(formes[2]).toEqual(formes[0]);
+  });
+
+  test("erreur : 500, corps vide, aucun détail", async () => {
+    const reponse = reponseLogo({
+      ok: false,
+      raison: "erreur",
+      incident: "2b7c4d1e-0a9f-4e3b-8c6d-5f1a2b3c4d5e",
+    });
+
+    expect(reponse.status).toBe(500);
+    expect(await corps(reponse)).toEqual([]);
   });
 });

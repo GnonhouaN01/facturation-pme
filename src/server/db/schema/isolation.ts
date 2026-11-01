@@ -40,3 +40,23 @@ export function regleIsolation() {
     withCheck: CONDITION,
   });
 }
+
+// 2.2 : table sans suppression (paramètres de l'organisation, taux de TVA).
+// Une règle par commande admise, aucune pour DELETE ; le rôle de
+// l'application n'a pas non plus le droit DELETE (migration
+// forcer-isolation-parametres). PostgreSQL n'admet que USING pour SELECT et
+// que WITH CHECK pour INSERT ; UPDATE porte les deux. Même condition que
+// regleIsolation. Fiche : docs/features/parametres-organisation.md,
+// section 1.
+export function reglesSansSuppression() {
+  return [
+    pgPolicy("isolation_lecture", { as: "permissive", for: "select", using: CONDITION }),
+    pgPolicy("isolation_insertion", { as: "permissive", for: "insert", withCheck: CONDITION }),
+    pgPolicy("isolation_modification", {
+      as: "permissive",
+      for: "update",
+      using: CONDITION,
+      withCheck: CONDITION,
+    }),
+  ];
+}

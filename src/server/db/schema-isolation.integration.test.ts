@@ -130,14 +130,40 @@ describe("inventaire : toute table qui porte organisation_id suit le modèle", (
       expect(t.forcee, `${t.table} : règle forcée`).toBe(true);
 
       const reglesTable = regles.filter((r) => r.table === t.table);
-      expect(reglesTable, `${t.table} : exactement une règle`).toHaveLength(1);
-      const [regle] = reglesTable;
-      expect(regle?.nom, `${t.table} : nom de la règle`).toBe("isolation_organisation");
-      expect(regle?.commande, `${t.table} : toutes les commandes`).toBe("ALL");
-      expect(regle?.roles, `${t.table} : pour tous les rôles`).toEqual(["public"]);
-      expect(regle?.permissive, `${t.table} : règle permissive`).toBe("PERMISSIVE");
-      expect(regle?.using, `${t.table} : USING identique au modèle`).toBe(reference?.using);
-      expect(regle?.check, `${t.table} : WITH CHECK identique au modèle`).toBe(reference?.check);
+      if (TABLES_SANS_SUPPRESSION.includes(t.table)) {
+        // 2.2 : une règle par commande admise, aucune pour DELETE ni ALL.
+        // PostgreSQL n'admet que USING pour SELECT et que WITH CHECK pour
+        // INSERT ; la condition est celle du modèle.
+        const parCommande = Object.fromEntries(reglesTable.map((r) => [r.commande, r]));
+        expect(Object.keys(parCommande).sort(), `${t.table} : commandes`).toEqual([
+          "INSERT",
+          "SELECT",
+          "UPDATE",
+        ]);
+        expect(reglesTable, `${t.table} : trois règles`).toHaveLength(3);
+        for (const regle of reglesTable) {
+          expect(regle.roles, `${t.table} : pour tous les rôles`).toEqual(["public"]);
+          expect(regle.permissive, `${t.table} : règles permissives`).toBe("PERMISSIVE");
+        }
+        expect(parCommande.SELECT?.nom).toBe("isolation_lecture");
+        expect(parCommande.SELECT?.using).toBe(reference?.using);
+        expect(parCommande.SELECT?.check).toBeNull();
+        expect(parCommande.INSERT?.nom).toBe("isolation_insertion");
+        expect(parCommande.INSERT?.using).toBeNull();
+        expect(parCommande.INSERT?.check).toBe(reference?.check);
+        expect(parCommande.UPDATE?.nom).toBe("isolation_modification");
+        expect(parCommande.UPDATE?.using).toBe(reference?.using);
+        expect(parCommande.UPDATE?.check).toBe(reference?.check);
+      } else {
+        expect(reglesTable, `${t.table} : exactement une règle`).toHaveLength(1);
+        const [regle] = reglesTable;
+        expect(regle?.nom, `${t.table} : nom de la règle`).toBe("isolation_organisation");
+        expect(regle?.commande, `${t.table} : toutes les commandes`).toBe("ALL");
+        expect(regle?.roles, `${t.table} : pour tous les rôles`).toEqual(["public"]);
+        expect(regle?.permissive, `${t.table} : règle permissive`).toBe("PERMISSIVE");
+        expect(regle?.using, `${t.table} : USING identique au modèle`).toBe(reference?.using);
+        expect(regle?.check, `${t.table} : WITH CHECK identique au modèle`).toBe(reference?.check);
+      }
 
       const clesTable = cles.filter((c) => c.table === t.table);
       expect(clesTable, `${t.table} : une clé étrangère sur organisation_id`).toHaveLength(1);
@@ -157,6 +183,11 @@ describe("inventaire : toute table qui porte organisation_id suit le modèle", (
 // DELETE, ni TRUNCATE. Toute autre table portant organisation_id a UPDATE et
 // DELETE.
 const TABLES_AJOUT_SEUL = ["journal_audit"];
+
+// 2.2 : tables sans suppression (paramètres de l'organisation, taux de TVA) :
+// SELECT, INSERT et UPDATE, ni DELETE ni TRUNCATE ; une règle par commande
+// admise (docs/features/parametres-organisation.md, section 1).
+const TABLES_SANS_SUPPRESSION = ["parametres_organisation", "taux_tva"];
 
 // Tables portant organisation_id dispensées de l'index qui commence par
 // cette colonne. temoin_isolation n'a aucun usage métier : elle ne reçoit de
@@ -209,10 +240,15 @@ describe("inventaire : droits et index", () => {
     const organisation = tables.filter((t) => t.organisation);
 
     const sansModification = organisation
-      .filter((t) => !t.modification || !t.suppression)
+      .filter((t) => !t.modification)
       .map((t) => t.table)
       .sort();
     expect(sansModification).toEqual([...TABLES_AJOUT_SEUL].sort());
+    const sansSuppression = organisation
+      .filter((t) => !t.suppression)
+      .map((t) => t.table)
+      .sort();
+    expect(sansSuppression).toEqual([...TABLES_AJOUT_SEUL, ...TABLES_SANS_SUPPRESSION].sort());
 
     for (const nom of TABLES_AJOUT_SEUL) {
       const t = organisation.find((ligne) => ligne.table === nom);
@@ -220,6 +256,21 @@ describe("inventaire : droits et index", () => {
       expect(t?.lecture, `${nom} : SELECT`).toBe(true);
       expect(t?.insertion, `${nom} : INSERT`).toBe(true);
       expect(t?.modification, `${nom} : pas d'UPDATE`).toBe(false);
+      expect(t?.suppression, `${nom} : pas de DELETE`).toBe(false);
+      expect(t?.vidage, `${nom} : pas de TRUNCATE`).toBe(false);
+    }
+  });
+
+  test("les tables sans suppression : SELECT, INSERT, UPDATE, ni DELETE ni TRUNCATE (2.2)", async () => {
+    const tables = (await db.execute<DroitsCatalogue>(REQUETE_DROITS)).rows;
+
+    for (const nom of TABLES_SANS_SUPPRESSION) {
+      const t = tables.find((ligne) => ligne.table === nom);
+      expect(t, `${nom} : table présente`).toBeDefined();
+      expect(t?.organisation, `${nom} : organisation_id`).toBe(true);
+      expect(t?.lecture, `${nom} : SELECT`).toBe(true);
+      expect(t?.insertion, `${nom} : INSERT`).toBe(true);
+      expect(t?.modification, `${nom} : UPDATE`).toBe(true);
       expect(t?.suppression, `${nom} : pas de DELETE`).toBe(false);
       expect(t?.vidage, `${nom} : pas de TRUNCATE`).toBe(false);
     }

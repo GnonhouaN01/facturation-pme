@@ -317,6 +317,11 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     await lire(origine, "/compte/sessions"),
     await lire(origine, "/compte/sessions", cookieForge()),
   ];
+  // 2.2 : la page des paramètres, comme /tableau-de-bord.
+  const [parametres, parametresForge] = [
+    await lire(origine, "/parametres"),
+    await lire(origine, "/parametres", cookieForge()),
+  ];
   // 1.3 : les pages publiques du mot de passe oublié.
   const [oubli, lienReinitialisation] = [
     await lire(origine, "/mot-de-passe-oublie"),
@@ -402,6 +407,7 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     ["mot-de-passe-oublie", oubli, 200, [oubli]],
     ["lien-reinitialisation", lienReinitialisation, 200, [lienReinitialisation]],
     ["donnees-personnelles", donnees, 200, [donnees]],
+    ["parametres", parametres, 404, [parametres, parametresForge]],
   ];
   for (const [nom, reponse, attendu, lues] of pages) {
     controler(`${nom}:statut`, [reponse], statut(attendu));
@@ -429,6 +435,7 @@ export async function controlerSite(adresse, { detail = false } = {}) {
     ["double-authentification", [doubleAuth, doubleAuthForge]],
     ["profil", [profil, profilForge]],
     ["sessions", [sessions, sessionsForge]],
+    ["parametres", [parametres, parametresForge]],
   ]) {
     controler(`${nom}:gabarit`, lues, (...r) => {
       const trouves = TEXTES_GABARIT.filter((texte) => r.some((x) => x.corps.includes(texte)));
@@ -470,6 +477,7 @@ export async function controlerSite(adresse, { detail = false } = {}) {
   for (const [nom, a, b] of [
     ["profil", profil, profilForge],
     ["sessions", sessions, sessionsForge],
+    ["parametres", parametres, parametresForge],
   ]) {
     identique(
       `${nom}:identique`,

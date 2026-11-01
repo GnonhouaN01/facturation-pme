@@ -258,6 +258,27 @@ export const MODELES_EMAIL = {
       };
     },
   },
+  // 2.2 : instructions de paiement modifiées, à chaque Propriétaire (S-33,
+  // T-12). Seul paramètre : la raison sociale, sur une ligne ; jamais les
+  // valeurs saisies. Lien fixe vers la connexion. Fiche :
+  // docs/features/parametres-organisation.md, section 6.
+  "organisation.instructions_paiement_modifiees": {
+    parametres: z.strictObject({ organisation: briques.texteAffichable(100) }),
+    construire: (
+      parametres: Record<string, unknown>,
+      contexte: { origine: string },
+    ): Construction => {
+      const textes = TEXTES_EMAILS.modeles["organisation.instructions_paiement_modifiees"];
+      const organisation = String(parametres.organisation);
+      const lien = lienPage(contexte.origine, "connexion");
+      return {
+        sujet: textes.sujet,
+        corps: corpsAvecFin(
+          `${textes.corps}\n\n${textes.organisation} ${organisation}\n\n${textes.verification}\n${lien}`,
+        ),
+      };
+    },
+  },
 } as const satisfies Record<string, DefinitionModele>;
 
 export type ModeleEmail = keyof typeof MODELES_EMAIL;

@@ -2,8 +2,11 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { z } from "zod";
 
 import { peut, ROLES, type Role } from "../autorisation/matrice";
+import { executerDansOrganisation } from "../db/client";
 import { creerMembre, nettoyerMembres, type Membre } from "../db/outils-test/membres";
 import { creerDeuxOrganisations, type Organisations } from "../db/outils-test/organisations";
+import { parametresOrganisation, tauxTva } from "../db/schema/parametres";
+import { journalAudit } from "../db/schema/technique";
 
 import {
   declarerAction,
@@ -27,8 +30,35 @@ type CasAction = {
   entree: (contexte: { organisationId: string }) => unknown;
 };
 
-// Un cas par action du registre réel. Vide en 0.4, comme le registre.
-const CAS = {} satisfies Record<NomAction, CasAction>;
+// 2.2 : taux de l'organisation A, créé avant les cas (changement d'état).
+let tauxDeA = "";
+
+const PNG_1X1 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+// Un cas par action du registre réel. Vide en 0.4, comme le registre. 2.2 :
+// les six actions des paramètres ; le Propriétaire reçoit
+// nouvelle_authentification_requise pour les instructions de paiement (pas
+// un refus : l'étape 8 suit le contrôle du droit).
+const CAS = {
+  "parametres.fiche": {
+    entree: () => ({
+      raisonSociale: "Test registre",
+      adresse: "",
+      ncc: "",
+      rccm: "",
+      regimeImposition: "",
+      mentionsLegales: "",
+      validiteDevisJours: 30,
+      echeanceFactureJours: 30,
+    }),
+  },
+  "parametres.taux.ajouter": { entree: () => ({ libelle: "Registre", taux: "5,5" }) },
+  "parametres.taux.etat": { entree: () => ({ tauxId: tauxDeA, actif: true }) },
+  "parametres.logo.enregistrer": { entree: () => ({ contenu: PNG_1X1 }) },
+  "parametres.logo.retirer": { entree: () => ({}) },
+  "parametres.instructions_paiement": { entree: () => ({ mobileMoney: "07", bancaire: "" }) },
+} satisfies Record<NomAction, CasAction>;
 
 type Membres = Readonly<Record<Role, Membre>>;
 
@@ -36,7 +66,19 @@ let orgs: Organisations;
 let membres: Membres;
 
 beforeAll(async () => {
-  orgs = await creerDeuxOrganisations({ tables: [] });
+  // Les actions des paramètres écrivent dans des tables sans suppression et
+  // au journal : l'organisation A reste sur dev.
+  orgs = await creerDeuxOrganisations({
+    tables: [],
+    tablesAjoutSeul: [parametresOrganisation, tauxTva, journalAudit],
+  });
+  const [taux] = await executerDansOrganisation(orgs.a, (tx) =>
+    tx
+      .insert(tauxTva)
+      .values({ organisationId: orgs.a, libelle: "Registre", tauxCentiemes: 1234 })
+      .returning({ id: tauxTva.id }),
+  );
+  tauxDeA = taux?.id ?? "";
   const entrees = await Promise.all(
     ROLES.map(async (role) => [role, await creerMembre({ organisationId: orgs.a, role })] as const),
   );

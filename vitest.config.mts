@@ -40,6 +40,8 @@ export default defineConfig({
           include: [INTEGRATION],
           // Garde-fou : refuse toute base non marquée, avant chaque fichier.
           setupFiles: [GARDE_RESEAU, "src/server/db/outils-test/preparation.ts"],
+          // Réveil de la base, une seule fois avant le premier fichier.
+          globalSetup: ["tests/reveil-base.ts"],
           env: variablesLocales,
           // Sur dev, chaque requête traverse le réseau jusqu'à Neon : les tests
           // qui en enchaînent plusieurs dizaines dépassent les 5 s par défaut.

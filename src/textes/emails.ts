@@ -97,5 +97,16 @@ export const TEXTES_EMAILS = {
         "Le mot de passe de votre compte Facturation PME vient d'être modifié depuis une session ouverte, et vos autres sessions ont été fermées. Si vous êtes à l'origine de ce changement, aucune action n'est attendue.",
       oubli: "Sinon, choisissez sans attendre un nouveau mot de passe depuis cette page :",
     },
+    // 2.2 : instructions de paiement modifiées (S-33, T-12), envoyé à chaque
+    // Propriétaire ; jamais les valeurs saisies
+    // (docs/features/parametres-organisation.md, section 6).
+    "organisation.instructions_paiement_modifiees": {
+      sujet: "Instructions de paiement modifiées",
+      organisation: "Organisation :",
+      corps:
+        "Les instructions de paiement de votre organisation, qui figurent sur ses factures, viennent d'être modifiées par un Propriétaire.",
+      verification:
+        "Si vous n'êtes pas à l'origine de ce changement, vérifiez-les sans attendre et changez votre mot de passe. Connectez-vous depuis cette page :",
+    },
   },
 } as const;

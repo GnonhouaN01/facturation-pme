@@ -1,5 +1,7 @@
 import "server-only";
 
+import { TEXTES_PARAMETRES } from "@/textes/parametres";
+
 import type { TransactionOrganisation } from "../db/client";
 import { organisationsDuCompte, type OrganisationDuCompte } from "../db/organisations";
 import {
@@ -8,6 +10,7 @@ import {
   insererOrganisation,
   nomOrganisationActive,
 } from "../db/requetes/organisations";
+import { insererParametresParDefaut, insererTauxParDefaut } from "../db/requetes/parametres";
 
 // Règles de la 2.1 : créer une organisation, en changer, lire celles du
 // compte et le nom de l'organisation active. Chaque fonction reçoit la
@@ -26,13 +29,24 @@ type ContexteService = {
   organisationId: string;
 };
 
+// 2.2 : taux créés avec l'organisation (UC-06 étape 2, F-051 : 18 % par
+// défaut, 0 % pour les exonérations). Fiche :
+// docs/features/parametres-organisation.md, section 2.
+export const TAUX_PAR_DEFAUT = [
+  { libelle: TEXTES_PARAMETRES.tauxParDefaut.normal, tauxCentiemes: 1800 },
+  { libelle: TEXTES_PARAMETRES.tauxParDefaut.exoneration, tauxCentiemes: 0 },
+] as const;
+
 // Dans la transaction de la nouvelle organisation : l'organisation, son
-// Propriétaire, puis l'organisation active de la session. La trace est
-// écrite par l'action, dans la même transaction.
+// Propriétaire, ses paramètres et ses taux par défaut (2.2), puis
+// l'organisation active de la session. La trace est écrite par l'action,
+// dans la même transaction.
 export async function creerOrganisation(ctx: ContexteService, nom: string): Promise<string> {
   const organisationId = await insererOrganisation(ctx.tx, nom);
   if (organisationId !== ctx.organisationId) throw new Error("Organisation inattendue.");
   await insererAdhesion(ctx.tx, ctx.utilisateurId, ROLE_CREATEUR);
+  await insererParametresParDefaut(ctx.tx);
+  await insererTauxParDefaut(ctx.tx, TAUX_PAR_DEFAUT);
   await activerOrganisation(ctx.tx, ctx.sessionId, ctx.utilisateurId);
   return organisationId;
 }

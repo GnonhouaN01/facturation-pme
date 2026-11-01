@@ -52,7 +52,11 @@ describe("lecture du gabarit, avec une vraie session", () => {
       donnees: { role, entrees: entreesVisibles(role) },
     });
     if (!resultat.ok) return;
-    expect(resultat.donnees.entrees.map((entree) => entree.chemin)).toEqual(["/tableau-de-bord"]);
+    // Modifié en 2.2 : le Propriétaire voit aussi « Organisation »
+    // (docs/features/parametres-organisation.md, section 8).
+    expect(resultat.donnees.entrees.map((entree) => entree.chemin)).toEqual(
+      role === "proprietaire" ? ["/tableau-de-bord", "/parametres"] : ["/tableau-de-bord"],
+    );
     expect(TEXTES_NAVIGATION.roles[resultat.donnees.role]).toBe(LIBELLES[role]);
   });
 

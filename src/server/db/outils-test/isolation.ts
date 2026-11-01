@@ -28,14 +28,22 @@ function exiger(condition: boolean, controle: string): void {
 // droits, les contrôles 5, 7 et 8 attendent un refus de droit et des lignes
 // intactes, le contrôle 9 tente un TRUNCATE. Sans l'option, rien ne change.
 // Fiche : docs/features/journal-audit.md, section 8.1.
+// Option sansSuppression (2.2, table avec UPDATE mais sans DELETE ni
+// TRUNCATE, comme les paramètres de l'organisation) : le contrôle 0 vérifie
+// ces droits, le contrôle 7 attend un refus de droit et des lignes intactes,
+// le contrôle 9 tente un TRUNCATE ; les contrôles 5 et 8 restent ceux d'une
+// table ordinaire. Ses deux organisations restent sur dev, comme pour
+// l'ajout seul. Fiche : docs/features/parametres-organisation.md, section 1.
 export async function verifierIsolation<T extends TableOrganisation>(
   table: T,
   fabriquer: (organisationId: string) => InferInsertModel<T>,
-  options: { ajoutSeul?: boolean } = {},
+  options: { ajoutSeul?: boolean; sansSuppression?: boolean } = {},
 ): Promise<void> {
   const ajoutSeul = options.ajoutSeul === true;
+  const sansSuppression = options.sansSuppression === true;
+  const protegee = ajoutSeul || sansSuppression;
   const { a, b, nettoyer } = await creerDeuxOrganisations(
-    ajoutSeul ? { tables: [], tablesAjoutSeul: [table] } : { tables: [table] },
+    protegee ? { tables: [], tablesAjoutSeul: [table] } : { tables: [table] },
   );
   // Une seule connexion : le contrôle 6 se fait sur la connexion même qui
   // vient de servir à la transaction.
@@ -65,7 +73,7 @@ export async function verifierIsolation<T extends TableOrganisation>(
     );
 
   try {
-    if (ajoutSeul) {
+    if (protegee) {
       // Avant toute écriture : une table qui a encore ces droits ne passe
       // pas, et ses organisations restent supprimables.
       const nom = getTableName(table);
@@ -79,10 +87,10 @@ export async function verifierIsolation<T extends TableOrganisation>(
       exiger(
         droits?.lecture === true &&
           droits.insertion === true &&
-          droits.modification === false &&
+          droits.modification === sansSuppression &&
           droits.suppression === false &&
           droits.vidage === false,
-        "contrôle 0 (droits de l'ajout seul)",
+        ajoutSeul ? "contrôle 0 (droits de l'ajout seul)" : "contrôle 0 (droits sans suppression)",
       );
     }
 
@@ -107,8 +115,8 @@ export async function verifierIsolation<T extends TableOrganisation>(
     const insertion = await codeDuRefus(inserer(a, fabriquer(b)));
     exiger(insertion === REFUS_DROIT, "contrôle 4 (insertion pour B par A)");
 
-    const lignesA = ajoutSeul ? await lire(a) : [];
-    const lignesB = ajoutSeul ? await lire(b) : [];
+    const lignesA = protegee ? await lire(a) : [];
+    const lignesB = protegee ? await lire(b) : [];
     const intactes = async () =>
       JSON.stringify(await lire(a)) === JSON.stringify(lignesA) &&
       JSON.stringify(await lire(b)) === JSON.stringify(lignesB);
@@ -141,7 +149,7 @@ export async function verifierIsolation<T extends TableOrganisation>(
           .where(eq(table.organisationId, b))
           .returning({ organisationId: table.organisationId }),
       );
-    if (ajoutSeul) {
+    if (protegee) {
       const code = await codeDuRefus(supprimerB());
       exiger(
         code === REFUS_DROIT && (await intactes()),
@@ -169,7 +177,7 @@ export async function verifierIsolation<T extends TableOrganisation>(
       "contrôle 8 (déplacement d'une ligne de A vers B)",
     );
 
-    if (ajoutSeul) {
+    if (protegee) {
       // TRUNCATE ignore la règle d'isolation : seul le retrait du droit
       // l'arrête. Drizzle rend l'objet table comme un identifiant.
       const vidage = await codeDuRefus(

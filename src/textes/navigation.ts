@@ -10,6 +10,8 @@ export const TEXTES_NAVIGATION = {
   changerOrganisation: "Changer d'organisation",
   entrees: {
     tableauDeBord: "Tableau de bord",
+    // 2.2 : la page des paramètres de l'organisation.
+    organisation: "Organisation",
   },
   // Clés : les rôles de src/server/autorisation/matrice.ts.
   roles: {

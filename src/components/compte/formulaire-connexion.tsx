@@ -21,7 +21,7 @@ import { useHydrate } from "./hydrate";
 // envoyés en JSON à /api/auth/sign-in/email. Un échec affiche le même
 // message pour une adresse inconnue, un mauvais mot de passe et un compte non
 // vérifié (T-07, DESIGN-SYSTEM.md « Connexion échouée »). Un succès mène à
-// /compte. Sans JavaScript, aucun champ
+// /compte (2.2 : par /compte?depuis=connexion). Sans JavaScript, aucun champ
 // (useHydrate). Fiche : docs/features/connexion.md, sections 2.1 et 5.2.
 // Double authentification (1.4) : si le compte a un second facteur, le
 // formulaire laisse place à l'étape du code (code de l'application ou code
@@ -30,6 +30,7 @@ import { useHydrate } from "./hydrate";
 // section 4.
 
 const TEXTES = TEXTES_COMPTE.connexion;
+const ARRIVEE = "/compte?depuis=connexion";
 
 type Etat =
   | { etape: "saisie"; email?: string; motDePasse?: string; general?: string }
@@ -68,8 +69,10 @@ export function FormulaireConnexion() {
         return;
       }
       // La page de compte, jamais visitée dans cette session, est rendue par
-      // le serveur avec le nouveau cookie.
-      router.push("/compte");
+      // le serveur avec le nouveau cookie. 2.2 : elle mène au tableau de bord
+      // si l'organisation unique est devenue active
+      // (docs/features/parametres-organisation.md, section 9).
+      router.push(ARRIVEE);
       return;
     }
     switch (reponse.raison) {
@@ -103,7 +106,7 @@ export function FormulaireConnexion() {
     const point = secours ? "/two-factor/verify-backup-code" : "/two-factor/verify-totp";
     const reponse = await appelerAuth(point, { code });
     if (reponse.ok) {
-      router.push("/compte");
+      router.push(ARRIVEE);
       return;
     }
     switch (reponse.raison) {

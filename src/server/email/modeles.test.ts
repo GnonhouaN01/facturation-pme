@@ -48,6 +48,8 @@ const EXEMPLES = {
   "compte.double_auth_tentatives": {},
   // 1.5 (docs/features/profil-sessions.md, section 8).
   "compte.mot_de_passe_change": {},
+  // 2.2 (docs/features/parametres-organisation.md, section 6).
+  "organisation.instructions_paiement_modifiees": { organisation: "Kouamé & Fils" },
 } as const satisfies Record<ModeleEmail, Record<string, unknown>>;
 
 const NOMS = Object.keys(MODELES_EMAIL) as ModeleEmail[];
@@ -74,7 +76,9 @@ describe("la liste fermée", () => {
   // authentification (docs/features/double-authentification.md, section 10).
   // Modifié en 1.5 : douze, avec le changement du mot de passe depuis une
   // session (docs/features/profil-sessions.md, section 8).
-  test("1.5 : douze modèles, l'essai et les onze emails de compte", () => {
+  // Modifié en 2.2 : treize, avec les instructions de paiement modifiées
+  // (docs/features/parametres-organisation.md, section 6).
+  test("2.2 : treize modèles, l'essai, les onze emails de compte et un d'organisation", () => {
     expect(NOMS).toEqual([
       "essai.verification_envoi",
       "compte.verification",
@@ -88,6 +92,7 @@ describe("la liste fermée", () => {
       "compte.code_secours_utilise",
       "compte.double_auth_tentatives",
       "compte.mot_de_passe_change",
+      "organisation.instructions_paiement_modifiees",
     ]);
   });
 
@@ -609,13 +614,15 @@ describe("modèles de la réinitialisation (1.3)", () => {
   });
 
   // Décision A : aucun modèle ne reçoit de lien, de page ni d'adresse de
-  // l'appelant ; seuls les jetons sont des paramètres.
+  // l'appelant ; seuls les jetons sont des paramètres. Modifié en 2.2 : et la
+  // raison sociale d'une organisation, texte affichable sur une ligne
+  // (docs/features/parametres-organisation.md, section 6).
   test.each(NOMS)("%s : aucun paramètre de lien ou de page", (nom) => {
     const schema = z.toJSONSchema(MODELES_EMAIL[nom].parametres) as {
       properties?: Record<string, unknown>;
     };
     for (const cle of Object.keys(schema.properties ?? {})) {
-      expect(cle).toMatch(/^jeton$/u);
+      expect(cle).toMatch(/^(jeton|organisation)$/u);
     }
   });
 });
@@ -678,4 +685,36 @@ describe("modèles de la double authentification (1.4)", () => {
       expect(MODELES_EMAIL[nom].parametres.safeParse({ code: "123456" }).success).toBe(false);
     },
   );
+});
+
+// 2.2 : instructions de paiement modifiées (S-33, T-12). Un seul paramètre,
+// la raison sociale, sur une ligne ; jamais les valeurs saisies, qui
+// serviraient de modèle à un hameçonnage. Fiche :
+// docs/features/parametres-organisation.md, section 6, test 6.
+describe("organisation.instructions_paiement_modifiees (2.2)", () => {
+  const MODELE = MODELES_EMAIL["organisation.instructions_paiement_modifiees"];
+
+  test("sujet fixe, raison sociale, lien fixe vers la connexion, rien d'autre", () => {
+    const parametres = MODELE.parametres.parse({ organisation: "Kouamé & Fils" });
+    const { sujet, corps } = MODELE.construire(parametres, { origine: ORIGINE });
+    expect(sujet).toBe("Instructions de paiement modifiées");
+    expect(sujet).toBe(TEXTES_EMAILS.modeles["organisation.instructions_paiement_modifiees"].sujet);
+    expect(corps).toContain("Kouamé & Fils");
+    expect(corps.match(/https?:\/\/\S+/gu)).toEqual([`${ORIGINE}/connexion`]);
+  });
+
+  test("contenu qui ressemble à du code : gardé tel quel, texte brut (S-51)", () => {
+    const parametres = MODELE.parametres.parse({ organisation: "<b>SARL</b>" });
+    expect(MODELE.construire(parametres, { origine: ORIGINE }).corps).toContain("<b>SARL</b>");
+  });
+
+  test.each([
+    ["valeur de paiement", { organisation: "X", mobileMoney: "07 00 00 00 00" }],
+    ["coordonnées bancaires", { organisation: "X", bancaire: "CI000 01234" }],
+    ["retour à la ligne", { organisation: "X\nY" }],
+    ["trop long", { organisation: "x".repeat(101) }],
+    ["absent", {}],
+  ])("%s : refusé", (_nom, parametres) => {
+    expect(MODELE.parametres.safeParse(parametres).success).toBe(false);
+  });
 });

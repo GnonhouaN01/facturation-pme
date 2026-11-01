@@ -18,6 +18,8 @@ import {
   type SessionAffichee,
 } from "../auth/sessions-compte";
 import { ROLES, ROLES_DOUBLE_AUTH, type Droit, type Role } from "../autorisation/matrice";
+import { DROIT_GABARIT } from "../autorisation/navigation";
+import { lireLogo } from "../db/requetes/parametres";
 import type { ActionJournal } from "../journal/actions";
 import { lireOrganisationsDuCompte } from "../services/organisations";
 
@@ -219,4 +221,68 @@ export async function lireOrganisations(compte: ContexteCompte): Promise<Organis
         ]
       : [],
   );
+}
+
+// 2.2, décision 1 du développeur : après la connexion (/compte?depuis=
+// connexion), une organisation active, posée par le rappel de création de la
+// session, mène au tableau de bord si elle est dans la liste du compte et
+// que le second facteur n'y manque pas ; sinon /compte. Seules destinations
+// possibles : ces deux chemins fixes. Fiche :
+// docs/features/parametres-organisation.md, section 9.
+export function destinationApresConnexion(
+  organisationActiveId: string | null,
+  organisations: readonly OrganisationAffichee[],
+): "/tableau-de-bord" | null {
+  if (organisationActiveId === null) return null;
+  const active = organisations.find((organisation) => organisation.id === organisationActiveId);
+  return active !== undefined && !active.doubleAuthentificationRequise ? "/tableau-de-bord" : null;
+}
+
+// Redirige l'arrivée après la connexion : vers le tableau de bord, ou vers
+// /compte sans le paramètre. Session relue par les en-têtes de la requête ;
+// une lecture en échec mène à /compte.
+export async function redirigerApresConnexion(
+  organisations: readonly OrganisationAffichee[],
+): Promise<never> {
+  const entetes = new Headers(await headers());
+  let organisationActiveId: string | null = null;
+  try {
+    organisationActiveId = (await lireSession(entetes))?.organisationActiveId ?? null;
+  } catch (erreur) {
+    traduireErreur(erreur, "compte.arrivee");
+  }
+  redirect(destinationApresConnexion(organisationActiveId, organisations) ?? "/compte");
+}
+
+// 2.2, correction 4 du développeur : la route du logo, réservée aux membres
+// de l'organisation active (droit du gabarit, accordé aux quatre rôles), par
+// la chaîne de lecture. Type exact, nosniff, privé, jamais en cache. Refus,
+// absence de session et absence de logo : la même réponse, 404 au corps
+// vide (S-02). Fiche : docs/features/parametres-organisation.md, section 5.
+type LogoServi = { octets: Uint8Array; type: string } | null;
+
+const ENTETES_LOGO = {
+  "X-Content-Type-Options": "nosniff",
+  "Cache-Control": "private, no-store",
+} as const;
+
+export function reponseLogo(resultat: ResultatLecture<LogoServi>): Response {
+  if (resultat.ok && resultat.donnees !== null) {
+    const { octets, type } = resultat.donnees;
+    return new Response(new Uint8Array(octets), {
+      status: 200,
+      headers: {
+        ...ENTETES_LOGO,
+        "Content-Type": type,
+        "Content-Length": String(octets.length),
+      },
+    });
+  }
+  const statut = !resultat.ok && resultat.raison === "erreur" ? 500 : 404;
+  return new Response(null, { status: statut, headers: ENTETES_LOGO });
+}
+
+export async function servirLogo(requete: Request): Promise<Response> {
+  const entetes = new Headers(requete.headers);
+  return reponseLogo(await etablirContexte({ entetes }, DROIT_GABARIT, (ctx) => lireLogo(ctx.tx)));
 }
